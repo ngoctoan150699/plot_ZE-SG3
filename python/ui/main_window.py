@@ -23,12 +23,16 @@ from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPushButton, QSpinBox, QSplitter, QTabWidget, QTextEdit,
-    QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, 
+    QSplitter, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 import serial.tools.list_ports
 
+from matplotlib.backends.backend_qt5agg import (
+    FigureCanvasQTAgg as FigureCanvas,
+    NavigationToolbar2QT as NavigationToolbar,
+)
 from application.config_service import ConfigService
 from application.data_collector import DataCollectorService
 from application.interfaces import IDataExporter, ISettingsRepository
@@ -111,33 +115,35 @@ QScrollBar::handle:vertical { background: #45475a; border-radius: 5px; min-heigh
 
 LIGHT_STYLE = """
 QMainWindow, QWidget {
-    background-color: #f5f5f5;
+    background-color: #f4f6f9;
     color: #212121;
     font-family: 'Segoe UI', sans-serif;
     font-size: 10pt;
 }
 QGroupBox {
-    border: 1px solid #bdbdbd;
-    border-radius: 6px;
-    margin-top: 10px;
-    padding: 8px;
-    color: #1565c0;
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding: 10px;
+    color: #1976d2;
     font-weight: bold;
 }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 QPushButton {
     background: #e3f2fd;
-    border: 1px solid #90caf9;
-    border-radius: 5px;
+    border: 1px solid #bbdefb;
+    border-radius: 4px;
     padding: 6px 14px;
     color: #1565c0;
+    font-weight: medium;
 }
 QPushButton:hover  { background: #bbdefb; border-color: #1976d2; }
 QPushButton:pressed { background: #90caf9; }
-QPushButton:disabled { color: #9e9e9e; background: #f5f5f5; border-color: #e0e0e0; }
+QPushButton:disabled { color: #9e9e9e; background: #f5f5f5; border: 1px solid #e0e0e0; }
 QComboBox, QSpinBox, QDoubleSpinBox {
     background: #ffffff;
-    border: 1px solid #bdbdbd;
+    border: 1px solid #dcdcdc;
     border-radius: 4px;
     padding: 4px 6px;
     color: #212121;
@@ -148,27 +154,36 @@ QComboBox QAbstractItemView {
     color: #212121;
     selection-background-color: #bbdefb;
 }
-QTabWidget::pane { border: 1px solid #bdbdbd; border-radius: 4px; background: #ffffff; }
+QTabWidget::pane { border: 1px solid #e0e0e0; border-radius: 4px; background: #ffffff; }
 QTabBar::tab {
     background: #e0e0e0;
-    color: #424242;
-    padding: 7px 16px;
-    border-radius: 4px 4px 0 0;
-    margin-right: 2px;
+    color: #757575;
+    padding: 8px 20px;
+    border-radius: 6px 6px 0 0;
+    margin-right: 4px;
 }
-QTabBar::tab:selected { background: #ffffff; color: #1565c0; font-weight: bold; border-bottom: 2px solid #1976d2; }
+QTabBar::tab:selected { 
+    background: #ffffff; 
+    color: #1976d2; 
+    font-weight: bold; 
+    border-top: 2px solid #1976d2;
+}
 QTabBar::tab:hover:!selected { background: #eeeeee; }
 QTextEdit {
-    background: #fafafa;
+    background: #ffffff;
     color: #1b5e20;
-    border: 1px solid #bdbdbd;
+    border: 1px solid #e0e0e0;
     font-family: Consolas, monospace;
     font-size: 9pt;
 }
 QCheckBox { spacing: 6px; }
-QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #9e9e9e; background: white; }
+QCheckBox::indicator { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #bdbdbd; background: white; }
 QCheckBox::indicator:checked { background: #1976d2; border-color: #1976d2; }
 QSplitter::handle { background: #e0e0e0; width: 2px; }
+QScrollArea { background-color: transparent; border: none; }
+QScrollBar:vertical { background: #f1f1f1; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #c1c1c1; border-radius: 5px; min-height: 20px; }
+QScrollBar::handle:vertical:hover { background: #a8a8a8; }
 """
 
 
@@ -230,38 +245,62 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle("Seneca ZE-SG3 – Torque Acquisition (DYJN-101 50Nm)")
-        self.setGeometry(80, 80, 1280, 820)
+        self.setGeometry(80, 80, 1320, 860)
         self.setMinimumSize(1000, 700)
 
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(6)
 
         splitter = QSplitter(Qt.Horizontal)
 
-        # Left panel
-        left = QWidget()
-        left.setMaximumWidth(370)
-        left_lay = QVBoxLayout(left)
-        tabs = QTabWidget()
-        tabs.addTab(self._build_connection_tab(), "🔌 Kết nối")
-        tabs.addTab(self._build_config_tab(), "⚙️ Cấu hình")
-        tabs.addTab(self._build_acquisition_tab(), "📈 Thu thập")
-        tabs.addTab(self._build_settings_tab(), "🎨 Giao diện")
-        left_lay.addWidget(tabs)
+        # --- Left Panel (Scrollable) ---
+        left_container = QWidget()
+        left_lay = QVBoxLayout(left_container)
+        left_lay.setContentsMargins(0, 0, 4, 0)
+        left_lay.setSpacing(10)
 
-        # Right panel
+        # 1. Tabs control
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_connection_tab(), "🔌 Kết nối")
+        self.tabs.addTab(self._build_config_tab(), "⚙️ Cấu hình")
+        self.tabs.addTab(self._build_acquisition_tab(), "📈 Thu thập")
+        self.tabs.addTab(self._build_settings_tab(), "🎨 Giao diện")
+        left_lay.addWidget(self.tabs)
+        
+        # 2. Data Info (Moved from right to left to match draw_plot.py)
+        self.display_panel = self._build_display_group()
+        left_lay.addWidget(self.display_panel)
+        
+        left_lay.addStretch() # Đẩy mọi thứ lên trên
+
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_container)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setMaximumWidth(400)
+
+        # --- Right Panel ---
         right = QWidget()
         right_lay = QVBoxLayout(right)
-        right_lay.addWidget(self._build_display_group())
+        right_lay.setContentsMargins(6, 0, 0, 0)
+        right_lay.setSpacing(10)
+        
+        # Right side now only has Chart and Log
         right_lay.addWidget(self._build_chart_group(), stretch=1)
         right_lay.addWidget(self._build_log_group())
 
-        splitter.addWidget(left)
+        splitter.addWidget(left_scroll)
         splitter.addWidget(right)
-        splitter.setSizes([360, 900])
+        splitter.setSizes([380, 940])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        
         main_layout.addWidget(splitter)
+
+
 
     # --- Connection Tab ---
     def _build_connection_tab(self) -> QWidget:
@@ -325,9 +364,10 @@ class MainWindow(QMainWindow):
         self.led_label = QLabel("●"); self.led_label.setObjectName("led_off")
         btn_row.addWidget(self.led_label)
         self.btn_connect = QPushButton("🔗 Kết nối")
-        self.btn_connect.setStyleSheet("background:#a6e3a1; color:#1e1e2e; font-weight:bold; padding:8px;")
+        self._update_connect_btn_style()
         self.btn_connect.clicked.connect(self._toggle_connect)
         btn_row.addWidget(self.btn_connect, stretch=1)
+
         lay.addLayout(btn_row)
         self.lbl_conn_status = QLabel("⚪ Chưa kết nối")
         lay.addWidget(self.lbl_conn_status)
@@ -420,10 +460,10 @@ class MainWindow(QMainWindow):
         rec_grp = QGroupBox("🔴 Ghi dữ liệu")
         rg = QHBoxLayout()
         self.btn_rec_start = QPushButton("▶️ Bắt đầu ghi")
-        self.btn_rec_start.setStyleSheet("background:#a6e3a1; color:#1e1e2e; font-weight:bold;")
+        self._update_rec_start_btn_style()
         self.btn_rec_start.clicked.connect(self._start_recording)
         self.btn_rec_stop  = QPushButton("⏹ Dừng ghi")
-        self.btn_rec_stop.setStyleSheet("background:#f38ba8; color:#1e1e2e; font-weight:bold;")
+        self._update_rec_stop_btn_style()
         self.btn_rec_stop.clicked.connect(self._stop_recording)
         self.btn_rec_stop.setEnabled(False)
         rg.addWidget(self.btn_rec_start); rg.addWidget(self.btn_rec_stop)
@@ -431,59 +471,96 @@ class MainWindow(QMainWindow):
 
         export_grp = QGroupBox("💾 Xuất dữ liệu")
         eg = QVBoxLayout()
+        eg.setSpacing(6)
         for exp in self._exporters:
             btn = QPushButton(f"📄 {exp.display_name}")
+            btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
             btn.clicked.connect(lambda checked, e=exp: self._export(e))
             eg.addWidget(btn)
+
         export_grp.setLayout(eg); lay.addWidget(export_grp)
 
         lay.addStretch()
         return w
 
-    # --- Display group ---
+    # --- Display group (Redesigned to be compact like draw_plot.py) ---
     def _build_display_group(self) -> QWidget:
-        grp = QGroupBox("📟 Giá trị hiện tại")
+        grp = QGroupBox("📊 Real-time Data Info")
+        grp.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         g = QGridLayout()
-        big = QFont('Segoe UI', 26, QFont.Bold)
+        g.setContentsMargins(10, 12, 10, 10)
+        g.setSpacing(8)
 
+        # Current Torque - Styled prominently but not excessively large
         self.lbl_torque = QLabel("0.000 Nm")
-        self.lbl_torque.setFont(big)
-        self.lbl_torque.setStyleSheet("color:#89dceb;")
+        self.lbl_torque.setFont(QFont('Segoe UI', 18, QFont.Bold))
+        self.lbl_torque.setStyleSheet("color: #1976D2;") 
         g.addWidget(QLabel("Torque:"), 0, 0)
         g.addWidget(self.lbl_torque, 0, 1, 1, 3)
 
+        # Row 1: Status & Pts
+        g.addWidget(QLabel("Status:"), 1, 0)
         self.lbl_stable = QLabel("---")
-        g.addWidget(QLabel("Trạng thái:"), 1, 0); g.addWidget(self.lbl_stable, 1, 1)
+        self.lbl_stable.setStyleSheet("font-weight: bold; font-size: 11px;")
+        g.addWidget(self.lbl_stable, 1, 1)
 
+        g.addWidget(QLabel("Samples:"), 1, 2)
+        self.lbl_count = QLabel("0")
+        self.lbl_count.setStyleSheet("font-weight: bold;")
+        g.addWidget(self.lbl_count, 1, 3)
+
+        # Row 2: Tare & Time
+        g.addWidget(QLabel("Tare:"), 2, 0)
         self.lbl_tare = QLabel("--- Nm")
-        g.addWidget(QLabel("Tare:"), 1, 2); g.addWidget(self.lbl_tare, 1, 3)
+        g.addWidget(self.lbl_tare, 2, 1)
 
-        self.lbl_max = QLabel("---"); self.lbl_min = QLabel("---")
-        g.addWidget(QLabel("Max:"), 2, 0); g.addWidget(self.lbl_max, 2, 1)
-        g.addWidget(QLabel("Min:"), 2, 2); g.addWidget(self.lbl_min, 2, 3)
+        g.addWidget(QLabel("Time:"), 2, 2)
+        self.lbl_rectime = QLabel("0.0 s")
+        g.addWidget(self.lbl_rectime, 2, 3)
 
-        self.lbl_count = QLabel("0"); self.lbl_rectime = QLabel("0.0 s")
-        g.addWidget(QLabel("Mẫu ghi:"), 3, 0); g.addWidget(self.lbl_count, 3, 1)
-        g.addWidget(QLabel("Thời gian ghi:"), 3, 2); g.addWidget(self.lbl_rectime, 3, 3)
+        # Row 3: Max
+        info_style = "font-weight: bold; font-size: 14px;"
+        g.addWidget(QLabel("Maximum:"), 3, 0)
+        self.lbl_max = QLabel("---")
+        self.lbl_max.setStyleSheet(f"color: #1976D2; {info_style}")
+        g.addWidget(self.lbl_max, 3, 1)
+
+        # Row 4: Min
+        g.addWidget(QLabel("Minimum:"), 4, 0)
+        self.lbl_min = QLabel("---")
+        self.lbl_min.setStyleSheet(f"color: #D32F2F; {info_style}")
+        g.addWidget(self.lbl_min, 4, 1)
 
         grp.setLayout(g)
         return grp
+
+
 
     # --- Chart group ---
     def _build_chart_group(self) -> QWidget:
         grp = QGroupBox("📈 Torque – Time")
         lay = QVBoxLayout()
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(2)
+
         self.plot = RealTimePlot(
             title="Torque vs Time",
             xlabel="Time (s)", ylabel="Torque (Nm)",
             max_window_s=DEFAULT_TIME_WINDOW_S,
         )
+        
+        # Thêm toolbar giống draw_plot.py
+        self.toolbar = NavigationToolbar(self.plot, self)
+        self.toolbar.setMaximumHeight(32)
+        lay.addWidget(self.toolbar)
         lay.addWidget(self.plot)
+
         btn_clear = QPushButton("🗑️ Xóa biểu đồ")
         btn_clear.clicked.connect(self._clear_chart)
         lay.addWidget(btn_clear)
         grp.setLayout(lay)
         return grp
+
 
     # --- Settings Tab (Giao diện / Theme) ---
     def _build_settings_tab(self) -> QWidget:
@@ -535,6 +612,17 @@ class MainWindow(QMainWindow):
     def _apply_theme(self, dark: bool):
         """Áp dụng Dark hoặc Light theme cho toàn app + cập nhật màu chart."""
         self.setStyleSheet(DARK_STYLE if dark else LIGHT_STYLE)
+        
+        # Cập nhật màu sắc cho các label thông số (đồng nhất với draw_plot.py ở mode sáng)
+        torque_color = "#89dceb" if dark else "#1976D2"
+        max_color    = "#a6e3a1" if dark else "#1976D2"
+        min_color    = "#f38ba8" if dark else "#D32F2F"
+        
+        if hasattr(self, 'lbl_torque'):
+            self.lbl_torque.setStyleSheet(f"color: {torque_color};")
+            self.lbl_max.setStyleSheet(f"color: {max_color}; font-weight: bold; font-size: 14px;")
+            self.lbl_min.setStyleSheet(f"color: {min_color}; font-weight: bold; font-size: 14px;")
+
         # Cập nhật màu chart theo theme
         if hasattr(self, 'plot'):
             self._apply_chart_theme(dark)
@@ -568,16 +656,39 @@ class MainWindow(QMainWindow):
 
     # --- Log group ---
     def _build_log_group(self) -> QWidget:
-        grp = QGroupBox("📝 Nhật ký")
+        grp = QGroupBox("📝 Terminal Log")
         lay = QVBoxLayout()
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True)
-        self.log_box.setMaximumHeight(110)
+        self.log_box.setMaximumHeight(140)
         lay.addWidget(self.log_box)
         grp.setLayout(lay)
         return grp
 
+    # --- Helper to update button styles based on state and theme ---
+    def _update_connect_btn_style(self):
+        if self._connected:
+            color = "#F44336" if not self._is_dark else "#f38ba8" # Red
+            text_color = "white" if not self._is_dark else "#1e1e2e"
+            self.btn_connect.setText("🔌 Ngắt kết nối")
+        else:
+            color = "#4CAF50" if not self._is_dark else "#a6e3a1" # Green
+            text_color = "white" if not self._is_dark else "#1e1e2e"
+            self.btn_connect.setText("🔗 Kết nối")
+        self.btn_connect.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; padding: 8px;")
+
+    def _update_rec_start_btn_style(self):
+        color = "#FF9800" if not self._is_dark else "#fab387" # Orange
+        text_color = "white" if not self._is_dark else "#1e1e2e"
+        self.btn_rec_start.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
+
+    def _update_rec_stop_btn_style(self):
+        color = "#F44336" if not self._is_dark else "#f38ba8" # Red
+        text_color = "white" if not self._is_dark else "#1e1e2e"
+        self.btn_rec_stop.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
+
     # ===========================================================
     # LOAD / SAVE SETTINGS
+
     # ===========================================================
 
     def _load_settings_to_ui(self):
@@ -689,11 +800,11 @@ class MainWindow(QMainWindow):
 
                 self._connected = True
                 self._ref_time  = time.monotonic()
-                self.btn_connect.setText("🔌 Ngắt kết nối")
-                self.btn_connect.setStyleSheet("background:#f38ba8; color:#1e1e2e; font-weight:bold; padding:8px;")
+                self._update_connect_btn_style()
                 self.led_label.setObjectName("led_on")
-                self.led_label.setStyleSheet("color:#a6e3a1; font-size:18px;")
+                self._apply_led_style()
                 self.lbl_conn_status.setText("🟢 Đã kết nối")
+
 
                 self._collector.set_interval(self.spin_interval.value())
                 self._collector.start()
@@ -709,12 +820,19 @@ class MainWindow(QMainWindow):
         if self._collector._client:
             self._collector._client.disconnect()
         self._connected = False
-        self.btn_connect.setText("🔗 Kết nối")
-        self.btn_connect.setStyleSheet("background:#a6e3a1; color:#1e1e2e; font-weight:bold; padding:8px;")
+        self._update_connect_btn_style()
         self.led_label.setObjectName("led_off")
-        self.led_label.setStyleSheet("color:#f38ba8; font-size:18px;")
+        self._apply_led_style()
         self.lbl_conn_status.setText("⚪ Chưa kết nối")
         self._log("🔌 Đã ngắt kết nối")
+
+    def _apply_led_style(self):
+        if self.led_label.objectName() == "led_on":
+            color = "#4CAF50" if not self._is_dark else "#a6e3a1"
+        else:
+            color = "#F44336" if not self._is_dark else "#f38ba8"
+        self.led_label.setStyleSheet(f"color: {color}; font-size: 20px;")
+
 
     # ===========================================================
     # DATA CALLBACKS
@@ -731,14 +849,18 @@ class MainWindow(QMainWindow):
         self.lbl_min.setText(f"{status.min_net_weight:.3f}")
 
         if status.is_stable:
-            self.lbl_stable.setText("🟢 Ổn định")
-            self.lbl_stable.setStyleSheet("color:#a6e3a1;")
+            self.lbl_stable.setText("🟢 Stable")
+            color = "#4CAF50" if not self._is_dark else "#a6e3a1"
+            self.lbl_stable.setStyleSheet(f"color: {color};")
         elif status.is_fullscale:
             self.lbl_stable.setText("🔴 Full Scale!")
-            self.lbl_stable.setStyleSheet("color:#f38ba8;")
+            color = "#F44336" if not self._is_dark else "#f38ba8"
+            self.lbl_stable.setStyleSheet(f"color: {color};")
         else:
-            self.lbl_stable.setText("🟡 Đang dao động")
-            self.lbl_stable.setStyleSheet("color:#f9e2af;")
+            self.lbl_stable.setText("🟡 Unstable")
+            color = "#FF9800" if not self._is_dark else "#f9e2af"
+            self.lbl_stable.setStyleSheet(f"color: {color};")
+
 
         # Chart luôn update (không cần đang ghi)
         self.plot.add_point(elapsed, status.net_weight)
