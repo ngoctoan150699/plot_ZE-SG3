@@ -187,6 +187,69 @@ QScrollBar::handle:vertical:hover { background: #a8a8a8; }
 """
 
 
+from PyQt5.QtWidgets import QAction, QStyle
+
+class CustomToolbar(NavigationToolbar):
+    """Custom Toolbar: Loại bỏ nút Subplot và thêm nút Zoom Out."""
+    def __init__(self, canvas, parent=None):
+        super().__init__(canvas, parent)
+        
+        # 1. Loại bỏ nút 'Configure subplots'
+        actions = self.actions()
+        for action in actions:
+            if 'subplot' in action.toolTip().lower() or action.text() == 'Subplots':
+                self.removeAction(action)
+        
+        # 2. Thêm nút 'Zoom Out'
+        self.zoom_out_act = QAction("Zoom Out", self)
+        # Sử dụng icon chuẩn SP_TitleBarMinButton (dấu trừ) làm biểu tượng Zoom Out
+        self.zoom_out_act.setIcon(QApplication.style().standardIcon(QStyle.SP_TitleBarMinButton))
+        self.zoom_out_act.setToolTip("Zoom Out (1.25x)")
+        self.zoom_out_act.triggered.connect(self.zoom_out)
+        
+        # Chèn Zoom Out sau nút Zoom chuẩn nếu tìm thấy
+        zoom_action = None
+        actions = self.actions() # Lấy lại danh sách sau khi đã xóa subplot
+        for action in actions:
+            if 'zoom' in action.toolTip().lower() and 'rect' in action.toolTip().lower():
+                zoom_action = action
+                break
+        
+        if zoom_action:
+            found = False
+            for i, action in enumerate(actions):
+                if action == zoom_action:
+                    if i + 1 < len(actions):
+                        next_action = actions[i+1]
+                        self.insertAction(next_action, self.zoom_out_act)
+                        found = True
+                    break
+            if not found:
+                self.addAction(self.zoom_out_act)
+        else:
+            self.addAction(self.zoom_out_act)
+
+    def zoom_out(self):
+        """Thu nhỏ biểu đồ bằng cách mở rộng giới hạn các trục."""
+        if not self.canvas.figure.axes:
+            return
+        ax = self.canvas.figure.axes[0]
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        
+        factor = 1.25 # Hệ số phóng đại vùng nhìn (tương đương zoom out)
+        x_center = (xlim[0] + xlim[1]) / 2
+        y_center = (ylim[0] + ylim[1]) / 2
+        
+        new_w = (xlim[1] - xlim[0]) * factor
+        new_h = (ylim[1] - ylim[0]) * factor
+        
+        ax.set_xlim([x_center - new_w/2, x_center + new_w/2])
+        ax.set_ylim([y_center - new_h/2, y_center + new_h/2])
+        
+        self.canvas.draw()
+
+
 class MainWindow(QMainWindow):
     """
     MainWindow điều phối toàn bộ ứng dụng.
@@ -280,7 +343,8 @@ class MainWindow(QMainWindow):
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(left_container)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setMaximumWidth(400)
+        left_scroll.setMinimumWidth(380)
+        left_scroll.setMaximumWidth(600)
 
         # --- Right Panel ---
         right = QWidget()
@@ -294,7 +358,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left_scroll)
         splitter.addWidget(right)
-        splitter.setSizes([380, 940])
+        splitter.setSizes([420, 900])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
         
@@ -314,6 +378,7 @@ class MainWindow(QMainWindow):
         self.combo_proto.addItems(["Modbus RTU", "Modbus TCP"])
         self.combo_proto.currentTextChanged.connect(self._on_proto_changed)
         pg.addWidget(self.combo_proto, 0, 1)
+        pg.setColumnStretch(1, 1)
         proto_grp.setLayout(pg); lay.addWidget(proto_grp)
 
         # RTU
@@ -333,6 +398,7 @@ class MainWindow(QMainWindow):
         self.combo_parity = QComboBox()
         self.combo_parity.addItems(["None (N)","Even (E)","Odd (O)"])
         rg.addWidget(self.combo_parity, 2, 1, 1, 2)
+        rg.setColumnStretch(1, 1)
         self.grp_rtu.setLayout(rg); lay.addWidget(self.grp_rtu)
 
         # TCP
@@ -357,6 +423,7 @@ class MainWindow(QMainWindow):
         self.spin_slave = QSpinBox(); self.spin_slave.setRange(1,247)
         self.spin_slave.setValue(1)
         sg.addWidget(self.spin_slave, 0, 1)
+        sg.setColumnStretch(1, 1)
         slave_grp.setLayout(sg); lay.addWidget(slave_grp)
 
         # Connect button + LED
@@ -531,6 +598,8 @@ class MainWindow(QMainWindow):
         self.lbl_min.setStyleSheet(f"color: #D32F2F; {info_style}")
         g.addWidget(self.lbl_min, 4, 1)
 
+        g.setColumnStretch(1, 1)
+        g.setColumnStretch(3, 1)
         grp.setLayout(g)
         return grp
 
@@ -549,8 +618,8 @@ class MainWindow(QMainWindow):
             max_window_s=DEFAULT_TIME_WINDOW_S,
         )
         
-        # Thêm toolbar giống draw_plot.py
-        self.toolbar = NavigationToolbar(self.plot, self)
+        # Thêm CustomToolbar thay vì NavigationToolbar mặc định
+        self.toolbar = CustomToolbar(self.plot, self)
         self.toolbar.setMaximumHeight(32)
         lay.addWidget(self.toolbar)
         lay.addWidget(self.plot)
