@@ -1,0 +1,28 @@
+{
+  "connection": {
+    "mode": "RTU",
+    "port": "COM1",
+    "baudrate": 9600,
+    "parity": "N",
+    "stopbits": 1,
+    "bytesize": 8,
+    "timeout": 0.5,
+    "ip": "192.168.1.100",
+    "tcp_port": 502,
+    "slave_id": 1
+  },
+  "device": {
+    "measure_unit": 5,
+    "measure_type": 0,
+    "cell_full_scale": 50.0,
+    "cell_sensitivity": 2.0,
+    "filter_level": 3,
+    "calib_mode": 0,
+    "slave_id": 1
+  },
+  "ui": {
+    "interval_ms": 100,
+    "window_s": 60,
+    "dark_theme": false
+  }
+}
