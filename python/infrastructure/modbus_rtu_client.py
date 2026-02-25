@@ -5,6 +5,7 @@ Implement IModbusClient cho giao thức Modbus RTU (RS-232/RS-485).
 Tất cả phụ thuộc pymodbus được gói gọn tại đây – Application Layer không biết.
 """
 
+import threading
 import logging
 from typing import Optional
 
@@ -58,56 +59,78 @@ class ModbusRtuClient(IModbusClient):
             **_RTU_KWARGS(port, baudrate, parity, stopbits, bytesize, timeout)
         )
         self._connected = False
+        self._lock = threading.Lock()  # Lock để tránh xung đột giữa polling thread và UI thread
         logger.info(f"ModbusRtuClient: Khởi tạo cổng {port} @ {baudrate} baud")
 
     def connect(self) -> bool:
-        try:
-            self._connected = self._client.connect()
-            if self._connected:
-                logger.info(f"ModbusRtuClient: Kết nối thành công {self._port}")
-            else:
-                logger.warning(f"ModbusRtuClient: Không thể kết nối {self._port}")
-            return self._connected
-        except Exception as e:
-            logger.error(f"ModbusRtuClient: Lỗi connect: {e}")
-            self._connected = False
-            return False
+        with self._lock:
+            try:
+                self._connected = self._client.connect()
+                if self._connected:
+                    logger.info(f"ModbusRtuClient: Kết nối thành công {self._port}")
+                else:
+                    logger.warning(f"ModbusRtuClient: Không thể kết nối {self._port}")
+                return self._connected
+            except Exception as e:
+                logger.error(f"ModbusRtuClient: Lỗi connect: {e}")
+                self._connected = False
+                return False
 
     def disconnect(self) -> None:
-        try:
-            self._client.close()
-        except Exception:
-            pass
-        self._connected = False
-        logger.info("ModbusRtuClient: Đã ngắt kết nối")
+        with self._lock:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+            self._connected = False
+            logger.info("ModbusRtuClient: Đã ngắt kết nối")
 
     def is_connected(self) -> bool:
         return self._connected
 
     def read_register(self, address: int, slave_id: int = 1) -> Optional[int]:
-        try:
-            result = self._client.read_holding_registers(address, 1, **{_SLAVE_KWARG: slave_id})
-            if result and hasattr(result, 'registers'):
-                return result.registers[0]
-            return None
-        except Exception as e:
-            logger.debug(f"ModbusRtuClient read_register({address}): {e}")
-            return None
+        with self._lock:
+            try:
+                result = self._client.read_holding_registers(address, 1, **{_SLAVE_KWARG: slave_id})
+                if result and hasattr(result, 'registers'):
+                    return result.registers[0]
+                return None
+            except Exception as e:
+                logger.debug(f"ModbusRtuClient read_register({address}): {e}")
+                return None
 
     def read_registers(self, address: int, count: int, slave_id: int = 1) -> Optional[list]:
-        try:
-            result = self._client.read_holding_registers(address, count, **{_SLAVE_KWARG: slave_id})
-            if result and hasattr(result, 'registers') and len(result.registers) >= count:
-                return list(result.registers)
-            return None
-        except Exception as e:
-            logger.debug(f"ModbusRtuClient read_registers({address},{count}): {e}")
-            return None
+        with self._lock:
+            try:
+                result = self._client.read_holding_registers(address, count, **{_SLAVE_KWARG: slave_id})
+                if result and hasattr(result, 'registers') and len(result.registers) >= count:
+                    return list(result.registers)
+                return None
+            except Exception as e:
+                logger.debug(f"ModbusRtuClient read_registers({address},{count}): {e}")
+                return None
 
     def write_register(self, address: int, value: int, slave_id: int = 1) -> bool:
-        try:
-            result = self._client.write_register(address, int(value), **{_SLAVE_KWARG: slave_id})
-            return result is not None and not hasattr(result, 'isError')
-        except Exception as e:
-            logger.debug(f"ModbusRtuClient write_register({address},{value}): {e}")
-            return False
+        with self._lock:
+            try:
+                result = self._client.write_register(address, int(value), **{_SLAVE_KWARG: slave_id})
+                if result is None: return False
+                if hasattr(result, 'isError'):
+                    return not result.isError() if callable(result.isError) else not result.isError
+                return True
+            except Exception as e:
+                logger.debug(f"ModbusRtuClient write_register({address},{value}): {e}")
+                return False
+
+    def write_registers(self, address: int, values: list, slave_id: int = 1) -> bool:
+        with self._lock:
+            try:
+                result = self._client.write_registers(address, values, **{_SLAVE_KWARG: slave_id})
+                if result is None: return False
+                if hasattr(result, 'isError'):
+                    return not result.isError() if callable(result.isError) else not result.isError
+                return True
+            except Exception as e:
+                logger.debug(f"ModbusRtuClient write_registers({address},{values}): {e}")
+                return False
+

@@ -47,6 +47,7 @@ def main():
         def read_register(self, a, s=1): return None
         def read_registers(self, a, c, s=1): return None
         def write_register(self, a, v, s=1): return False
+        def write_registers(self, a, vs, s=1): return False
 
     null_client = _NullModbusClient()
 

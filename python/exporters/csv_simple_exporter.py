@@ -33,12 +33,11 @@ class CsvSimpleExporter(IDataExporter):
         try:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Time (s)', 'Torque (Nm)', 'Stable'])
+                writer.writerow(['Time (s)', 'Torque (Nm)'])
                 for s in session.samples:
                     writer.writerow([
                         f"{s.time_s:.6f}",
-                        f"{s.torque_Nm:.6f}",
-                        '1' if s.stable else '0'
+                        f"{s.torque_Nm:.6f}"
                     ])
             logger.info(f"CsvSimpleExporter: Đã xuất {len(session.samples)} mẫu → {file_path}")
             return True

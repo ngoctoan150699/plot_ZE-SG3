@@ -16,6 +16,9 @@ REG_MEASURE_TYPE      = 3    # 40004: 0=Bipolar, 1=Unipolar (RW)
 REG_ANALOG_OUT_TYPE   = 4    # 40005: Loại đầu ra Analog (RW)
 REG_DIO_TYPE          = 5    # 40006: Digital I/O type/mode (RW)
 REG_CALIB_MODE        = 6    # 40007: 0=Factory, 1=Standard Weight (RW)
+REG_ADDRESS           = 8    # 40009: Station Address (1..247) (RW)
+REG_BAUD              = 9    # 40010: Baud Rate Index (0..7) (RW)
+REG_PARITY            = 10   # 40011: Parity (0:None, 1:Even, 2:Odd) (RW)
 
 REG_CELL_SENS_HI      = 13   # 40014: Cell Sensitivity MSW (Float32, mV/V)
 REG_CELL_SENS_LO      = 14   # 40015: Cell Sensitivity LSW
@@ -30,6 +33,9 @@ REG_DELTA_TIME        = 31   # 40032: Thời gian giữ ổn định (×100ms)
 
 REG_FILTER_LEVEL      = 42   # 40043: Mức lọc 0-6 (2ms-850ms), 7=Advanced (RW)
 REG_RESOLUTION_MODE   = 43   # 40044: 0=Auto, 1=Manual, 2=Max (RW)
+
+REG_ADC_SPS           = 34   # 40035: ADC Sampling Rate Index (0..6) (RW)
+                             # 0=960Hz, 1=300Hz, 2=150Hz, 3=100Hz, 4=60Hz, 5=12Hz, 6=4.7Hz
 
 REG_ADC_16BIT_FILT    = 62   # 40063: ADC 16-bit đã lọc (RO)
 REG_NET_WEIGHT_HI     = 63   # 40064: Net Weight MSW (Float32, RO)
@@ -106,6 +112,36 @@ FILTER_LABELS = {
     7: '7 – Advanced (điều chỉnh động)',
 }
 
+# === TẦN SỐ LẤY MẪU ADC (REG_ADC_SPS = 40035) ===
+SPS_LABELS = {
+    0: '960 Hz (Nhanh nhất)',
+    1: '300 Hz',
+    2: '150 Hz',
+    3: '100 Hz',
+    4: '60 Hz',
+    5: '12 Hz',
+    6: '4.7 Hz (Chậm nhất)',
+}
+
+# === CẤU HÌNH TRUYỀN THÔNG (REG_BAUD / REG_PARITY) ===
+BAUD_LABELS = {
+    0: '1200 bps',
+    1: '2400 bps',
+    2: '4800 bps',
+    3: '9600 bps',
+    4: '19200 bps',
+    5: '38400 bps',
+    6: '57600 bps',
+    7: '115200 bps',
+}
+
+PARITY_LABELS = {
+    0: 'None',
+    1: 'Even',
+    2: 'Odd',
+    3: 'None (2 stop bits)'
+}
+
 # === MẶC ĐỊNH CHO CẢM BIẾN DYJN-101 50Nm ===
 DEFAULT_MEASURE_UNIT        = 5      # N (Newton)
 DEFAULT_MEASURE_TYPE        = 0      # Bipolar (cả nén lẫn căng)
@@ -120,4 +156,4 @@ DEFAULT_SLAVE_ID            = 1
 DEFAULT_BAUDRATE            = 9600
 DEFAULT_TCP_PORT            = 502
 DEFAULT_TCP_IP              = "192.168.1.100"
-MODBUS_TIMEOUT_S            = 0.5
+MODBUS_TIMEOUT_S            = 1.5

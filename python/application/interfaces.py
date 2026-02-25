@@ -51,6 +51,13 @@ class IModbusClient(ABC):
         Trả về True nếu thành công.
         """
 
+    @abstractmethod
+    def write_registers(self, address: int, values: list, slave_id: int = 1) -> bool:
+        """
+        Ghi nhiều Holding Registers liên tiếp (Preset Multiple Registers).
+        Trả về True nếu thành công.
+        """
+
     def read_float32(self, address_hi: int, slave_id: int = 1) -> Optional[float]:
         """
         Đọc 2 Holding Registers liên tiếp và giải mã thành Float32 IEEE 754 (MSW first).
@@ -69,17 +76,16 @@ class IModbusClient(ABC):
     def write_float32(self, address_hi: int, value: float, slave_id: int = 1) -> bool:
         """
         Chuyển Float32 thành 2 Holding Registers và ghi lên thiết bị (MSW first).
-        Phương thức tiện ích, không cần override.
+        Phương thức tiện ích, dùng write_registers để ghi 1 lần tránh race condition.
         """
         import struct
         try:
             packed = struct.pack('>f', value)
-            hi, lo = struct.unpack('>HH', packed)
-            ok1 = self.write_register(address_hi, hi, slave_id)
-            ok2 = self.write_register(address_hi + 1, lo, slave_id)
-            return ok1 and ok2
+            regs = list(struct.unpack('>HH', packed))
+            return self.write_registers(address_hi, regs, slave_id)
         except Exception:
             return False
+
 
 
 class IDataExporter(ABC):

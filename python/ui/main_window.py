@@ -39,6 +39,7 @@ from application.interfaces import IDataExporter, ISettingsRepository
 from domain.constants import (
     CMD_RESTART, CMD_TARE, FILTER_LABELS, UNITS,
     DEFAULT_SAMPLE_INTERVAL_MS, DEFAULT_TIME_WINDOW_S,
+    BAUD_LABELS, PARITY_LABELS, SPS_LABELS
 )
 from domain.entities import (
     ConnectionConfig, DeviceConfig, DeviceStatus,
@@ -51,66 +52,66 @@ logger = logging.getLogger(__name__)
 # ===================== THEMES =====================
 DARK_STYLE = """
 QMainWindow, QWidget {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
+    background-color: #181820;
+    color: #b0b8c8;
     font-family: 'Segoe UI', sans-serif;
     font-size: 10pt;
 }
 QGroupBox {
-    border: 1px solid #45475a;
+    border: 1px solid #2a2a3a;
     border-radius: 6px;
     margin-top: 10px;
     padding: 8px;
-    color: #cba6f7;
+    color: #8888aa;
     font-weight: bold;
 }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 QPushButton {
-    background: #313244;
-    border: 1px solid #585b70;
+    background: #22222e;
+    border: 1px solid #33334a;
     border-radius: 5px;
     padding: 6px 14px;
-    color: #cdd6f4;
+    color: #b0b8c8;
 }
-QPushButton:hover  { background: #45475a; border-color: #89b4fa; }
-QPushButton:pressed { background: #181825; }
-QPushButton:disabled { color: #585b70; background: #24273a; }
+QPushButton:hover  { background: #2c2c40; border-color: #5577aa; }
+QPushButton:pressed { background: #151520; }
+QPushButton:disabled { color: #444455; background: #1c1c28; }
 QComboBox, QSpinBox, QDoubleSpinBox {
-    background: #313244;
-    border: 1px solid #585b70;
+    background: #1e1e2a;
+    border: 1px solid #33334a;
     border-radius: 4px;
     padding: 4px 6px;
-    color: #cdd6f4;
+    color: #b0b8c8;
 }
 QComboBox::drop-down { border: none; width: 20px; }
 QComboBox QAbstractItemView {
-    background: #313244;
-    color: #cdd6f4;
-    selection-background-color: #45475a;
+    background: #1e1e2a;
+    color: #b0b8c8;
+    selection-background-color: #2c2c40;
 }
-QTabWidget::pane { border: 1px solid #45475a; border-radius: 4px; }
+QTabWidget::pane { border: 1px solid #2a2a3a; border-radius: 4px; }
 QTabBar::tab {
-    background: #313244;
-    color: #a6adc8;
+    background: #1e1e2a;
+    color: #777889;
     padding: 7px 16px;
     border-radius: 4px 4px 0 0;
     margin-right: 2px;
 }
-QTabBar::tab:selected { background: #45475a; color: #cba6f7; font-weight: bold; }
-QTabBar::tab:hover:!selected { background: #3d3f56; }
+QTabBar::tab:selected { background: #2a2a3a; color: #7aa2f7; font-weight: bold; }
+QTabBar::tab:hover:!selected { background: #252535; }
 QTextEdit {
-    background: #11111b;
-    color: #a6e3a1;
-    border: 1px solid #313244;
+    background: #121218;
+    color: #6faa6f;
+    border: 1px solid #222230;
     font-family: Consolas, monospace;
     font-size: 9pt;
 }
 QCheckBox { spacing: 6px; }
-QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #585b70; background: #313244; }
-QCheckBox::indicator:checked { background: #89b4fa; border-color: #89b4fa; }
-QSplitter::handle { background: #45475a; width: 2px; }
-QScrollBar:vertical { background: #1e1e2e; width: 10px; border-radius: 5px; }
-QScrollBar::handle:vertical { background: #45475a; border-radius: 5px; min-height: 20px; }
+QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #33334a; background: #1e1e2a; }
+QCheckBox::indicator:checked { background: #5577aa; border-color: #5577aa; }
+QSplitter::handle { background: #2a2a3a; width: 2px; }
+QScrollBar:vertical { background: #181820; width: 10px; border-radius: 5px; }
+QScrollBar::handle:vertical { background: #2a2a3a; border-radius: 5px; min-height: 20px; }
 """
 
 LIGHT_STYLE = """
@@ -281,10 +282,12 @@ class MainWindow(QMainWindow):
         self._connected   = False
         self._recording   = False
         self._session     = RecordingSession()
+        self._last_status: Optional[DeviceStatus] = None # Lưu status cuối cùng
         self._start_time  = 0.0
         self._ref_time    = 0.0     # Thời gian gốc cho biểu đồ
         self._only_stable = True
         self._chk_stable_only: Optional[QCheckBox] = None
+        self._chart_paused = False  # Trạng thái đóng băng biểu đồ
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
@@ -319,32 +322,40 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
 
-        # --- Left Panel (Scrollable) ---
-        left_container = QWidget()
-        left_lay = QVBoxLayout(left_container)
-        left_lay.setContentsMargins(0, 0, 4, 0)
-        left_lay.setSpacing(10)
+        # --- Left Panel ---
+        left_panel = QWidget()
+        left_panel_lay = QVBoxLayout(left_panel)
+        left_panel_lay.setContentsMargins(0, 0, 4, 0)
+        left_panel_lay.setSpacing(6)
 
-        # 1. Tabs control
+        # 1. Real-time Data Info (Sticky at top)
+        self.display_panel = self._build_display_group()
+        left_panel_lay.addWidget(self.display_panel)
+
+        # 2. Scrollable Settings Area
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setMinimumWidth(380)
+        
+        scroll_content = QWidget()
+        scroll_lay = QVBoxLayout(scroll_content)
+        scroll_lay.setContentsMargins(0, 0, 5, 0)
+        scroll_lay.setSpacing(10)
+
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_connection_tab(), "🔌 Kết nối")
         self.tabs.addTab(self._build_config_tab(), "⚙️ Cấu hình")
         self.tabs.addTab(self._build_acquisition_tab(), "📈 Thu thập")
-        self.tabs.addTab(self._build_settings_tab(), "🎨 Giao diện")
-        left_lay.addWidget(self.tabs)
-        
-        # 2. Data Info (Moved from right to left to match draw_plot.py)
-        self.display_panel = self._build_display_group()
-        left_lay.addWidget(self.display_panel)
-        
-        left_lay.addStretch() # Đẩy mọi thứ lên trên
+        scroll_lay.addWidget(self.tabs)
+        scroll_lay.addStretch()
 
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setWidget(left_container)
-        left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setMinimumWidth(380)
-        left_scroll.setMaximumWidth(600)
+        left_scroll.setWidget(scroll_content)
+        left_panel_lay.addWidget(left_scroll)
+
+        # Restrict left panel width
+        left_panel.setMinimumWidth(390)
+        left_panel.setMaximumWidth(600)
 
         # --- Right Panel ---
         right = QWidget()
@@ -352,11 +363,18 @@ class MainWindow(QMainWindow):
         right_lay.setContentsMargins(6, 0, 0, 0)
         right_lay.setSpacing(10)
         
-        # Right side now only has Chart and Log
+        # Right side now only has Chart, Log, and Theme toggle
         right_lay.addWidget(self._build_chart_group(), stretch=1)
         right_lay.addWidget(self._build_log_group())
+        
+        # Theme toggle button (compact, below log)
+        self.btn_toggle_theme = QPushButton()
+        self._update_theme_btn_text()
+        self.btn_toggle_theme.setFixedHeight(30)
+        self.btn_toggle_theme.clicked.connect(self._toggle_theme)
+        right_lay.addWidget(self.btn_toggle_theme)
 
-        splitter.addWidget(left_scroll)
+        splitter.addWidget(left_panel)
         splitter.addWidget(right)
         splitter.setSizes([420, 900])
         splitter.setCollapsible(0, False)
@@ -445,57 +463,78 @@ class MainWindow(QMainWindow):
 
     # --- Config Tab ---
     def _build_config_tab(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        grp = QGroupBox("📊 Cảm biến")
-        g = QGridLayout()
-
-        g.addWidget(QLabel("Đơn vị đo:"), 0, 0)
+        w = QWidget(); main_lay = QVBoxLayout(w)
+        
+        # 1. Nhóm Cảm biến & Hiệu chuẩn
+        sensor_grp = QGroupBox("📊 Cảm biến & Hiệu chuẩn")
+        sg = QGridLayout()
+        
+        sg.addWidget(QLabel("Đơn vị đo:"), 0, 0)
         self.combo_unit = QComboBox()
-        for k, v in UNITS.items():
-            self.combo_unit.addItem(f"{k}: {v}", k)
-        g.addWidget(self.combo_unit, 0, 1)
+        for k, v in UNITS.items(): self.combo_unit.addItem(f"{k}: {v}", k)
+        sg.addWidget(self.combo_unit, 0, 1)
 
-        g.addWidget(QLabel("Chế độ đo:"), 1, 0)
+        sg.addWidget(QLabel("Chế độ đo:"), 1, 0)
         self.combo_mtype = QComboBox()
-        self.combo_mtype.addItems(["0: Bipolar (2 chiều ↕)", "1: Unipolar (1 chiều ↑)"])
-        g.addWidget(self.combo_mtype, 1, 1)
+        self.combo_mtype.addItems(["0: Bipolar (2 chiều)", "1: Unipolar (1 chiều)"])
+        sg.addWidget(self.combo_mtype, 1, 1)
 
-        g.addWidget(QLabel("Full Scale:"), 2, 0)
+        sg.addWidget(QLabel("Full Scale:"), 2, 0)
         self.spin_fs = QDoubleSpinBox()
-        self.spin_fs.setRange(0.1, 10000); self.spin_fs.setDecimals(1)
-        g.addWidget(self.spin_fs, 2, 1)
+        self.spin_fs.setRange(0.1, 1000000); self.spin_fs.setDecimals(2); self.spin_fs.setValue(50.0)
+        sg.addWidget(self.spin_fs, 2, 1)
 
-        g.addWidget(QLabel("Sensitivity (mV/V):"), 3, 0)
+        sg.addWidget(QLabel("Sensitivity (mV/V):"), 3, 0)
         self.spin_sens = QDoubleSpinBox()
-        self.spin_sens.setRange(0.001, 10); self.spin_sens.setDecimals(4)
-        g.addWidget(self.spin_sens, 3, 1)
+        self.spin_sens.setRange(0.001, 100); self.spin_sens.setDecimals(4); self.spin_sens.setValue(2.0)
+        sg.addWidget(self.spin_sens, 3, 1)
 
-        g.addWidget(QLabel("Lọc nhiễu:"), 4, 0)
+        sg.addWidget(QLabel("Standard Weight:"), 4, 0)
+        self.spin_std_w = QDoubleSpinBox()
+        self.spin_std_w.setRange(0, 1000000); self.spin_std_w.setDecimals(2)
+        sg.addWidget(self.spin_std_w, 4, 1)
+
+        sg.addWidget(QLabel("Nguồn hiệu chuẩn:"), 5, 0)
+        self.combo_calib = QComboBox()
+        self.combo_calib.addItems(["0: Factory (Mặc định)", "1: Standard Weight (Vật mẫu)"])
+        sg.addWidget(self.combo_calib, 5, 1)
+
+        sensor_grp.setLayout(sg); main_lay.addWidget(sensor_grp)
+
+        # 2. Nhóm Ổn định & Lọc
+        stable_grp = QGroupBox("🛡️ Ổn định & Lọc")
+        stg = QGridLayout()
+
+        stg.addWidget(QLabel("Mức lọc nhiễu:"), 0, 0)
         self.combo_filter = QComboBox()
-        for k, v in FILTER_LABELS.items():
-            self.combo_filter.addItem(v, k)
-        g.addWidget(self.combo_filter, 4, 1)
+        for k, v in FILTER_LABELS.items(): self.combo_filter.addItem(v, k)
+        stg.addWidget(self.combo_filter, 0, 1)
 
-        grp.setLayout(g); lay.addWidget(grp)
+        stg.setContentsMargins(8, 12, 8, 8)
+        stg.setSpacing(6)
+        stable_grp.setLayout(stg)
+        main_lay.addWidget(stable_grp)
 
+
+        # Buttons
         btn_row = QHBoxLayout()
         btn_write = QPushButton("📝 Ghi cấu hình")
         btn_write.clicked.connect(self._write_config)
         btn_read  = QPushButton("📖 Đọc từ thiết bị")
         btn_read.clicked.connect(self._read_config)
         btn_row.addWidget(btn_write); btn_row.addWidget(btn_read)
-        lay.addLayout(btn_row)
+        main_lay.addLayout(btn_row)
 
-        cmd_grp = QGroupBox("⚡ Lệnh")
+        cmd_grp = QGroupBox("⚡ Lệnh nhanh")
         cg = QHBoxLayout()
         btn_tare = QPushButton("⚖️ Tare (Zero)")
         btn_tare.clicked.connect(self._do_tare)
-        btn_rst  = QPushButton("🔄 Restart")
+        btn_rst  = QPushButton("🔄 Restart Device")
         btn_rst.clicked.connect(self._do_restart)
         cg.addWidget(btn_tare); cg.addWidget(btn_rst)
-        cmd_grp.setLayout(cg); lay.addWidget(cmd_grp)
+        cmd_grp.setLayout(cg); main_lay.addWidget(cmd_grp)
 
-        lay.addStretch()
+        main_lay.addStretch()
         return w
 
     # --- Acquisition Tab ---
@@ -506,26 +545,33 @@ class MainWindow(QMainWindow):
         sg = QGridLayout()
         sg.addWidget(QLabel("Chu kỳ (ms):"), 0, 0)
         self.spin_interval = QSpinBox()
-        self.spin_interval.setRange(10, 5000)
+        self.spin_interval.setRange(1, 10000)
         self.spin_interval.setValue(DEFAULT_SAMPLE_INTERVAL_MS)
-        self.spin_interval.valueChanged.connect(
-            lambda v: self._collector.set_interval(v)
-        )
+        self.spin_interval.editingFinished.connect(self._on_acquisition_settings_changed)
         sg.addWidget(self.spin_interval, 0, 1)
         sg.addWidget(QLabel("Cửa sổ biểu đồ (s):"), 1, 0)
         self.spin_window = QSpinBox()
         self.spin_window.setRange(10, 600); self.spin_window.setValue(60)
-        self.spin_window.valueChanged.connect(
-            lambda v: setattr(self.plot, 'max_window_s', v)
-        )
+        self.spin_window.editingFinished.connect(self._on_acquisition_settings_changed)
         sg.addWidget(self.spin_window, 1, 1)
-        self._chk_stable_only = QCheckBox("Chỉ ghi mẫu khi ổn định")
-        self._chk_stable_only.setChecked(True)
-        sg.addWidget(self._chk_stable_only, 2, 0, 1, 2)
+
+        # --- Y Axis Scale ---
+        sg.addWidget(QLabel("Giới hạn Y (Nm):"), 2, 0)
+        self.spin_ymax = QDoubleSpinBox()
+        self.spin_ymax.setRange(0.1, 10000); self.spin_ymax.setDecimals(1)
+        self.spin_ymax.setValue(5.0)
+        self.spin_ymax.valueChanged.connect(lambda _: self._update_plot_limits())
+        sg.addWidget(self.spin_ymax, 2, 1)
+
+        self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
+        self.chk_fixed_y.setChecked(True)
+        self.chk_fixed_y.toggled.connect(lambda _: self._update_plot_limits())
+        sg.addWidget(self.chk_fixed_y, 3, 0, 1, 2)
         sample_grp.setLayout(sg); lay.addWidget(sample_grp)
 
         rec_grp = QGroupBox("🔴 Ghi dữ liệu")
-        rg = QHBoxLayout()
+        rg = QVBoxLayout()
+        btns = QHBoxLayout()
         self.btn_rec_start = QPushButton("▶️ Bắt đầu ghi")
         self._update_rec_start_btn_style()
         self.btn_rec_start.clicked.connect(self._start_recording)
@@ -533,7 +579,14 @@ class MainWindow(QMainWindow):
         self._update_rec_stop_btn_style()
         self.btn_rec_stop.clicked.connect(self._stop_recording)
         self.btn_rec_stop.setEnabled(False)
-        rg.addWidget(self.btn_rec_start); rg.addWidget(self.btn_rec_stop)
+        btns.addWidget(self.btn_rec_start); btns.addWidget(self.btn_rec_stop)
+        rg.addLayout(btns)
+
+        self.btn_rec_clear = QPushButton("🗑️ Xóa dữ liệu mẫu")
+        self._update_rec_clear_btn_style()
+        self.btn_rec_clear.clicked.connect(self._clear_samples)
+        self.btn_rec_clear.setEnabled(False)
+        rg.addWidget(self.btn_rec_clear)
         rec_grp.setLayout(rg); lay.addWidget(rec_grp)
 
         export_grp = QGroupBox("💾 Xuất dữ liệu")
@@ -624,49 +677,41 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.toolbar)
         lay.addWidget(self.plot)
 
+        btn_row = QHBoxLayout()
+        self.btn_pause_chart = QPushButton("⏸ Dừng vẽ")
+        self.btn_pause_chart.setCheckable(True)
+        self.btn_pause_chart.toggled.connect(self._toggle_pause_chart)
+        btn_row.addWidget(self.btn_pause_chart)
+
         btn_clear = QPushButton("🗑️ Xóa biểu đồ")
         btn_clear.clicked.connect(self._clear_chart)
-        lay.addWidget(btn_clear)
+        btn_row.addWidget(btn_clear)
+        
+        lay.addLayout(btn_row)
         grp.setLayout(lay)
         return grp
 
+    def _toggle_pause_chart(self, checked: bool):
+        self._chart_paused = checked
+        if checked:
+            self.btn_pause_chart.setText("▶️ Tiếp tục vẽ")
+            self._log("⏸ Đã tạm dừng cập nhật Torque-Time")
+        else:
+            self.btn_pause_chart.setText("⏸ Dừng vẽ")
+            self._log("▶️ Tiếp tục cập nhật Torque-Time")
 
-    # --- Settings Tab (Giao diện / Theme) ---
-    def _build_settings_tab(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
 
-        theme_grp = QGroupBox("🎨 Giao diện")
-        tg = QVBoxLayout()
-
-        self.btn_toggle_theme = QPushButton()
-        self._update_theme_btn_text()
-        self.btn_toggle_theme.setMinimumHeight(44)
-        self.btn_toggle_theme.clicked.connect(self._toggle_theme)
-        tg.addWidget(self.btn_toggle_theme)
-
-        info = QLabel(
-            "Chế độ Sáng tương tự giao diện ứng dụng draw_plot.py\n"
-            "Chế độ Tối phù hợp môi trường ánh sáng yếu"
-        )
-        info.setWordWrap(True)
-        info.setStyleSheet("color: gray; font-size: 9pt;")
-        tg.addWidget(info)
-
-        theme_grp.setLayout(tg)
-        lay.addWidget(theme_grp)
-        lay.addStretch()
-        return w
 
     def _update_theme_btn_text(self):
         if self._is_dark:
-            self.btn_toggle_theme.setText("☀️  Chuyển sang Giao diện Sáng")
+            self.btn_toggle_theme.setText("☀️  Giao diện Sáng")
             self.btn_toggle_theme.setStyleSheet(
-                "background:#fab387; color:#1e1031; font-weight:bold; border-radius:6px;"
+                "background:#2a2a3a; color:#b0b8c8; font-size:9pt; border-radius:4px; border:1px solid #33334a;"
             )
         else:
-            self.btn_toggle_theme.setText("🌙  Chuyển sang Giao diện Tối")
+            self.btn_toggle_theme.setText("🌙  Giao diện Tối")
             self.btn_toggle_theme.setStyleSheet(
-                "background:#1e1e2e; color:#cdd6f4; font-weight:bold; border-radius:6px;"
+                "background:#e0e0e0; color:#333; font-size:9pt; border-radius:4px; border:1px solid #ccc;"
             )
 
     def _toggle_theme(self):
@@ -682,15 +727,21 @@ class MainWindow(QMainWindow):
         """Áp dụng Dark hoặc Light theme cho toàn app + cập nhật màu chart."""
         self.setStyleSheet(DARK_STYLE if dark else LIGHT_STYLE)
         
-        # Cập nhật màu sắc cho các label thông số (đồng nhất với draw_plot.py ở mode sáng)
-        torque_color = "#89dceb" if dark else "#1976D2"
-        max_color    = "#a6e3a1" if dark else "#1976D2"
-        min_color    = "#f38ba8" if dark else "#D32F2F"
+        # Cập nhật màu sắc cho các label thông số
+        torque_color = "#7aa2f7" if dark else "#1976D2"
+        max_color    = "#6faa6f" if dark else "#1976D2"
+        min_color    = "#c07070" if dark else "#D32F2F"
         
         if hasattr(self, 'lbl_torque'):
             self.lbl_torque.setStyleSheet(f"color: {torque_color};")
             self.lbl_max.setStyleSheet(f"color: {max_color}; font-weight: bold; font-size: 14px;")
             self.lbl_min.setStyleSheet(f"color: {min_color}; font-weight: bold; font-size: 14px;")
+
+        # Cập nhật style nút ghi (vì có màu riêng)
+        if hasattr(self, 'btn_rec_start'):
+            self._update_rec_start_btn_style()
+            self._update_rec_stop_btn_style()
+            self._update_rec_clear_btn_style()
 
         # Cập nhật màu chart theo theme
         if hasattr(self, 'plot'):
@@ -700,16 +751,16 @@ class MainWindow(QMainWindow):
         ax = self.plot.ax
         fig = self.plot.fig
         if dark:
-            fig.patch.set_facecolor('#1e1e2e')
-            ax.set_facecolor('#252535')
-            ax.tick_params(colors='#cccccc')
-            ax.title.set_color('#ffffff')
-            ax.xaxis.label.set_color('#cccccc')
-            ax.yaxis.label.set_color('#cccccc')
-            ax.grid(True, alpha=0.25, color='#555577')
+            fig.patch.set_facecolor('#181820')
+            ax.set_facecolor('#1a1a24')
+            ax.tick_params(colors='#777788')
+            ax.title.set_color('#9999aa')
+            ax.xaxis.label.set_color('#777788')
+            ax.yaxis.label.set_color('#777788')
+            ax.grid(True, alpha=0.15, color='#444455')
             for spine in ax.spines.values():
-                spine.set_edgecolor('#444466')
-            self.plot.line.set_color('#89dceb')
+                spine.set_edgecolor('#2a2a3a')
+            self.plot.line.set_color('#5588cc')
         else:
             fig.patch.set_facecolor('#f5f5f5')
             ax.set_facecolor('#ffffff')
@@ -755,6 +806,11 @@ class MainWindow(QMainWindow):
         text_color = "white" if not self._is_dark else "#1e1e2e"
         self.btn_rec_stop.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
 
+    def _update_rec_clear_btn_style(self):
+        color = "#757575" if not self._is_dark else "#45475a" # Gray
+        text_color = "white" if not self._is_dark else "#cdd6f4"
+        self.btn_rec_clear.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
+
     # ===========================================================
     # LOAD / SAVE SETTINGS
 
@@ -774,20 +830,29 @@ class MainWindow(QMainWindow):
         self.spin_tcp_port.setValue(c.tcp_port)
         self.spin_slave.setValue(c.slave_id)
 
-        # Device
+        # Device (Config Tab)
         d = self._dev_cfg
         self.combo_unit.setCurrentIndex(d.measure_unit)
         self.combo_mtype.setCurrentIndex(d.measure_type)
+        self.combo_filter.setCurrentIndex(d.filter_level)
+        
         self.spin_fs.setValue(d.cell_full_scale)
         self.spin_sens.setValue(d.cell_sensitivity)
-        self.combo_filter.setCurrentIndex(d.filter_level)
-
-        # UI settings
+        self.spin_std_w.setValue(d.std_weight)
+        
+        # UI settings (Acquisition / Plot)
         ui = self._settings.load_ui_settings()
         if 'interval_ms' in ui:
             self.spin_interval.setValue(int(ui['interval_ms']))
         if 'window_s' in ui:
             self.spin_window.setValue(int(ui['window_s']))
+        if 'y_max' in ui:
+            self.spin_ymax.setValue(float(ui['y_max']))
+        if 'fixed_y' in ui:
+            self.chk_fixed_y.setChecked(bool(ui['fixed_y']))
+        
+        # Apply initial plot limits
+        self._update_plot_limits()
 
     def _save_settings_from_ui(self):
         parity_map = {0:'N', 1:'E', 2:'O'}
@@ -803,18 +868,66 @@ class MainWindow(QMainWindow):
         self._settings.save_connection_config(conn)
 
         dev = DeviceConfig(
-            measure_unit=self.combo_unit.currentData(),
+            measure_unit=self.combo_unit.currentData() if self.combo_unit.currentData() is not None else 5,
             measure_type=self.combo_mtype.currentIndex(),
+            filter_level=self.combo_filter.currentData() if self.combo_filter.currentData() is not None else 3,
+            
             cell_full_scale=self.spin_fs.value(),
             cell_sensitivity=self.spin_sens.value(),
-            filter_level=self.combo_filter.currentData(),
+            std_weight=self.spin_std_w.value(),
+            
+            # Giữ nguyên cấu hình cũ cho các thông số không còn trên UI
+            analog_out_type=self._dev_cfg.analog_out_type,
+            dio_type=self._dev_cfg.dio_type,
+            calib_mode=self._dev_cfg.calib_mode,
+            delta_weight=self._dev_cfg.delta_weight,
+            delta_time=self._dev_cfg.delta_time,
+            adc_sps=self._dev_cfg.adc_sps,
+            resolution_mode=self._dev_cfg.resolution_mode,
+            factory_tare=self._dev_cfg.factory_tare,
+            
+            target_address=self._dev_cfg.target_address,
+            target_baud=self._dev_cfg.target_baud,
+            target_parity=self._dev_cfg.target_parity,
+            
             slave_id=self.spin_slave.value(),
         )
         self._settings.save_device_config(dev)
         self._settings.save_ui_settings({
             'interval_ms': self.spin_interval.value(),
             'window_s':    self.spin_window.value(),
+            'y_max':       self.spin_ymax.value(),
+            'fixed_y':     self.chk_fixed_y.isChecked(),
         })
+
+    def _update_plot_limits(self):
+        """Cập nhật giới hạn trục Y của biểu đồ dựa trên UI."""
+        if self.chk_fixed_y.isChecked():
+            limit = self.spin_ymax.value()
+            # Sử dụng logic mới: giới hạn tối thiểu là [-limit, limit]
+            self.plot.set_y_limits(limit)
+        else:
+            self.plot.set_y_limits(None)
+
+    def _on_acquisition_settings_changed(self):
+        """Áp dụng và lưu cài đặt thu thập ngay lập tức khi thay đổi trên UI."""
+        interval = self.spin_interval.value()
+        window = self.spin_window.value()
+        
+        # 1. Áp dụng ngay vào logic đang chạy
+        self._collector.set_interval(interval)
+        self.plot.max_window_s = window
+        if self._recording:
+            self._session.sample_interval_ms = interval
+        
+        # 2. Lưu lại vào file settings.json (nếu đã init UI xong)
+        if hasattr(self, '_settings'):
+             ui = self._settings.load_ui_settings()
+             ui['interval_ms'] = interval
+             ui['window_s'] = window
+             ui['y_max'] = self.spin_ymax.value()
+             ui['fixed_y'] = self.chk_fixed_y.isChecked()
+             self._settings.save_ui_settings(ui)
 
     # ===========================================================
     # CONNECTION
@@ -909,6 +1022,7 @@ class MainWindow(QMainWindow):
 
     def _on_status_received(self, status: DeviceStatus):
         """Gọi từ main thread (qua Qt signal). Cập nhật UI live."""
+        self._last_status = status  # Lưu trạng thái mới nhất
         elapsed = time.monotonic() - self._ref_time
 
         # Cập nhật giá trị hiện tại
@@ -931,26 +1045,30 @@ class MainWindow(QMainWindow):
             self.lbl_stable.setStyleSheet(f"color: {color};")
 
 
-        # Chart luôn update (không cần đang ghi)
-        self.plot.add_point(elapsed, status.net_weight)
+        # Chart update (nếu không đang PAUSE)
+        if not self._chart_paused:
+            self.plot.add_point(elapsed, status.net_weight)
 
         # Ghi session nếu đang recording
         if self._recording:
-            rec_time = time.monotonic() - self._start_time
-            record_ok = (
-                not self._chk_stable_only.isChecked()
-                or status.is_stable
-            )
-            if record_ok:
+            interval_s = self._session.sample_interval_ms / 1000.0
+            elapsed_time = time.monotonic() - self._start_time
+            expected_samples = int(elapsed_time / interval_s)
+            
+            # Tự động sinh thêm các mẫu bị thiếu để đảm bảo đúng tần số yêu cầu
+            # (Ví dụ 2ms -> đúng 500 mẫu/giây) bằng cách dùng giá trị gần nhất
+            while self._session.count <= expected_samples:
+                rec_time = self._session.count * interval_s
                 sample = SampleData(
                     time_s=rec_time,
-                    torque_Nm=status.net_weight,
+                    torque_Nm=status.net_weight, # Lặp lại giá trị mới nhất
                     stable=status.is_stable,
                     timestamp=time.time(),
                 )
                 self._session.samples.append(sample)
-                self.lbl_count.setText(str(self._session.count))
-            self.lbl_rectime.setText(f"{rec_time:.1f} s")
+                
+            self.lbl_count.setText(str(self._session.count))
+            self.lbl_rectime.setText(f"{elapsed_time:.3f} s")
 
     def _on_error(self, msg: str):
         self._log(f"⚠️ {msg}")
@@ -964,38 +1082,93 @@ class MainWindow(QMainWindow):
     def _write_config(self):
         if not self._connected:
             self._log("⚠️ Chưa kết nối"); return
-        cfg = DeviceConfig(
-            measure_unit=self.combo_unit.currentData(),
-            measure_type=self.combo_mtype.currentIndex(),
-            cell_full_scale=self.spin_fs.value(),
-            cell_sensitivity=self.spin_sens.value(),
-            filter_level=self.combo_filter.currentData(),
-            slave_id=self.spin_slave.value(),
-        )
-        ok = self._config_svc.write_config(cfg)
-        self._log("✅ Đã ghi cấu hình" if ok else "❌ Ghi cấu hình thất bại")
-        if ok:
-            self._settings.save_device_config(cfg)
+            
+        try:
+            cfg = DeviceConfig(
+                measure_unit=self.combo_unit.currentData() if self.combo_unit.currentData() is not None else 5,
+                measure_type=self.combo_mtype.currentIndex(),
+                analog_out_type=self.combo_ana.currentIndex(),
+                dio_type=self.combo_dio.currentIndex(),
+                calib_mode=self.combo_calib.currentIndex(),
+                
+                cell_full_scale=self.spin_fs.value(),
+                cell_sensitivity=self.spin_sens.value(),
+                std_weight=self.spin_std_w.value(),
+                
+                delta_weight=self.spin_delta_w.value(),
+                delta_time=self.spin_delta_t.value(),
+                
+                filter_level=self.combo_filter.currentData() if self.combo_filter.currentData() is not None else 3,
+                resolution_mode=self.combo_res.currentIndex(),
+                factory_tare=self.spin_fac_tare.value(),
+                
+                target_address=self.spin_target_addr.value(),
+                target_baud=self.combo_target_baud.currentIndex(),
+                target_parity=self.combo_target_pari.currentIndex(),
+                
+                slave_id=self.spin_slave.value(),
+            )
+            
+            self._log("⏳ Đang ghi cấu hình...")
+            ok, failed_fields = self._config_svc.write_config(cfg)
+            
+            if ok:
+                self._log("✅ Đã ghi cấu hình thành công")
+                self._settings.save_device_config(cfg)
+                self._dev_cfg = cfg
+            else:
+                err_msg = ", ".join(failed_fields)
+                self._log(f"❌ Ghi thất bại tại: {err_msg}")
+        except Exception as e:
+            self._log(f"❌ Lỗi xử lý cấu hình: {e}")
 
     def _read_config(self):
         if not self._connected:
             self._log("⚠️ Chưa kết nối"); return
+        
         cfg = self._config_svc.read_config(self.spin_slave.value())
         if cfg:
             self.combo_unit.setCurrentIndex(cfg.measure_unit)
             self.combo_mtype.setCurrentIndex(cfg.measure_type)
+            self.combo_ana.setCurrentIndex(cfg.analog_out_type)
+            self.combo_dio.setCurrentIndex(cfg.dio_type)
+            self.combo_calib.setCurrentIndex(cfg.calib_mode)
+            
             self.spin_fs.setValue(cfg.cell_full_scale)
             self.spin_sens.setValue(cfg.cell_sensitivity)
+            self.spin_std_w.setValue(cfg.std_weight)
+            
+            self.spin_delta_w.setValue(cfg.delta_weight)
+            self.spin_delta_t.setValue(cfg.delta_time)
+            
             self.combo_filter.setCurrentIndex(cfg.filter_level)
-            self._log(f"📖 Đọc OK: Unit={cfg.measure_unit}, FS={cfg.cell_full_scale:.1f}, Sens={cfg.cell_sensitivity:.4f}, Filter={cfg.filter_level}")
+            self.combo_res.setCurrentIndex(cfg.resolution_mode)
+            self.spin_fac_tare.setValue(cfg.factory_tare)
+            
+            self.spin_target_addr.setValue(cfg.target_address)
+            self.combo_target_baud.setCurrentIndex(cfg.target_baud)
+            self.combo_target_pari.setCurrentIndex(cfg.target_parity)
+            
+            self._dev_cfg = cfg
+            self._log(f"📖 Đọc thành công: Unit={cfg.measure_unit}, FS={cfg.cell_full_scale:.2f}, Sens={cfg.cell_sensitivity:.4f}")
         else:
-            self._log("❌ Không đọc được cấu hình")
+            self._log("❌ Không đọc được cấu hình từ thiết bị")
 
     def _do_tare(self):
         if not self._connected:
             self._log("⚠️ Chưa kết nối"); return
+        
+        # Check ổn định từ manual Seneca ZE-SG3 (nên tare khi stable)
+        if self._last_status and not self._last_status.is_stable:
+            self._log("⚠️ Cảnh báo: Trọng lượng không ổn định. Lệnh Tare có thể bị thiết bị từ chối.")
+        
+        # CMD_TARE (49914) ghi vào Flash - bền vững nhưng chậm
+        # CMD_TARE_RAM (49594) ghi vào RAM - nhanh hơn, dùng cho tare thường xuyên
         ok = self._config_svc.send_command(CMD_TARE, self.spin_slave.value())
-        self._log("⚖️ Đã gửi lệnh Tare (49914 → Flash)" if ok else "❌ Lỗi Tare")
+        if ok:
+            self._log("⚖️ Đã gửi lệnh Tare (49914 → Flash)")
+        else:
+            self._log("❌ Lỗi Tare (Kiểm tra ổn định hoặc Timeout)")
 
     def _do_restart(self):
         if not self._connected:
@@ -1009,19 +1182,32 @@ class MainWindow(QMainWindow):
 
     def _start_recording(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
-        self._start_time = time.monotonic()
+        # Đồng bộ hóa cả hai loại đồng hồ
+        now_mono = time.monotonic()
+        self._session.start_time = now_mono
+        self._start_time = now_mono 
         self._recording = True
         self.btn_rec_start.setEnabled(False)
         self.btn_rec_stop.setEnabled(True)
+        self.btn_rec_clear.setEnabled(False)
         self.lbl_count.setText("0")
         self._log("▶️ Bắt đầu ghi dữ liệu")
 
     def _stop_recording(self):
-        self._session.end_time = time.time()
+        self._session.end_time = time.monotonic()
         self._recording = False
+        duration = self._session.end_time - self._session.start_time
         self.btn_rec_start.setEnabled(True)
         self.btn_rec_stop.setEnabled(False)
-        self._log(f"⏹ Đã dừng ghi – {self._session.count} mẫu, {self._session.duration_s:.1f}s")
+        self.btn_rec_clear.setEnabled(True)
+        self._log(f"⏹ Đã dừng ghi – {self._session.count} mẫu, {duration:.1f}s")
+
+    def _clear_samples(self):
+        self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
+        self.lbl_count.setText("0")
+        self.lbl_rectime.setText("0.0 s")
+        self.btn_rec_clear.setEnabled(False)
+        self._log("🗑️ Đã xóa dữ liệu mẫu")
 
     # ===========================================================
     # EXPORT

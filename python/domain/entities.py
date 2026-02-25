@@ -13,15 +13,32 @@ from typing import List
 class DeviceConfig:
     """
     Cấu hình của cảm biến và bộ khuếch đại ZE-SG3.
-    Tương ứng với các thanh ghi: 40003, 40004, 40014-17, 40043.
+    Tương ứng với các thanh ghi: 40003-40011, 40014-40019, 40030-40032, 40043-40044, 40076-40077.
     """
-    measure_unit: int   = 5      # 5 = N (Newton), xem UNITS dict trong constants.py
-    measure_type: int   = 0      # 0 = Bipolar, 1 = Unipolar
-    cell_full_scale: float = 50.0   # Float32 – tầm đo tối đa (đơn vị theo measure_unit)
-    cell_sensitivity: float = 2.0   # Float32 – độ nhạy mV/V
-    filter_level: int  = 3      # 0-6: thời gian lọc, 7=Advanced
-    calib_mode: int    = 0      # 0=Factory, 1=Standard Weight
-    slave_id: int      = 1      # Modbus Slave ID
+    measure_unit: int   = 5      # 40003: 5 = N (Newton)
+    measure_type: int   = 0      # 40004: 0 = Bipolar, 1 = Unipolar
+    analog_out_type: int = 0     # 40005: 0=0..20mA, 1=4..20mA, 2=0..5V, 3=0..10V, v.v.
+    dio_type: int       = 0      # 40006: Digital I/O mode
+    calib_mode: int     = 0      # 40007: 0=Factory, 1=Standard Weight
+    
+    # RS485 Comm Settings (Software override)
+    target_address: int  = 1      # 40009: Station ID
+    target_baud: int     = 5      # 40010: Index (5=38400)
+    target_parity: int   = 0      # 40011: 0=None
+    
+    cell_sensitivity: float = 2.0   # 40014-15: mV/V
+    cell_full_scale: float = 50.0   # 40016-17: Giá trị toàn thang
+    std_weight: float      = 0.0    # 40018-19: Trọng lượng hiệu chuẩn
+    
+    delta_weight: float    = 0.01   # 40030-31: Ngưỡng ổn định
+    delta_time: int        = 10     # 40032: Thời gian giữ ổn định (x100ms)
+    
+    filter_level: int      = 3      # 40043: Mức lọc nhiễu 0-7
+    resolution_mode: int   = 0      # 40044: Độ phân giải 0=Auto, 1=Manual, 2=Max
+    
+    factory_tare: float    = 0.0    # 40076-77: Tare gán cứng (manual)
+    adc_sps: int           = 3      # 40035: Tần số lấy mẫu (3=100Hz)
+    slave_id: int          = 1      # Modbus Slave ID
 
     def validate(self) -> bool:
         """Kiểm tra tính hợp lệ của cấu hình."""
