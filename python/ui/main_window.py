@@ -23,8 +23,8 @@ from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, 
-    QSplitter, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QSplitter, QTabWidget, QTextEdit, QVBoxLayout, QWidget, QToolButton,
 )
 
 import serial.tools.list_ports
@@ -52,66 +52,67 @@ logger = logging.getLogger(__name__)
 # ===================== THEMES =====================
 DARK_STYLE = """
 QMainWindow, QWidget {
-    background-color: #181820;
-    color: #b0b8c8;
+    background-color: #1e1e2e;
+    color: #cdd6f4;
     font-family: 'Segoe UI', sans-serif;
     font-size: 10pt;
 }
 QGroupBox {
-    border: 1px solid #2a2a3a;
+    border: 1px solid #45475a;
     border-radius: 6px;
     margin-top: 10px;
     padding: 8px;
-    color: #8888aa;
+    color: #89b4fa;
     font-weight: bold;
 }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 QPushButton {
-    background: #22222e;
-    border: 1px solid #33334a;
+    background: #313244;
+    border: 1px solid #45475a;
     border-radius: 5px;
     padding: 6px 14px;
-    color: #b0b8c8;
+    color: #cdd6f4;
 }
-QPushButton:hover  { background: #2c2c40; border-color: #5577aa; }
-QPushButton:pressed { background: #151520; }
-QPushButton:disabled { color: #444455; background: #1c1c28; }
+QPushButton:hover  { background: #45475a; border-color: #89b4fa; }
+QPushButton:pressed { background: #585b70; }
+QPushButton:disabled { color: #6c7086; background: #181825; }
 QComboBox, QSpinBox, QDoubleSpinBox {
-    background: #1e1e2a;
-    border: 1px solid #33334a;
+    background: #181825;
+    border: 1px solid #45475a;
     border-radius: 4px;
     padding: 4px 6px;
-    color: #b0b8c8;
+    color: #cdd6f4;
 }
 QComboBox::drop-down { border: none; width: 20px; }
 QComboBox QAbstractItemView {
-    background: #1e1e2a;
-    color: #b0b8c8;
-    selection-background-color: #2c2c40;
+    background: #181825;
+    color: #cdd6f4;
+    selection-background-color: #45475a;
 }
-QTabWidget::pane { border: 1px solid #2a2a3a; border-radius: 4px; }
+QTabWidget::pane { border: 1px solid #45475a; border-radius: 4px; }
 QTabBar::tab {
-    background: #1e1e2a;
-    color: #777889;
-    padding: 7px 16px;
+    background: #181825;
+    color: #a6adc8;
+    padding: 6px 10px;
     border-radius: 4px 4px 0 0;
     margin-right: 2px;
 }
-QTabBar::tab:selected { background: #2a2a3a; color: #7aa2f7; font-weight: bold; }
-QTabBar::tab:hover:!selected { background: #252535; }
+QTabBar::tab:selected { background: #313244; color: #89b4fa; font-weight: bold; border-top: 2px solid #89b4fa;}
+QTabBar::tab:hover:!selected { background: #313244; }
 QTextEdit {
-    background: #121218;
-    color: #6faa6f;
-    border: 1px solid #222230;
+    background: #11111b;
+    color: #a6e3a1;
+    border: 1px solid #313244;
     font-family: Consolas, monospace;
     font-size: 9pt;
 }
 QCheckBox { spacing: 6px; }
-QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #33334a; background: #1e1e2a; }
-QCheckBox::indicator:checked { background: #5577aa; border-color: #5577aa; }
-QSplitter::handle { background: #2a2a3a; width: 2px; }
-QScrollBar:vertical { background: #181820; width: 10px; border-radius: 5px; }
-QScrollBar::handle:vertical { background: #2a2a3a; border-radius: 5px; min-height: 20px; }
+QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #45475a; background: #181825; }
+QCheckBox::indicator:checked { background: #89b4fa; border-color: #89b4fa; }
+QSplitter::handle { background: #313244; width: 2px; }
+QScrollBar:vertical { background: #181825; width: 10px; border-radius: 5px; }
+QScrollBar::handle:vertical { background: #45475a; border-radius: 5px; min-height: 20px; }
+QScrollBar::handle:vertical:hover { background: #585b70; }
 """
 
 LIGHT_STYLE = """
@@ -159,9 +160,9 @@ QTabWidget::pane { border: 1px solid #e0e0e0; border-radius: 4px; background: #f
 QTabBar::tab {
     background: #e0e0e0;
     color: #757575;
-    padding: 8px 20px;
+    padding: 6px 10px;
     border-radius: 6px 6px 0 0;
-    margin-right: 4px;
+    margin-right: 2px;
 }
 QTabBar::tab:selected { 
     background: #ffffff; 
@@ -197,9 +198,16 @@ class CustomToolbar(NavigationToolbar):
         
         # 1. Loại bỏ nút 'Configure subplots'
         actions = self.actions()
+        # Các từ khóa cần loại bỏ (ví dụ 'Configure subplots', 'Customize', 'Figure options')
+        blacklist = ('subplot', 'configure', 'custom', 'figure', 'options', 'edit')
         for action in actions:
-            if 'subplot' in action.toolTip().lower() or action.text() == 'Subplots':
-                self.removeAction(action)
+            tip = (action.toolTip() or '').lower()
+            txt = (action.text() or '').lower()
+            if any(k in tip or k in txt for k in blacklist):
+                try:
+                    self.removeAction(action)
+                except Exception:
+                    pass
         
         # 2. Thêm nút 'Zoom Out'
         self.zoom_out_act = QAction("Zoom Out", self)
@@ -311,57 +319,74 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle("Seneca ZE-SG3 – Torque Acquisition (DYJN-101 50Nm)")
-        self.setGeometry(80, 80, 1320, 860)
-        self.setMinimumSize(1000, 700)
+        self.setGeometry(80, 80, 1280, 820)
+        self.setMinimumSize(960, 650)
 
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(6)
+        # Nới lề tổng thể để panel trái không bị dính sát mép cửa sổ
+        main_layout.setContentsMargins(12, 10, 12, 10)
+        main_layout.setSpacing(8)
 
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(10)  # tạo khe rõ ràng giữa panel trái/phải
+        # Lưu splitter để có thể điều khiển kích thước khi cửa sổ hiện
+        self.splitter = splitter
 
         # --- Left Panel ---
         left_panel = QWidget()
         left_panel_lay = QVBoxLayout(left_panel)
-        left_panel_lay.setContentsMargins(0, 0, 4, 0)
+        left_panel_lay.setContentsMargins(6, 6, 6, 6)
         left_panel_lay.setSpacing(6)
 
         # 1. Real-time Data Info (Sticky at top)
         self.display_panel = self._build_display_group()
         left_panel_lay.addWidget(self.display_panel)
 
-        # 2. Scrollable Settings Area
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setMinimumWidth(380)
-        
-        scroll_content = QWidget()
-        scroll_lay = QVBoxLayout(scroll_content)
-        scroll_lay.setContentsMargins(0, 0, 5, 0)
-        scroll_lay.setSpacing(10)
-
+        # 2. Tab widget đặt trực tiếp (không qua QScrollArea để tránh bị cắt nội dung)
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_connection_tab(), "🔌 Kết nối")
         self.tabs.addTab(self._build_config_tab(), "⚙️ Cấu hình")
         self.tabs.addTab(self._build_acquisition_tab(), "📈 Thu thập")
-        scroll_lay.addWidget(self.tabs)
-        scroll_lay.addStretch()
+        left_panel_lay.addWidget(self.tabs, stretch=1)
 
-        left_scroll.setWidget(scroll_content)
-        left_panel_lay.addWidget(left_scroll)
+        # 3. Connection Status and Button (Sticky at bottom)
+        conn_bottom_widget = QWidget()
+        conn_bottom_lay = QVBoxLayout(conn_bottom_widget)
+        conn_bottom_lay.setContentsMargins(2, 4, 2, 2)
+        conn_bottom_lay.setSpacing(4)
+        
+        btn_row = QHBoxLayout()
+        self.led_label = QLabel("●")
+        self.led_label.setObjectName("led_off")
+        self.led_label.setFont(QFont('Segoe UI', 10))
+        btn_row.addWidget(self.led_label)
+        
+        self.btn_connect = QPushButton("🔗 Kết nối")
+        self._update_connect_btn_style()
+        self.btn_connect.clicked.connect(self._toggle_connect)
+        self.btn_connect.setMinimumHeight(32)
+        self.btn_connect.setFont(QFont('Segoe UI', 10, QFont.Bold))
+        btn_row.addWidget(self.btn_connect, stretch=1)
+        
+        conn_bottom_lay.addLayout(btn_row)
+        
+        self.lbl_conn_status = QLabel("⚪ Chưa kết nối")
+        self.lbl_conn_status.setStyleSheet("color: #757575;") 
+        conn_bottom_lay.addWidget(self.lbl_conn_status)
 
-        # Restrict left panel width
-        left_panel.setMinimumWidth(390)
-        left_panel.setMaximumWidth(600)
+        left_panel_lay.addWidget(conn_bottom_widget)
+
+        # Allow left panel to expand dynamically; user can still drag to resize
+        left_panel.setMinimumWidth(300)
+        left_panel.setMaximumWidth(16777215)
 
         # --- Right Panel ---
         right = QWidget()
         right_lay = QVBoxLayout(right)
-        right_lay.setContentsMargins(6, 0, 0, 0)
-        right_lay.setSpacing(10)
+        right_lay.setContentsMargins(4, 0, 0, 0)
+        right_lay.setSpacing(6)
         
         # Right side now only has Chart, Log, and Theme toggle
         right_lay.addWidget(self._build_chart_group(), stretch=1)
@@ -376,23 +401,48 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right)
-        splitter.setSizes([420, 900])
+        splitter.setSizes([310, 970])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
         
         main_layout.addWidget(splitter)
+
+    def showEvent(self, event):
+        """Set initial splitter sizes as a proportion of the window width on first show.
+
+        This ensures the left panel occupies a sensible fraction (e.g. 35%)
+        of the window when the app starts, avoiding clipped controls.
+        """
+        super().showEvent(event)
+        try:
+            total = max(800, self.width())
+            left_w = int(total * 0.35)
+            right_w = max(300, total - left_w)
+            # Apply sizes to splitter
+            if hasattr(self, 'splitter'):
+                self.splitter.setSizes([left_w, right_w])
+        except Exception:
+            pass
 
 
 
     # --- Connection Tab ---
     def _build_connection_tab(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(8)
 
         # Protocol selector
         proto_grp = QGroupBox("🔌 Giao thức")
         pg = QGridLayout()
+        pg.setContentsMargins(8, 10, 8, 8)
+        pg.setSpacing(6)
         pg.addWidget(QLabel("Loại:"), 0, 0)
         self.combo_proto = QComboBox()
+        self.combo_proto.setSizeAdjustPolicy(QComboBox.AdjustToContents) # Proto thì tĩnh và ngắn, kệ nó
         self.combo_proto.addItems(["Modbus RTU", "Modbus TCP"])
         self.combo_proto.currentTextChanged.connect(self._on_proto_changed)
         pg.addWidget(self.combo_proto, 0, 1)
@@ -402,10 +452,23 @@ class MainWindow(QMainWindow):
         # RTU
         self.grp_rtu = QGroupBox("📡 RTU (RS-485)")
         rg = QGridLayout()
+        rg.setContentsMargins(8, 10, 8, 8)
+        rg.setSpacing(6)
         rg.addWidget(QLabel("COM Port:"), 0, 0)
-        self.combo_com = QComboBox(); self.combo_com.setMinimumWidth(140)
+        self.combo_com = QComboBox()
+        self.combo_com.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_com.setMinimumContentsLength(10)
         rg.addWidget(self.combo_com, 0, 1)
-        btn_scan = QPushButton("🔄"); btn_scan.setMaximumWidth(36)
+        # Use a QToolButton with system reload icon to avoid emoji clipping
+        btn_scan = QToolButton()
+        btn_scan.setAutoRaise(True)
+        btn_scan.setToolTip("Làm mới COM ports")
+        try:
+            icon = QApplication.style().standardIcon(QStyle.SP_BrowserReload)
+        except Exception:
+            icon = QApplication.style().standardIcon(QStyle.SP_DialogResetButton)
+        btn_scan.setIcon(icon)
+        btn_scan.setFixedSize(30, 28)
         btn_scan.clicked.connect(self._scan_com_ports)
         rg.addWidget(btn_scan, 0, 2)
         rg.addWidget(QLabel("Baudrate:"), 1, 0)
@@ -437,6 +500,8 @@ class MainWindow(QMainWindow):
         # Slave ID
         slave_grp = QGroupBox("📋 Slave")
         sg = QGridLayout()
+        sg.setContentsMargins(8, 10, 8, 8)
+        sg.setSpacing(6)
         sg.addWidget(QLabel("Slave ID:"), 0, 0)
         self.spin_slave = QSpinBox(); self.spin_slave.setRange(1,247)
         self.spin_slave.setValue(1)
@@ -444,39 +509,35 @@ class MainWindow(QMainWindow):
         sg.setColumnStretch(1, 1)
         slave_grp.setLayout(sg); lay.addWidget(slave_grp)
 
-        # Connect button + LED
-        btn_row = QHBoxLayout()
-        self.led_label = QLabel("●"); self.led_label.setObjectName("led_off")
-        btn_row.addWidget(self.led_label)
-        self.btn_connect = QPushButton("🔗 Kết nối")
-        self._update_connect_btn_style()
-        self.btn_connect.clicked.connect(self._toggle_connect)
-        btn_row.addWidget(self.btn_connect, stretch=1)
-
-        lay.addLayout(btn_row)
-        self.lbl_conn_status = QLabel("⚪ Chưa kết nối")
-        lay.addWidget(self.lbl_conn_status)
-
         lay.addStretch()
         self._scan_com_ports()
         return w
 
     # --- Config Tab ---
     def _build_config_tab(self) -> QWidget:
-        w = QWidget(); main_lay = QVBoxLayout(w)
-        
+        w = QWidget()
+        main_lay = QVBoxLayout(w)
+        main_lay.setContentsMargins(8, 8, 8, 8)
+        main_lay.setSpacing(8)
+
         # 1. Nhóm Cảm biến & Hiệu chuẩn
         sensor_grp = QGroupBox("📊 Cảm biến & Hiệu chuẩn")
         sg = QGridLayout()
-        
+        sg.setContentsMargins(8, 10, 8, 8)
+        sg.setSpacing(6)
+
         sg.addWidget(QLabel("Đơn vị đo:"), 0, 0)
         self.combo_unit = QComboBox()
+        self.combo_unit.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_unit.setMinimumContentsLength(5)
         for k, v in UNITS.items(): self.combo_unit.addItem(f"{k}: {v}", k)
         sg.addWidget(self.combo_unit, 0, 1)
 
         sg.addWidget(QLabel("Chế độ đo:"), 1, 0)
         self.combo_mtype = QComboBox()
-        self.combo_mtype.addItems(["0: Bipolar (2 chiều)", "1: Unipolar (1 chiều)"])
+        self.combo_mtype.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_mtype.setMinimumContentsLength(10)
+        self.combo_mtype.addItems(["0: 2 chiều (+/-)", "1: 1 chiều (+)"])
         sg.addWidget(self.combo_mtype, 1, 1)
 
         sg.addWidget(QLabel("Full Scale:"), 2, 0)
@@ -496,7 +557,9 @@ class MainWindow(QMainWindow):
 
         sg.addWidget(QLabel("Nguồn hiệu chuẩn:"), 5, 0)
         self.combo_calib = QComboBox()
-        self.combo_calib.addItems(["0: Factory (Mặc định)", "1: Standard Weight (Vật mẫu)"])
+        self.combo_calib.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_calib.setMinimumContentsLength(10)
+        self.combo_calib.addItems(["0: Factory", "1: Vật mẫu"])
         sg.addWidget(self.combo_calib, 5, 1)
 
         sensor_grp.setLayout(sg); main_lay.addWidget(sensor_grp)
@@ -507,6 +570,8 @@ class MainWindow(QMainWindow):
 
         stg.addWidget(QLabel("Mức lọc nhiễu:"), 0, 0)
         self.combo_filter = QComboBox()
+        self.combo_filter.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_filter.setMinimumContentsLength(10)
         for k, v in FILTER_LABELS.items(): self.combo_filter.addItem(v, k)
         stg.addWidget(self.combo_filter, 0, 1)
 
@@ -539,10 +604,15 @@ class MainWindow(QMainWindow):
 
     # --- Acquisition Tab ---
     def _build_acquisition_tab(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(8)
 
         sample_grp = QGroupBox("⏱️ Lấy mẫu")
         sg = QGridLayout()
+        sg.setContentsMargins(8, 10, 8, 8)
+        sg.setSpacing(6)
         sg.addWidget(QLabel("Chu kỳ (ms):"), 0, 0)
         self.spin_interval = QSpinBox()
         self.spin_interval.setRange(1, 10000)
@@ -579,6 +649,14 @@ class MainWindow(QMainWindow):
         self._update_rec_stop_btn_style()
         self.btn_rec_stop.clicked.connect(self._stop_recording)
         self.btn_rec_stop.setEnabled(False)
+        # Thêm nút Tare ở tab Thu thập để dễ truy cập
+        self.btn_tare_acq = QPushButton("⚖️ Tare")
+        # Slightly larger and more prominent
+        self.btn_tare_acq.setFixedHeight(36)
+        self.btn_tare_acq.setMinimumWidth(100)
+        self.btn_tare_acq.setStyleSheet("font-size:11pt; font-weight:600;")
+        self.btn_tare_acq.clicked.connect(self._do_tare)
+        btns.addWidget(self.btn_tare_acq)
         btns.addWidget(self.btn_rec_start); btns.addWidget(self.btn_rec_stop)
         rg.addLayout(btns)
 
@@ -608,12 +686,12 @@ class MainWindow(QMainWindow):
         grp = QGroupBox("📊 Real-time Data Info")
         grp.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         g = QGridLayout()
-        g.setContentsMargins(10, 12, 10, 10)
-        g.setSpacing(8)
+        g.setContentsMargins(6, 8, 6, 6)
+        g.setSpacing(4)
 
         # Current Torque - Styled prominently but not excessively large
         self.lbl_torque = QLabel("0.000 Nm")
-        self.lbl_torque.setFont(QFont('Segoe UI', 18, QFont.Bold))
+        self.lbl_torque.setFont(QFont('Segoe UI', 14, QFont.Bold))
         self.lbl_torque.setStyleSheet("color: #1976D2;") 
         g.addWidget(QLabel("Torque:"), 0, 0)
         g.addWidget(self.lbl_torque, 0, 1, 1, 3)
@@ -639,7 +717,7 @@ class MainWindow(QMainWindow):
         g.addWidget(self.lbl_rectime, 2, 3)
 
         # Row 3: Max
-        info_style = "font-weight: bold; font-size: 14px;"
+        info_style = "font-weight: bold; font-size: 12px;"
         g.addWidget(QLabel("Maximum:"), 3, 0)
         self.lbl_max = QLabel("---")
         self.lbl_max.setStyleSheet(f"color: #1976D2; {info_style}")
@@ -706,7 +784,7 @@ class MainWindow(QMainWindow):
         if self._is_dark:
             self.btn_toggle_theme.setText("☀️  Giao diện Sáng")
             self.btn_toggle_theme.setStyleSheet(
-                "background:#2a2a3a; color:#b0b8c8; font-size:9pt; border-radius:4px; border:1px solid #33334a;"
+                "background:#313244; color:#cdd6f4; font-size:9pt; border-radius:4px; border:1px solid #45475a;"
             )
         else:
             self.btn_toggle_theme.setText("🌙  Giao diện Tối")
@@ -728,14 +806,18 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(DARK_STYLE if dark else LIGHT_STYLE)
         
         # Cập nhật màu sắc cho các label thông số
-        torque_color = "#7aa2f7" if dark else "#1976D2"
-        max_color    = "#6faa6f" if dark else "#1976D2"
-        min_color    = "#c07070" if dark else "#D32F2F"
+        torque_color = "#89b4fa" if dark else "#1976D2"
+        max_color    = "#a6e3a1" if dark else "#1976D2"
+        min_color    = "#f38ba8" if dark else "#D32F2F"
         
         if hasattr(self, 'lbl_torque'):
             self.lbl_torque.setStyleSheet(f"color: {torque_color};")
-            self.lbl_max.setStyleSheet(f"color: {max_color}; font-weight: bold; font-size: 14px;")
-            self.lbl_min.setStyleSheet(f"color: {min_color}; font-weight: bold; font-size: 14px;")
+            self.lbl_max.setStyleSheet(f"color: {max_color}; font-weight: bold; font-size: 12px;")
+            self.lbl_min.setStyleSheet(f"color: {min_color}; font-weight: bold; font-size: 12px;")
+
+        if hasattr(self, 'lbl_conn_status'):
+            status_color = "#a6adc8" if dark else "#757575"
+            self.lbl_conn_status.setStyleSheet(f"color: {status_color};")
 
         # Cập nhật style nút ghi (vì có màu riêng)
         if hasattr(self, 'btn_rec_start'):
@@ -751,16 +833,16 @@ class MainWindow(QMainWindow):
         ax = self.plot.ax
         fig = self.plot.fig
         if dark:
-            fig.patch.set_facecolor('#181820')
-            ax.set_facecolor('#1a1a24')
-            ax.tick_params(colors='#777788')
-            ax.title.set_color('#9999aa')
-            ax.xaxis.label.set_color('#777788')
-            ax.yaxis.label.set_color('#777788')
-            ax.grid(True, alpha=0.15, color='#444455')
+            fig.patch.set_facecolor('#1e1e2e')
+            ax.set_facecolor('#181825')
+            ax.tick_params(colors='#bac2de')
+            ax.title.set_color('#cdd6f4')
+            ax.xaxis.label.set_color('#bac2de')
+            ax.yaxis.label.set_color('#bac2de')
+            ax.grid(True, alpha=0.15, color='#a6adc8')
             for spine in ax.spines.values():
-                spine.set_edgecolor('#2a2a3a')
-            self.plot.line.set_color('#5588cc')
+                spine.set_edgecolor('#45475a')
+            self.plot.line.set_color('#89b4fa')
         else:
             fig.patch.set_facecolor('#f5f5f5')
             ax.set_facecolor('#ffffff')
@@ -944,7 +1026,7 @@ class MainWindow(QMainWindow):
         for p in sorted(ports, key=lambda x: x.device):
             self.combo_com.addItem(f"{p.device} – {p.description}", p.device)
         if not ports:
-            self.combo_com.addItem("(Không tìm thấy cổng COM)")
+            self.combo_com.addItem("(Trống)")
 
     def _toggle_connect(self):
         if self._connected:
