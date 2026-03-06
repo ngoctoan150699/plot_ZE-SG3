@@ -47,6 +47,16 @@ from domain.entities import (
 )
 from ui.widgets.realtime_plot import RealTimePlot
 
+# Plot Viewer & Converter (tái sử dụng từ draw_plot.py)
+import os
+import tempfile
+try:
+    from draw_plot import TorquePlotViewer
+    from convert_may_gui import ConvertWidget
+    _HAS_PLOT_VIEWER = True
+except ImportError:
+    _HAS_PLOT_VIEWER = False
+
 logger = logging.getLogger(__name__)
 
 # ===================== THEMES =====================
@@ -324,14 +334,25 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
-        # Nới lề tổng thể để panel trái không bị dính sát mép cửa sổ
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # === QTabWidget cấp cao nhất ===
+        self.main_tabs = QTabWidget()
+        self.main_tabs.setTabPosition(QTabWidget.North)
+        root_layout.addWidget(self.main_tabs)
+
+        # -----------------------------------------------
+        # Tab 0: Thu thập (toàn bộ layout cũ)
+        # -----------------------------------------------
+        acq_page = QWidget()
+        main_layout = QVBoxLayout(acq_page)
         main_layout.setContentsMargins(12, 10, 12, 10)
         main_layout.setSpacing(8)
 
         splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(10)  # tạo khe rõ ràng giữa panel trái/phải
-        # Lưu splitter để có thể điều khiển kích thước khi cửa sổ hiện
+        splitter.setHandleWidth(10)
         self.splitter = splitter
 
         # --- Left Panel ---
@@ -344,7 +365,7 @@ class MainWindow(QMainWindow):
         self.display_panel = self._build_display_group()
         left_panel_lay.addWidget(self.display_panel)
 
-        # 2. Tab widget đặt trực tiếp (không qua QScrollArea để tránh bị cắt nội dung)
+        # 2. Tab widget đặt trực tiếp
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_connection_tab(), "🔌 Kết nối")
         self.tabs.addTab(self._build_config_tab(), "⚙️ Cấu hình")
@@ -378,7 +399,6 @@ class MainWindow(QMainWindow):
 
         left_panel_lay.addWidget(conn_bottom_widget)
 
-        # Allow left panel to expand dynamically; user can still drag to resize
         left_panel.setMinimumWidth(300)
         left_panel.setMaximumWidth(16777215)
 
@@ -388,11 +408,9 @@ class MainWindow(QMainWindow):
         right_lay.setContentsMargins(4, 0, 0, 0)
         right_lay.setSpacing(6)
         
-        # Right side now only has Chart, Log, and Theme toggle
         right_lay.addWidget(self._build_chart_group(), stretch=1)
         right_lay.addWidget(self._build_log_group())
         
-        # Theme toggle button (compact, below log)
         self.btn_toggle_theme = QPushButton()
         self._update_theme_btn_text()
         self.btn_toggle_theme.setFixedHeight(30)
@@ -408,6 +426,30 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         
         main_layout.addWidget(splitter)
+
+        self.main_tabs.addTab(acq_page, "📡 Thu thập")
+
+        # -----------------------------------------------
+        # Tab 1 + 2: Plot Viewer + Converter
+        # -----------------------------------------------
+        if _HAS_PLOT_VIEWER:
+            # Plot Viewer: tạo TorquePlotViewer, chỉ lấy plot_tab (loại bỏ tab Converter bên trong)
+            self._plot_viewer = TorquePlotViewer()
+            plot_viewer_widget = QWidget()
+            pv_lay = QVBoxLayout(plot_viewer_widget)
+            pv_lay.setContentsMargins(0, 0, 0, 0)
+            # Lấy riêng plot_tab (không lấy toàn bộ tabs widget có chứa Converter)
+            pv_tab = self._plot_viewer.plot_tab
+            pv_tab.setParent(plot_viewer_widget)
+            pv_lay.addWidget(pv_tab)
+            self.main_tabs.addTab(plot_viewer_widget, "📊 Plot Viewer")
+
+            # Converter: tạo ConvertWidget instance
+            self._converter = ConvertWidget()
+            self.main_tabs.addTab(self._converter, "🔄 Converter")
+
+            # Kết nối Import Button của Converter rẽ sang Plot Viewer
+            self._converter.import_requested.connect(self._on_converter_import_requested)
 
     def showEvent(self, event):
         """Set initial splitter sizes as a proportion of the window width on first show.
@@ -665,6 +707,24 @@ class MainWindow(QMainWindow):
             eg.addWidget(btn)
 
         export_grp.setLayout(eg); lay.addWidget(export_grp)
+
+        # --- Import to Plot Viewer / Converter ---
+        if _HAS_PLOT_VIEWER:
+            import_grp = QGroupBox("📥 Import dữ liệu sang công cụ khác")
+            ig = QVBoxLayout()
+            ig.setSpacing(6)
+
+            btn_to_plot = QPushButton("📊 Import to Plot Viewer")
+            btn_to_plot.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+            btn_to_plot.clicked.connect(self._import_to_plot_viewer)
+            ig.addWidget(btn_to_plot)
+
+            btn_to_conv = QPushButton("🔄 Import to Converter")
+            btn_to_conv.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;")
+            btn_to_conv.clicked.connect(self._import_to_converter)
+            ig.addWidget(btn_to_conv)
+
+            import_grp.setLayout(ig); lay.addWidget(import_grp)
 
         lay.addStretch()
         return w
@@ -1346,6 +1406,75 @@ class MainWindow(QMainWindow):
         if path:
             ok = exporter.export(self._session, path)
             self._log(f"💾 Xuất {'thành công' if ok else 'thất bại'}: {path}")
+
+    # ===========================================================
+    # IMPORT TO PLOT VIEWER / CONVERTER
+    # ===========================================================
+
+    def _export_session_to_temp_csv(self) -> str:
+        """Export session hiện tại ra file CSV tạm (CTR format) để import vào tool khác."""
+        if not self._session.samples:
+            return ""
+        # Tìm exporter CTR
+        ctr_exp = None
+        for exp in self._exporters:
+            if "CTR" in exp.display_name:
+                ctr_exp = exp
+                break
+        if ctr_exp is None and self._exporters:
+            ctr_exp = self._exporters[0]
+        if ctr_exp is None:
+            return ""
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        tmp_dir = tempfile.gettempdir()
+        tmp_path = os.path.join(tmp_dir, f"ze_sg3_session_{ts}.csv")
+        ok = ctr_exp.export(self._session, tmp_path)
+        return tmp_path if ok else ""
+
+    def _import_to_plot_viewer(self):
+        """Export session CSV → load vào Plot Viewer → nhảy sang tab."""
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+            self._log("⚠️ Plot Viewer chưa sẵn sàng"); return
+        if not self._session.samples:
+            self._log("⚠️ Không có dữ liệu để import"); return
+        tmp = self._export_session_to_temp_csv()
+        if not tmp:
+            self._log("⚠️ Xuất CSV tạm thất bại"); return
+        ok = self._plot_viewer.load_file_from_path(tmp)
+        if ok:
+            self.main_tabs.setCurrentIndex(1)  # Tab Plot Viewer
+            self._log(f"📊 Đã import {self._session.count} mẫu sang Plot Viewer")
+        else:
+            self._log("⚠️ Import sang Plot Viewer thất bại")
+
+    def _import_to_converter(self):
+        """Export session CSV → load vào Converter → nhảy sang tab."""
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_converter'):
+            self._log("⚠️ Converter chưa sẵn sàng"); return
+        if not self._session.samples:
+            self._log("⚠️ Không có dữ liệu để import"); return
+        tmp = self._export_session_to_temp_csv()
+        if not tmp:
+            self._log("⚠️ Xuất CSV tạm thất bại"); return
+        try:
+            self._converter.input_file = tmp
+            self._converter.input_path_label.setText(tmp)
+            self._converter.load_input_file(tmp)
+            self._converter.btn_convert.setEnabled(True)
+            self._converter.output_folder = os.path.dirname(tmp)
+            self._converter.output_folder_label.setText(self._converter.output_folder)
+            self._converter.update_output_filename()
+            self.main_tabs.setCurrentIndex(2)  # Tab Converter
+            self._log(f"🔄 Đã import {self._session.count} mẫu sang Converter")
+        except Exception as e:
+            self._log(f"⚠️ Import sang Converter thất bại: {e}")
+
+    def _on_converter_import_requested(self, path: str):
+        """Được gọi khi người dùng bấm Import to Plot Viewer trong tab Converter."""
+        if hasattr(self, '_plot_viewer'):
+            self._plot_viewer.load_file_from_path_signal(path)
+            self.main_tabs.setCurrentIndex(1)  # Tab Plot Viewer
+            self._log(f"📊 Đã import Dữ liệu Converter ({os.path.basename(path)}) vào Plot Viewer")
 
     # ===========================================================
     # UTIL

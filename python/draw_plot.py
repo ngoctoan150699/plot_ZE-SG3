@@ -819,22 +819,13 @@ class TorquePlotViewer(QMainWindow):
         """Initialize UI"""
         self.setWindowTitle("CSV Torque Plot Viewer")
         self.setGeometry(100, 100, 1450, 950)
-        # Tabs
-        self.tabs = QTabWidget()
-        self.setCentralWidget(self.tabs)
         
-        # Tab 1: Plot Viewer
+        # Plot Viewer as central widget
         self.plot_tab = QWidget()
-        self.tabs.addTab(self.plot_tab, "Plot Viewer")
+        self.setCentralWidget(self.plot_tab)
         
-        # Use plot_tab as the container for existing UI
         central = self.plot_tab
         main_layout = QVBoxLayout(central)
-
-        # Tab 2: Converter
-        self.convert_tab = ConvertWidget()
-        self.tabs.addTab(self.convert_tab, "Converter")
-        self.convert_tab.import_requested.connect(self.load_file_from_path_signal)
         main_layout.setContentsMargins(6, 6, 6, 6)
         main_layout.setSpacing(6)
         
@@ -1804,8 +1795,7 @@ class TorquePlotViewer(QMainWindow):
 
     def load_file_from_path_signal(self, path):
         """Slot to handle import from signal."""
-        if self.load_file_from_path(path):
-            self.tabs.setCurrentIndex(0) # Switch back to plot tab
+        self.load_file_from_path(path)
 
     def load_file_from_path(self, path):
         """Add a CSV file from path as a sample."""
