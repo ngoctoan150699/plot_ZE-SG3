@@ -153,3 +153,69 @@ class ConfigService:
         except Exception as e:
             logger.error(f"ConfigService: Lỗi gửi lệnh: {e}")
             return False
+
+    def tare_ram(self, slave_id: int = 1) -> bool:
+        """
+        Lấy Tare lưu vào RAM (mất khi restart).
+        Nhanh hơn Flash Tare, phù hợp cho tare thường xuyên.
+        """
+        from domain.constants import CMD_TARE_RAM
+        return self.send_command(CMD_TARE_RAM, slave_id)
+
+    def tare_flash(self, slave_id: int = 1) -> bool:
+        """
+        Lấy Tare lưu vào Flash (bền vững, không mất khi restart).
+        """
+        from domain.constants import CMD_TARE
+        return self.send_command(CMD_TARE, slave_id)
+
+    def calibrate_with_sample_weight(
+        self, std_weight: float, slave_id: int = 1
+    ) -> bool:
+        """
+        Quy trình hiệu chuẩn bằng vật mẫu (Standard Weight Calibration).
+        
+        Bước 1 (do user thực hiện trước khi gọi hàm này): Tare khi chưa có tải
+        Bước 2: Ghi giá trị vật mẫu vào register 40018-19
+        Bước 3: Gửi lệnh hiệu chuẩn mẫu (CMD 50700) → Flash
+        
+        Trả về True nếu cả 2 bước đều thành công.
+        """
+        from domain.constants import (
+            REG_STD_WEIGHT_HI, REG_CALIB_MODE, CMD_SAMPLE_CALIB
+        )
+        try:
+            # 1. Đặt chế độ hiệu chuẩn sang Standard Weight (1)
+            ok_mode = self._client.write_register(REG_CALIB_MODE, 1, slave_id)
+            if not ok_mode:
+                logger.error("ConfigService: Không thể đặt chế độ hiệu chuẩn Standard Weight")
+                return False
+
+            # 2. Ghi giá trị vật mẫu vào register
+            ok_weight = self._client.write_float32(REG_STD_WEIGHT_HI, std_weight, slave_id)
+            if not ok_weight:
+                logger.error("ConfigService: Không thể ghi giá trị vật mẫu")
+                return False
+
+            # 3. Gửi lệnh hiệu chuẩn (50700) → lưu Flash
+            ok_cmd = self.send_command(CMD_SAMPLE_CALIB, slave_id)
+            if not ok_cmd:
+                logger.error("ConfigService: Lệnh hiệu chuẩn mẫu thất bại")
+                return False
+
+            logger.info(f"ConfigService: Hiệu chuẩn mẫu thành công (std_weight={std_weight})")
+            return True
+
+        except Exception as e:
+            logger.error(f"ConfigService: Lỗi hiệu chuẩn mẫu: {e}")
+            return False
+
+    def reset_max(self, slave_id: int = 1) -> bool:
+        """Xóa giá trị Max Net Weight."""
+        from domain.constants import CMD_RESET_MAX
+        return self.send_command(CMD_RESET_MAX, slave_id)
+
+    def reset_min(self, slave_id: int = 1) -> bool:
+        """Xóa giá trị Min Net Weight."""
+        from domain.constants import CMD_RESET_MIN
+        return self.send_command(CMD_RESET_MIN, slave_id)

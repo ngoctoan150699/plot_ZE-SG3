@@ -37,7 +37,7 @@ from application.config_service import ConfigService
 from application.data_collector import DataCollectorService
 from application.interfaces import IDataExporter, ISettingsRepository
 from domain.constants import (
-    CMD_RESTART, CMD_TARE, FILTER_LABELS, UNITS,
+    CMD_RESTART, CMD_TARE, CMD_TARE_RAM, FILTER_LABELS, UNITS,
     DEFAULT_SAMPLE_INTERVAL_MS, DEFAULT_TIME_WINDOW_S,
     BAUD_LABELS, PARITY_LABELS, SPS_LABELS
 )
@@ -307,7 +307,7 @@ class MainWindow(QMainWindow):
 
         # Theme state (load từ settings)
         ui_cfg = settings_repo.load_ui_settings()
-        self._is_dark = ui_cfg.get('dark_theme', True)
+        self._is_dark = ui_cfg.get('dark_theme', False)
 
         self._build_ui()
         self._load_settings_to_ui()
@@ -540,27 +540,15 @@ class MainWindow(QMainWindow):
         self.combo_mtype.addItems(["0: 2 chiều (+/-)", "1: 1 chiều (+)"])
         sg.addWidget(self.combo_mtype, 1, 1)
 
-        sg.addWidget(QLabel("Full Scale:"), 2, 0)
+        sg.addWidget(QLabel("Full Scale (Nm):"), 2, 0)
         self.spin_fs = QDoubleSpinBox()
-        self.spin_fs.setRange(0.1, 1000000); self.spin_fs.setDecimals(2); self.spin_fs.setValue(50.0)
+        self.spin_fs.setRange(0.1, 1000000); self.spin_fs.setDecimals(2); self.spin_fs.setValue(49.70)
         sg.addWidget(self.spin_fs, 2, 1)
 
         sg.addWidget(QLabel("Sensitivity (mV/V):"), 3, 0)
         self.spin_sens = QDoubleSpinBox()
-        self.spin_sens.setRange(0.001, 100); self.spin_sens.setDecimals(4); self.spin_sens.setValue(2.0)
+        self.spin_sens.setRange(0.001, 100); self.spin_sens.setDecimals(4); self.spin_sens.setValue(1.9880)
         sg.addWidget(self.spin_sens, 3, 1)
-
-        sg.addWidget(QLabel("Standard Weight:"), 4, 0)
-        self.spin_std_w = QDoubleSpinBox()
-        self.spin_std_w.setRange(0, 1000000); self.spin_std_w.setDecimals(2)
-        sg.addWidget(self.spin_std_w, 4, 1)
-
-        sg.addWidget(QLabel("Nguồn hiệu chuẩn:"), 5, 0)
-        self.combo_calib = QComboBox()
-        self.combo_calib.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.combo_calib.setMinimumContentsLength(10)
-        self.combo_calib.addItems(["0: Factory", "1: Vật mẫu"])
-        sg.addWidget(self.combo_calib, 5, 1)
 
         sensor_grp.setLayout(sg); main_lay.addWidget(sensor_grp)
 
@@ -920,7 +908,6 @@ class MainWindow(QMainWindow):
         
         self.spin_fs.setValue(d.cell_full_scale)
         self.spin_sens.setValue(d.cell_sensitivity)
-        self.spin_std_w.setValue(d.std_weight)
         
         # UI settings (Acquisition / Plot)
         ui = self._settings.load_ui_settings()
@@ -950,15 +937,15 @@ class MainWindow(QMainWindow):
         self._settings.save_connection_config(conn)
 
         dev = DeviceConfig(
-            measure_unit=self.combo_unit.currentData() if self.combo_unit.currentData() is not None else 5,
+            measure_unit=self.combo_unit.currentData() if self.combo_unit.currentData() is not None else 8,
             measure_type=self.combo_mtype.currentIndex(),
             filter_level=self.combo_filter.currentData() if self.combo_filter.currentData() is not None else 3,
             
             cell_full_scale=self.spin_fs.value(),
             cell_sensitivity=self.spin_sens.value(),
-            std_weight=self.spin_std_w.value(),
             
             # Giữ nguyên cấu hình cũ cho các thông số không còn trên UI
+            std_weight=self._dev_cfg.std_weight,
             analog_out_type=self._dev_cfg.analog_out_type,
             dio_type=self._dev_cfg.dio_type,
             calib_mode=self._dev_cfg.calib_mode,
@@ -1167,26 +1154,26 @@ class MainWindow(QMainWindow):
             
         try:
             cfg = DeviceConfig(
-                measure_unit=self.combo_unit.currentData() if self.combo_unit.currentData() is not None else 5,
+                measure_unit=self.combo_unit.currentData() if self.combo_unit.currentData() is not None else 8,
                 measure_type=self.combo_mtype.currentIndex(),
-                analog_out_type=self.combo_ana.currentIndex(),
-                dio_type=self.combo_dio.currentIndex(),
-                calib_mode=self.combo_calib.currentIndex(),
+                analog_out_type=self._dev_cfg.analog_out_type,
+                dio_type=self._dev_cfg.dio_type,
+                calib_mode=self.combo_calib.currentIndex() if hasattr(self, 'combo_calib') else self._dev_cfg.calib_mode,
                 
                 cell_full_scale=self.spin_fs.value(),
                 cell_sensitivity=self.spin_sens.value(),
-                std_weight=self.spin_std_w.value(),
                 
-                delta_weight=self.spin_delta_w.value(),
-                delta_time=self.spin_delta_t.value(),
+                std_weight=self._dev_cfg.std_weight,
+                delta_weight=self._dev_cfg.delta_weight,
+                delta_time=self._dev_cfg.delta_time,
                 
                 filter_level=self.combo_filter.currentData() if self.combo_filter.currentData() is not None else 3,
-                resolution_mode=self.combo_res.currentIndex(),
-                factory_tare=self.spin_fac_tare.value(),
+                resolution_mode=self._dev_cfg.resolution_mode,
+                factory_tare=self._dev_cfg.factory_tare,
                 
-                target_address=self.spin_target_addr.value(),
-                target_baud=self.combo_target_baud.currentIndex(),
-                target_parity=self.combo_target_pari.currentIndex(),
+                target_address=self._dev_cfg.target_address,
+                target_baud=self._dev_cfg.target_baud,
+                target_parity=self._dev_cfg.target_parity,
                 
                 slave_id=self.spin_slave.value(),
             )
@@ -1212,24 +1199,11 @@ class MainWindow(QMainWindow):
         if cfg:
             self.combo_unit.setCurrentIndex(cfg.measure_unit)
             self.combo_mtype.setCurrentIndex(cfg.measure_type)
-            self.combo_ana.setCurrentIndex(cfg.analog_out_type)
-            self.combo_dio.setCurrentIndex(cfg.dio_type)
-            self.combo_calib.setCurrentIndex(cfg.calib_mode)
             
             self.spin_fs.setValue(cfg.cell_full_scale)
             self.spin_sens.setValue(cfg.cell_sensitivity)
-            self.spin_std_w.setValue(cfg.std_weight)
-            
-            self.spin_delta_w.setValue(cfg.delta_weight)
-            self.spin_delta_t.setValue(cfg.delta_time)
             
             self.combo_filter.setCurrentIndex(cfg.filter_level)
-            self.combo_res.setCurrentIndex(cfg.resolution_mode)
-            self.spin_fac_tare.setValue(cfg.factory_tare)
-            
-            self.spin_target_addr.setValue(cfg.target_address)
-            self.combo_target_baud.setCurrentIndex(cfg.target_baud)
-            self.combo_target_pari.setCurrentIndex(cfg.target_parity)
             
             self._dev_cfg = cfg
             self._log(f"📖 Đọc thành công: Unit={cfg.measure_unit}, FS={cfg.cell_full_scale:.2f}, Sens={cfg.cell_sensitivity:.4f}")
@@ -1257,6 +1231,71 @@ class MainWindow(QMainWindow):
             self._log("⚠️ Chưa kết nối"); return
         ok = self._config_svc.send_command(CMD_RESTART, self.spin_slave.value())
         self._log("🔄 Đã gửi lệnh Restart (43948)" if ok else "❌ Lỗi Restart")
+
+    def _do_tare_ram(self):
+        """Tare lưu RAM – nhanh, mất khi restart."""
+        if not self._connected:
+            self._log("⚠️ Chưa kết nối"); return
+        if self._last_status and not self._last_status.is_stable:
+            self._log("⚠️ Cảnh báo: Trọng lượng không ổn định.")
+        ok = self._config_svc.tare_ram(self.spin_slave.value())
+        if ok:
+            self._log("⚖️ Đã gửi lệnh Tare RAM (49594)")
+        else:
+            self._log("❌ Lỗi Tare RAM")
+
+    def _do_reset_minmax(self):
+        """Reset cả Min và Max Net Weight."""
+        if not self._connected:
+            self._log("⚠️ Chưa kết nối"); return
+        sid = self.spin_slave.value()
+        ok_max = self._config_svc.reset_max(sid)
+        ok_min = self._config_svc.reset_min(sid)
+        if ok_max and ok_min:
+            self._log("🔁 Đã reset Min/Max thành công")
+        else:
+            self._log(f"⚠️ Reset Min/Max: Max={'OK' if ok_max else 'FAIL'}, Min={'OK' if ok_min else 'FAIL'}")
+
+    def _calib_step1_tare(self):
+        """Bước 1 của Calibration Wizard: Acquire Tare."""
+        if not self._connected:
+            self._log("⚠️ Chưa kết nối"); return
+        if self._last_status and not self._last_status.is_stable:
+            self._log("⚠️ Cảm biến chưa ổn định! Chờ 🟢 Stable trước khi Tare.")
+            self.lbl_calib_status.setText("🟡 Chờ ổn định...")
+            return
+        ok = self._config_svc.tare_flash(self.spin_slave.value())
+        if ok:
+            self.lbl_calib_status.setText("✅ Bước 1 hoàn tất – Đã Tare")
+            self._log("🔬 Wizard Bước 1: Tare thành công")
+        else:
+            self.lbl_calib_status.setText("❌ Tare thất bại")
+            self._log("❌ Wizard Bước 1: Tare thất bại")
+
+    def _calib_step3_acquire(self):
+        """Bước 3 của Calibration Wizard: Acquire Sample Weight."""
+        if not self._connected:
+            self._log("⚠️ Chưa kết nối"); return
+        if self._last_status and not self._last_status.is_stable:
+            self._log("⚠️ Cảm biến chưa ổn định! Chờ 🟢 Stable trước khi hiệu chuẩn.")
+            self.lbl_calib_status.setText("🟡 Chờ ổn định...")
+            return
+        std_weight = self.spin_calib_std.value()
+        if std_weight <= 0:
+            self._log("❌ Giá trị mẫu phải > 0"); return
+        
+        self.lbl_calib_status.setText("⏳ Đang hiệu chuẩn...")
+        QApplication.processEvents()
+        
+        ok = self._config_svc.calibrate_with_sample_weight(
+            std_weight, self.spin_slave.value()
+        )
+        if ok:
+            self.lbl_calib_status.setText(f"✅ Hiệu chuẩn thành công ({std_weight} Nm)")
+            self._log(f"🔬 Wizard Bước 3: Hiệu chuẩn mẫu {std_weight} Nm thành công")
+        else:
+            self.lbl_calib_status.setText("❌ Hiệu chuẩn thất bại")
+            self._log("❌ Wizard Bước 3: Hiệu chuẩn thất bại")
 
     # ===========================================================
     # RECORDING

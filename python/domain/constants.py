@@ -143,17 +143,17 @@ PARITY_LABELS = {
 }
 
 # === MẶC ĐỊNH CHO CẢM BIẾN DYJN-101 50Nm ===
-DEFAULT_MEASURE_UNIT        = 5      # N (Newton)
+DEFAULT_MEASURE_UNIT        = 8      # other (Nm – không có sẵn trong danh sách)
 DEFAULT_MEASURE_TYPE        = 0      # Bipolar (cả nén lẫn căng)
-DEFAULT_CELL_FULL_SCALE     = 50.0   # 50 N.m
-DEFAULT_CELL_SENSITIVITY    = 2.0    # 2.0 mV/V
-DEFAULT_FILTER_LEVEL        = 3      # 100ms
+DEFAULT_CELL_FULL_SCALE     = 49.70  # 49.70 Nm (từ chứng chỉ hiệu chuẩn DYJN-101 SN:2601351)
+DEFAULT_CELL_SENSITIVITY    = 1.9880 # 1.9880 mV/V (từ chứng chỉ hiệu chuẩn)
+DEFAULT_FILTER_LEVEL        = 3      # 100ms (khuyến nghị cho đo tĩnh)
 DEFAULT_SAMPLE_INTERVAL_MS  = 100    # 10 Hz
 DEFAULT_TIME_WINDOW_S       = 60.0   # Cửa sổ biểu đồ 60 giây
 
 # === MODBUS PROTOCOL ===
 DEFAULT_SLAVE_ID            = 1
-DEFAULT_BAUDRATE            = 9600
+DEFAULT_BAUDRATE            = 115200
 DEFAULT_TCP_PORT            = 502
-DEFAULT_TCP_IP              = "192.168.1.100"
+DEFAULT_TCP_IP              = "192.168.90.101"
 MODBUS_TIMEOUT_S            = 1.5

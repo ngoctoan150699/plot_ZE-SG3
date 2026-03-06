@@ -74,9 +74,20 @@ def main():
     # -------------------------------------------------------
     # 5. UI – Inject tất cả dependencies
     # -------------------------------------------------------
+    import os
+    from PyQt5.QtGui import QIcon
+    
     app = QApplication(sys.argv)
     app.setApplicationName("ZE-SG3 Torque Acquisition")
     app.setOrganizationName("Seneca")
+    
+    # Path resolution for PyInstaller
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    icon_path = os.path.join(base_path, 'app_icon.ico')
+    app.setWindowIcon(QIcon(icon_path))
 
     from ui.main_window import MainWindow
     window = MainWindow(
