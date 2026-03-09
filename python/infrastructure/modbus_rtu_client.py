@@ -29,7 +29,10 @@ except ImportError:
             port=port, baudrate=baud, parity=par,
             stopbits=stop, bytesize=bs, timeout=to
         )
-        _SLAVE_KWARG = 'slave'
+        # Auto-detect slave kwarg: pymodbus >= 3.8 uses 'device_id', older uses 'slave'
+        import inspect as _inspect
+        _sig = _inspect.signature(_PyModbusRtu.read_holding_registers)
+        _SLAVE_KWARG = 'device_id' if 'device_id' in _sig.parameters else 'slave'
     except ImportError:
         _PyModbusRtu = None
         _RTU_KWARGS = None
@@ -91,7 +94,7 @@ class ModbusRtuClient(IModbusClient):
     def read_register(self, address: int, slave_id: int = 1) -> Optional[int]:
         with self._lock:
             try:
-                result = self._client.read_holding_registers(address, 1, **{_SLAVE_KWARG: slave_id})
+                result = self._client.read_holding_registers(address, count=1, **{_SLAVE_KWARG: slave_id})
                 if result and hasattr(result, 'registers'):
                     return result.registers[0]
                 return None
@@ -102,7 +105,7 @@ class ModbusRtuClient(IModbusClient):
     def read_registers(self, address: int, count: int, slave_id: int = 1) -> Optional[list]:
         with self._lock:
             try:
-                result = self._client.read_holding_registers(address, count, **{_SLAVE_KWARG: slave_id})
+                result = self._client.read_holding_registers(address, count=count, **{_SLAVE_KWARG: slave_id})
                 if result and hasattr(result, 'registers') and len(result.registers) >= count:
                     return list(result.registers)
                 return None

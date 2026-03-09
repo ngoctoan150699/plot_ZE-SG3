@@ -34,7 +34,6 @@
     "interval_ms": 100,
     "window_s": 60,
     "y_max": 5.0,
-    "fixed_y": true,
-    "dark_theme": false
+    "fixed_y": true
   }
 }

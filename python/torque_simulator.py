@@ -21,6 +21,7 @@ import threading
 import time
 import logging
 import math
+import asyncio
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
@@ -34,7 +35,7 @@ from PyQt5.QtWidgets import (
 import serial.tools.list_ports
 
 # ── Modbus Server ──
-from pymodbus.server import StartSerialServer
+from pymodbus.server import ModbusSerialServer, ServerStop
 from pymodbus.datastore import (
     ModbusDeviceContext as ModbusSlaveContext,
     ModbusServerContext,
@@ -185,6 +186,8 @@ class TorqueSimulatorWindow(QMainWindow):
         # Internal state
         self._server_thread = None
         self._server_running = False
+        self._server = None
+        self._loop = None
         self._context = None
         self._slave_id = 1
         self._torque_value = 0.0
@@ -473,24 +476,60 @@ class TorqueSimulatorWindow(QMainWindow):
         self._log(f"💡 Trong phần mềm chính, kết nối tới COM port kia trong cặp ảo")
 
     def _run_server(self, port, baudrate):
+        """Chạy Modbus serial server trong event loop riêng (daemon thread).
+
+        ModbusSerialServer phải được khởi tạo bên trong một coroutine
+        vì nó gọi `asyncio.get_running_loop()` trong __init__.
+        """
         try:
-            StartSerialServer(
-                context=self._context,
-                framer=FramerType.RTU,
-                port=port,
-                baudrate=baudrate,
-                parity='N',
-                stopbits=1,
-                bytesize=8,
-                timeout=1,
-            )
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+
+            async def _server_coro():
+                try:
+                    # Tạo server bên trong event loop đang chạy
+                    self._server = ModbusSerialServer(
+                        self._context,
+                        framer=FramerType.RTU,
+                        port=port,
+                        baudrate=baudrate,
+                        parity='N',
+                        stopbits=1,
+                        bytesize=8,
+                        timeout=1,
+                    )
+                    self.sig_log.emit(f"🔗 Modbus server đã tạo, đang lắng nghe trên {port}...")
+                    await self._server.serve_forever()
+                except asyncio.CancelledError:
+                    # graceful cancellation
+                    pass
+
+            self._loop.run_until_complete(_server_coro())
         except Exception as e:
             self.sig_log.emit(f"❌ Lỗi server: {e}")
+            import traceback
+            self.sig_log.emit(traceback.format_exc())
+        finally:
+            try:
+                if self._loop and not self._loop.is_closed():
+                    self._loop.close()
+            except Exception:
+                pass
+            self._loop = None
+            self._server = None
 
     def _stop_server(self):
         self._server_running = False
         self._update_timer.stop()
         self._cmd_timer.stop()
+
+        # Gracefully stop the Modbus server
+        if self._loop:
+            try:
+                # ServerStop is a synchronous helper that schedules async stop
+                ServerStop()
+            except Exception as e:
+                logger.warning(f"Stop server error: {e}")
 
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
@@ -500,7 +539,7 @@ class TorqueSimulatorWindow(QMainWindow):
 
         self.lbl_status.setText("⚪ Đã dừng mô phỏng")
         self.lbl_status.setStyleSheet("color: #757575; font-weight: bold; padding: 4px;")
-        self._log("⏹ Server đã dừng (cần khởi động lại app để dùng lại)")
+        self._log("⏹ Server đã dừng")
 
     def _update_registers(self):
         """Cập nhật giá trị torque vào Modbus registers (gọi mỗi 50ms)."""
