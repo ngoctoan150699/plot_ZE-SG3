@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 CSV Torque Plot Viewer
 ======================
@@ -664,17 +664,26 @@ class PartConfigDialog(QDialog):
         self.accept()
 
 class CalibrationDialog(QDialog):
-    """Dialog to edit per-part K factor configuration."""
-    def __init__(self, parent, parts, calibration_data):
+    """Dialog to edit per-part per-test-item Factor K configuration."""
+    def __init__(self, parent, parts, test_items, calibration_data):
         super().__init__(parent)
-        self.setWindowTitle('Calibration Setup (Factor K)')
-        self.resize(450, 400)
+        title = 'Calibration Setup (Factor K)'
+        self.setWindowTitle(title)
+        self.resize(800, 450)
         self.parts = parts
+        self.test_items = test_items
         self.calibration_data = calibration_data or {}
         layout = QVBoxLayout()
-        # Columns: Part Name, Factor K
-        self.table = QTableWidget(len(parts), 2)
-        self.table.setHorizontalHeaderLabels(['Part Name', 'Factor K'])
+        
+        # Rows: Parts, Cols: Part Name + len(test_items)
+        col_count = 1 + len(test_items)
+        self.table = QTableWidget(len(parts), col_count)
+        
+        # Headers
+        headers = ['Part Name']
+        for item in test_items:
+            headers.append(f"Factor K\n({item})")
+        self.table.setHorizontalHeaderLabels(headers)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         for r, part_name in enumerate(parts):
@@ -683,16 +692,26 @@ class CalibrationDialog(QDialog):
             item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             self.table.setItem(r, 0, item)
             
-            # Factor K
-            # Use stripped part name for key lookup to avoid mismatch
+            # Use stripped part name for key lookup
             key = part_name.strip()
-            k_val = self.calibration_data.get(key, 1.0)
-            spin = CommaDoubleSpinBox()
-            spin.setRange(0.000001, 10000.0)
-            spin.setDecimals(6)
-            spin.setSingleStep(0.01)
-            spin.setValue(float(k_val))
-            self.table.setCellWidget(r, 1, spin)
+            part_calib = self.calibration_data.get(key, {})
+            
+            # Handle legacy flat format: if part_calib is a single number, treat it as factor for all items
+            is_legacy = not isinstance(part_calib, dict)
+            
+            for c, test_item in enumerate(test_items):
+                col = 1 + c
+                if is_legacy:
+                    k_val = float(part_calib) if part_calib is not None else 1.0
+                else:
+                    k_val = part_calib.get(test_item, 1.0)
+                
+                spin = CommaDoubleSpinBox()
+                spin.setRange(0.000001, 10000.0)
+                spin.setDecimals(6)
+                spin.setSingleStep(0.01)
+                spin.setValue(float(k_val))
+                self.table.setCellWidget(r, col, spin)
             
         layout.addWidget(self.table)
         
@@ -713,9 +732,14 @@ class CalibrationDialog(QDialog):
             if not part_item: continue
             part_name = part_item.text().strip()
             
-            spin = self.table.cellWidget(r, 1)
-            val = spin.value() if spin else 1.0
-            new_data[part_name] = val
+            part_factors = {}
+            for c, test_item in enumerate(self.test_items):
+                col = 1 + c
+                spin = self.table.cellWidget(r, col)
+                val = spin.value() if spin else 1.0
+                part_factors[test_item] = val
+            
+            new_data[part_name] = part_factors
             
         self.calibration_data.update(new_data)
         
@@ -730,6 +754,7 @@ class CalibrationDialog(QDialog):
         
         QMessageBox.information(self.parent(), 'Saved', 'Saved Calibration Data')
         self.accept()
+
 
 class TorquePlotViewer(QMainWindow):
     """CSV Torque Plot Viewer"""
@@ -2249,7 +2274,9 @@ class TorquePlotViewer(QMainWindow):
             pass # keep existing if fail
 
         parts = [self.part_name_combo.itemText(i) for i in range(self.part_name_combo.count())]
-        dlg = CalibrationDialog(self, parts, self.calibration_data)
+        test_items = [self.test_item_combo.itemText(i) for i in range(self.test_item_combo.count())]
+        dlg = CalibrationDialog(self, parts, test_items, self.calibration_data)
+
         if dlg.exec_() == QDialog.Accepted:
             # reload factor for current part
             self.on_part_name_changed()
@@ -2260,6 +2287,19 @@ class TorquePlotViewer(QMainWindow):
         try:
             item_name = self.test_item_combo.currentText()
             part_name = self.part_name_combo.currentText()
+            
+            # --- Load Factor K (Calibration) based on Part AND Test Item ---
+            try:
+                p_key = part_name.strip()
+                val = self.calibration_data.get(p_key, 1.0)
+                if isinstance(val, dict):
+                    self.k_factor = float(val.get(item_name, 1.0))
+                else:
+                    # Legacy flat format
+                    self.k_factor = float(val)
+            except:
+                self.k_factor = 1.0
+
             
             # Structure: {part: {item: {min, max}}}
             part_specs = self.test_item_specs.get(part_name, {})
@@ -2377,12 +2417,8 @@ class TorquePlotViewer(QMainWindow):
         try:
             pname = self.part_name_combo.currentText()
             
-            # 1. Factor K (Calibration) - Update first so it's ready for plot refreshes
-            try:
-                # Use stripped part name key
-                self.k_factor = float(self.calibration_data.get(pname.strip(), 1.0))
-            except:
-                self.k_factor = 1.0
+            # 1. Factor K (Calibration) - Handled in on_test_item_changed to use both Part & Item
+
 
             # 2. Specs and Ranges - Trigger unified update in on_test_item_changed
             try:
@@ -3457,12 +3493,13 @@ class TorquePlotViewer(QMainWindow):
                         plot_x = x_data
                         plot_y = trqs
 
-                # Apply K factor
+                # Apply K factor (using the currently active k_factor)
                 try:
-                    k = self.k_spin.value() if hasattr(self, 'k_spin') else 1.0
+                    k = self.k_factor
                     if k != 1.0 and len(plot_y) > 0:
                          plot_y = [t * k for t in plot_y]
                 except: pass
+
 
                 if len(plot_x) > 0 and len(plot_y) > 0:
                     lw = 1.6 if sel == s['name'] else 0.9
@@ -3493,10 +3530,11 @@ class TorquePlotViewer(QMainWindow):
                 
                 # Apply K factor
                 try:
-                    k = self.k_spin.value() if hasattr(self, 'k_spin') else 1.0
+                    k = self.k_factor
                     if k != 1.0 and len(plot_torque) > 0:
                          plot_torque = [t * k for t in plot_torque]
                 except: pass
+
 
                 if len(plot_time) > 0 and len(plot_torque) > 0:
                     ax2.plot(plot_time, plot_torque, 'b.-', linewidth=0.9, markersize=3, label='1')
@@ -3632,7 +3670,8 @@ class TorquePlotViewer(QMainWindow):
             ('PART NO', self.part_no_edit.text(), 'LOT NO', self.lot_no_edit.text()),
             ('SPECIFICATION', spec_text, 'QUANTITY', str(self.quantity_spin.value())),
             ('TEST PURPOSE', (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "Others" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")), 'JUDGMENT', self.judgment_label.text()),
-            ('COEFF K', str(self.k_spin.value()) if hasattr(self, 'k_spin') else '1.0', '', '')
+            ('COEFF K', f"{self.k_factor:.6f}", '', '')
+
         ]
 
         for r, (l_label, l_val, r_label, r_val) in zip(rows, pairs):
