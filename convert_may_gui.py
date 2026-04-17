@@ -26,9 +26,9 @@ from matplotlib.figure import Figure
 # PART CONFIGURATION
 # ============================================================
 PART_CONFIG = {
-    'Inner Tie Rod': {'max_angle': 36.0, 'code': 'ITR'},
+    'Inner Tie Rod': {'max_angle': 22.0, 'code': 'ITR'},
     'Ball Joint': {'max_angle': 36.0, 'code': 'BJ'},
-    'Outer Tie Rod': {'max_angle': 22.0, 'code': 'OTR'},
+    'Outer Tie Rod': {'max_angle': 36.0, 'code': 'OTR'},
     'Stabilizer Link': {'max_angle': 36.0, 'code': 'SL'},
 }
 
@@ -407,7 +407,7 @@ class ConvertWidget(QWidget):
         self.max_angle_spin.setRange(1, 90)
         # Default to selected part's configured max angle
         default_part = self.part_combo.currentText()
-        default_angle = PART_CONFIG.get(default_part, {}).get('max_angle', 22.0)
+        default_angle = PART_CONFIG.get(default_part, {}).get('max_angle', 36.0)
         self.max_angle_spin.setValue(default_angle)
         self.max_angle_spin.setSuffix(" °")
         h_angle.addWidget(self.max_angle_spin)
