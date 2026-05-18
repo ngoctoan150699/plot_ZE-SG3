@@ -1,1 +1,12 @@
-{}
+{
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python.defaultInterpreterPath": "G:\\python\\python.exe",
+    "python.analysis.extraPaths": [
+        "G:\\python\\Lib\\site-packages",
+        "d:\\DuAn\\18.Other\\plot_draw\\plot_ZE-SG3\\python"
+    ],
+    "pyrefly.searchPath": [
+        "G:\\python\\Lib\\site-packages",
+        "d:\\DuAn\\18.Other\\plot_draw\\plot_ZE-SG3\\python"
+    ]
+}

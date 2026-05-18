@@ -1,0 +1,16 @@
+# Pyrefly config for this project
+# Docs: https://pyrefly.org/en/docs/configuration/
+
+project-includes = ["python/**/*.py"]
+search-path = [
+    "python",
+]
+site-package-path = [
+    "G:/python/Lib/site-packages",
+]
+python-version = "3.13"
+python-platform = "windows"
+
+[errors]
+# Keep import checking enabled; PyQt5 is resolved via site-package-path above.
+missing-import = "error"
