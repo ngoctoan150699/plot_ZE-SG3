@@ -133,3 +133,28 @@ class ISettingsRepository(ABC):
     @abstractmethod
     def save_device_config(self, config: DeviceConfig) -> None:
         """Lưu cấu hình thiết bị."""
+
+    @abstractmethod
+    def load_servo_profiles(self) -> dict:
+        """Tải cấu hình servo cho từng loại sản phẩm."""
+
+    @abstractmethod
+    def save_servo_profiles(self, profiles: dict) -> None:
+        """Lưu cấu hình servo cho từng loại sản phẩm."""
+
+    @abstractmethod
+    def load_operating_setups(self) -> dict:
+        """Tải cấu hình vùng lấy dữ liệu Operating Torque."""
+
+    @abstractmethod
+    def save_operating_setups(self, setups: dict) -> None:
+        """Lưu cấu hình vùng lấy dữ liệu Operating Torque."""
+
+    @abstractmethod
+    def load_report_paths(self) -> dict:
+        """Tải đường dẫn thư mục lưu báo cáo CSV & Report."""
+
+    @abstractmethod
+    def save_report_paths(self, csv_dir: str, report_dir: str) -> None:
+        """Lưu đường dẫn thư mục lưu báo cáo CSV & Report."""
+

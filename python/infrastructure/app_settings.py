@@ -135,3 +135,84 @@ class AppSettings(ISettingsRepository):
     def save_ui_settings(self, ui_data: dict) -> None:
         self._data['ui'] = ui_data
         self._save_raw()
+
+    def load_servo_profiles(self) -> dict:
+        from domain.entities import ServoProfile
+        profiles_raw = self._data.get('servo_profiles', {})
+        profiles = {}
+        # Cấu hình mặc định cho các tổ hợp Part_TestItem
+        default_profiles = {
+            'ITR_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'B/Joint_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'OTR_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'OTR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'S/Link_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'S/Link_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
+        }
+        for key, default in default_profiles.items():
+            raw = profiles_raw.get(key, default)
+            profiles[key] = ServoProfile(
+                negative_angle=float(raw.get('negative_angle', default['negative_angle'])),
+                positive_angle=float(raw.get('positive_angle', default['positive_angle'])),
+                speed=float(raw.get('speed', default['speed']))
+            )
+        return profiles
+
+    def save_servo_profiles(self, profiles: dict) -> None:
+        profiles_raw = {}
+        for key, p in profiles.items():
+            profiles_raw[key] = {
+                'negative_angle': p.negative_angle,
+                'positive_angle': p.positive_angle,
+                'speed': p.speed
+            }
+        self._data['servo_profiles'] = profiles_raw
+        self._save_raw()
+
+    def load_operating_setups(self) -> dict:
+        from domain.entities import OperatingTorqueSetup
+        setups_raw = self._data.get('operating_setups', {})
+        setups = {}
+        # Cấu hình mặc định cho các sản phẩm
+        default_setups = {
+            'ITR': {'center_percent': 80.0, 'cycle': 3},
+            'B/Joint': {'center_percent': 80.0, 'cycle': 3},
+            'OTR': {'center_percent': 80.0, 'cycle': 3},
+            'S/Link': {'center_percent': 80.0, 'cycle': 3},
+        }
+        for key, default in default_setups.items():
+            raw = setups_raw.get(key, default)
+            setups[key] = OperatingTorqueSetup(
+                center_percent=float(raw.get('center_percent', default['center_percent'])),
+                cycle=int(raw.get('cycle', default['cycle']))
+            )
+        return setups
+
+    def save_operating_setups(self, setups: dict) -> None:
+        setups_raw = {}
+        for key, s in setups.items():
+            setups_raw[key] = {
+                'center_percent': s.center_percent,
+                'cycle': s.cycle
+            }
+        self._data['operating_setups'] = setups_raw
+        self._save_raw()
+
+    def load_report_paths(self) -> dict:
+        paths = self._data.get('report_paths', {})
+        # Thư mục mặc định là thư mục cha chứa project
+        default_dir = str(Path(__file__).parent.parent.parent)
+        return {
+            'csv_dir': paths.get('csv_dir', default_dir),
+            'report_dir': paths.get('report_dir', default_dir)
+        }
+
+    def save_report_paths(self, csv_dir: str, report_dir: str) -> None:
+        self._data['report_paths'] = {
+            'csv_dir': csv_dir,
+            'report_dir': report_dir
+        }
+        self._save_raw()
+
