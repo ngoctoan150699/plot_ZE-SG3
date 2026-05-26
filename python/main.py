@@ -56,9 +56,19 @@ def main():
     # -------------------------------------------------------
     from application.data_collector import DataCollectorService
     from application.config_service import ConfigService
+    from application.servo_service import ServoService
+    from application.measurement_service import MeasurementService
+    from application.report_service import ReportService
+    from infrastructure.plc_servo_controller import DummyPLCServoController
 
     collector   = DataCollectorService(null_client, slave_id=conn_cfg.slave_id)
     config_svc  = ConfigService(null_client)
+    
+    # R2 Upgrades: Servo, Measurement & Report Services
+    dummy_plc   = DummyPLCServoController()
+    servo_svc   = ServoService(dummy_plc)
+    measurement_svc = MeasurementService()
+    report_svc  = ReportService()
 
     # -------------------------------------------------------
     # 4. EXPORTERS – OCP: thêm exporter mới ở đây
@@ -97,6 +107,9 @@ def main():
         settings_repo=settings,
         conn_config=conn_cfg,
         dev_config=dev_cfg,
+        servo_svc=servo_svc,
+        measurement_svc=measurement_svc,
+        report_svc=report_svc,
     )
     window.show()
 

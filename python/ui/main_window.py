@@ -1225,6 +1225,11 @@ class MainWindow(QMainWindow):
                 self._config_svc._client = new_client
                 self._collector._slave_id = sid
 
+                # Swap to real PLC Servo Controller when connected
+                if self._servo_svc:
+                    from infrastructure.plc_servo_controller import PLCServoController
+                    self._servo_svc._plc = PLCServoController(new_client, slave_id=sid)
+
                 self._connected = True
                 self._ref_time  = time.monotonic()
                 self._update_connect_btn_style()
@@ -1246,6 +1251,12 @@ class MainWindow(QMainWindow):
         self._collector.stop()
         if self._collector._client:
             self._collector._client.disconnect()
+        
+        # Swap back to Dummy PLC Servo Controller when disconnected
+        if self._servo_svc:
+            from infrastructure.plc_servo_controller import DummyPLCServoController
+            self._servo_svc._plc = DummyPLCServoController()
+
         self._connected = False
         self._update_connect_btn_style()
         self.led_label.setObjectName("led_off")
@@ -1494,6 +1505,60 @@ class MainWindow(QMainWindow):
         self.lbl_count.setText("0")
         self._log("▶️ Bắt đầu ghi dữ liệu")
 
+        # R2 Upgrade: Start Servo sequence dynamically
+        if self._servo_svc:
+            part_name = "ITR"
+            test_item = "Operating Torque"
+            if hasattr(self, '_plot_viewer'):
+                part_name = self._plot_viewer.part_name_combo.currentText()
+                test_item = self._plot_viewer.test_item_combo.currentText()
+                
+            part_map = {
+                'Inner Tie Rod': 'ITR',
+                'Ball Joint': 'B/Joint',
+                'Outer Tie Rod': 'OTR',
+                'Stabilizer Link': 'S/Link',
+                'ITR': 'ITR',
+                'B/Joint': 'B/Joint',
+                'OTR': 'OTR',
+                'S/Link': 'S/Link'
+            }
+            part_short = part_map.get(part_name, 'ITR')
+            
+            is_breakaway = "Breakaway" in test_item
+            test_char = 'B' if is_breakaway else 'O'
+            profile_key = f"{part_short}_{test_char}"
+            
+            profiles = self._settings.load_servo_profiles()
+            profile = profiles.get(profile_key)
+            if not profile:
+                from domain.entities import ServoProfile
+                profile = ServoProfile(
+                    negative_angle=0.0 if is_breakaway else -36.0,
+                    positive_angle=36.0,
+                    speed=10.0
+                )
+            
+            # Sync session metadata so it can be stored / imported
+            self._session.test_item = 'B' if is_breakaway else 'O'
+            self._session.part_name = part_short
+            
+            self._current_angle = 0.0
+            self._current_cycle = 1
+            if hasattr(self, 'angle_plot'):
+                self.angle_plot.clear()
+            
+            # Trigger corresponding sequence
+            if is_breakaway:
+                ok = self._servo_svc.start_breakaway_test(profile)
+            else:
+                ok = self._servo_svc.start_operating_test(profile, num_cycles=3)
+                
+            if ok:
+                self._log(f"🚀 Khởi chạy Servo: {profile_key} (tốc độ: {profile.speed} rpm)")
+            else:
+                self._log("❌ Không thể khởi chạy Servo sequence!")
+
     def _stop_recording(self):
         self._session.end_time = time.monotonic()
         self._recording = False
@@ -1502,6 +1567,11 @@ class MainWindow(QMainWindow):
         self.btn_rec_stop.setEnabled(False)
         self.btn_rec_clear.setEnabled(True)
         self._log(f"⏹ Đã dừng ghi – {self._session.count} mẫu, {duration:.1f}s")
+
+        # R2 Upgrade: Stop Servo sequence if running
+        if self._servo_svc and self._servo_svc.is_running():
+            self._servo_svc.stop()
+            self._log("⏹ Đã dừng chu trình Servo")
 
     def _clear_samples(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
@@ -1560,6 +1630,27 @@ class MainWindow(QMainWindow):
         tmp = self._export_session_to_temp_csv()
         if not tmp:
             self._log("⚠️ Xuất CSV tạm thất bại"); return
+
+        # Đồng bộ hóa Test Item & Part Name sang Plot Viewer
+        if hasattr(self._session, 'test_item') and self._session.test_item:
+            ti = self._session.test_item
+            if 'Breakaway' in ti or ti == 'B':
+                self._plot_viewer.test_item_combo.setCurrentText("Breakaway Torque")
+            elif 'Operating' in ti or ti == 'O':
+                self._plot_viewer.test_item_combo.setCurrentText("Operating Torque")
+            else:
+                self._plot_viewer.test_item_combo.setCurrentText(ti)
+                
+        if hasattr(self._session, 'part_name') and self._session.part_name:
+            pn = self._session.part_name
+            mapping = {
+                'ITR': 'Inner Tie Rod',
+                'B/Joint': 'Ball Joint',
+                'OTR': 'Outer Tie Rod',
+                'S/Link': 'Stabilizer Link'
+            }
+            self._plot_viewer.part_name_combo.setCurrentText(mapping.get(pn, pn))
+
         ok = self._plot_viewer.load_file_from_path(tmp)
         if ok:
             self.main_tabs.setCurrentIndex(1)  # Tab Plot Viewer
@@ -1768,6 +1859,14 @@ class MainWindow(QMainWindow):
     def _on_servo_angle_updated(self, angle: float, cycle: int, recording_active: bool):
         self._current_angle = angle
         self._current_cycle = cycle
+        
+        # R2 Upgrade: Automatically stop data collection in Breakaway when outgoing direction is done
+        if self._recording and not recording_active:
+            self._recording = False
+            self.btn_rec_start.setEnabled(True)
+            self.btn_rec_stop.setEnabled(False)
+            self.btn_rec_clear.setEnabled(True)
+            self._log(f"⏹ Đã dừng ghi (Tự động ngắt khi hết chiều đi) – {self._session.count} mẫu")
 
     def _on_servo_finished(self):
         self._sig_servo_finished.emit()
@@ -1777,7 +1876,13 @@ class MainWindow(QMainWindow):
 
     def _handle_servo_finished(self):
         self._log("🏁 Chu trình chạy Servo đã hoàn thành")
+        # R2 Upgrade: Auto-stop recording if it is still running
+        if self._recording:
+            self._stop_recording()
 
     def _handle_servo_error(self, err_msg: str):
         self._log(f"❌ Lỗi Servo: {err_msg}")
+        # R2 Upgrade: Auto-stop recording if it is running
+        if self._recording:
+            self._stop_recording()
         QMessageBox.warning(self, self.i18n.t('msg_err'), f"Lỗi Servo: {err_msg}")
