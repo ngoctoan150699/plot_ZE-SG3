@@ -80,12 +80,12 @@ QMainWindow, QWidget {
 QGroupBox {
     border: 1px solid #45475a;
     border-radius: 6px;
-    margin-top: 10px;
-    padding: 8px;
+    margin-top: 14px;
+    padding: 14px 8px 8px 8px;
     color: #89b4fa;
     font-weight: bold;
 }
-QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; }
 QPushButton {
     background: #313244;
     border: 1px solid #45475a;
@@ -96,11 +96,17 @@ QPushButton {
 QPushButton:hover  { background: #45475a; border-color: #89b4fa; }
 QPushButton:pressed { background: #585b70; }
 QPushButton:disabled { color: #6c7086; background: #181825; }
-QComboBox, QSpinBox, QDoubleSpinBox {
+QComboBox {
     background: #181825;
     border: 1px solid #45475a;
     border-radius: 4px;
     padding: 4px 6px;
+    color: #cdd6f4;
+}
+QSpinBox, QDoubleSpinBox {
+    background: #181825;
+    border: 1px solid #45475a;
+    padding: 4px;
     color: #cdd6f4;
 }
 QComboBox::drop-down { border: none; width: 20px; }
@@ -130,9 +136,11 @@ QCheckBox { spacing: 6px; }
 QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #45475a; background: #181825; }
 QCheckBox::indicator:checked { background: #89b4fa; border-color: #89b4fa; }
 QSplitter::handle { background: #313244; width: 2px; }
-QScrollBar:vertical { background: #181825; width: 10px; border-radius: 5px; }
-QScrollBar::handle:vertical { background: #45475a; border-radius: 5px; min-height: 20px; }
+QScrollBar:vertical { background: #181825; width: 6px; border-radius: 3px; }
+QScrollBar::handle:vertical { background: #45475a; border-radius: 3px; min-height: 20px; }
 QScrollBar::handle:vertical:hover { background: #585b70; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 """
 
 LIGHT_STYLE = """
@@ -146,12 +154,12 @@ QGroupBox {
     background-color: #ffffff;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
-    margin-top: 12px;
-    padding: 10px;
+    margin-top: 16px;
+    padding: 16px 10px 10px 10px;
     color: #1976d2;
     font-weight: bold;
 }
-QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; }
 QPushButton {
     background: #e3f2fd;
     border: 1px solid #bbdefb;
@@ -163,11 +171,17 @@ QPushButton {
 QPushButton:hover  { background: #bbdefb; border-color: #1976d2; }
 QPushButton:pressed { background: #90caf9; }
 QPushButton:disabled { color: #9e9e9e; background: #f5f5f5; border: 1px solid #e0e0e0; }
-QComboBox, QSpinBox, QDoubleSpinBox {
+QComboBox {
     background: #ffffff;
     border: 1px solid #dcdcdc;
     border-radius: 4px;
     padding: 4px 6px;
+    color: #212121;
+}
+QSpinBox, QDoubleSpinBox {
+    background: #ffffff;
+    border: 1px solid #dcdcdc;
+    padding: 4px;
     color: #212121;
 }
 QComboBox::drop-down { border: none; width: 20px; }
@@ -203,9 +217,11 @@ QCheckBox::indicator { width: 16px; height: 16px; border-radius: 3px; border: 1p
 QCheckBox::indicator:checked { background: #1976d2; border-color: #1976d2; }
 QSplitter::handle { background: #e0e0e0; width: 2px; }
 QScrollArea { background-color: transparent; border: none; }
-QScrollBar:vertical { background: #f1f1f1; width: 10px; margin: 0; }
-QScrollBar::handle:vertical { background: #c1c1c1; border-radius: 5px; min-height: 20px; }
+QScrollBar:vertical { background: #f1f1f1; width: 6px; margin: 0; border-radius: 3px; }
+QScrollBar::handle:vertical { background: #c1c1c1; border-radius: 3px; min-height: 20px; }
 QScrollBar::handle:vertical:hover { background: #a8a8a8; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 """
 
 
@@ -303,7 +319,7 @@ class ServoSetupDialog(QDialog):
         layout.setSpacing(10)
         
         # Header info
-        self.lbl_info = QLabel(f"🤖 Profile: {self._part_name}\n📊 Chế độ: {self._test_item}")
+        self.lbl_info = QLabel(f"Profile: {self._part_name}\n📊 Chế độ: {self._test_item}")
         self.lbl_info.setStyleSheet("font-weight: bold; color: #89b4fa;" if is_dark else "font-weight: bold; color: #1976d2;")
         layout.addWidget(self.lbl_info)
         
@@ -543,7 +559,7 @@ class MainWindow(QMainWindow):
 
         left_panel_lay.addWidget(conn_bottom_widget)
 
-        left_panel.setMinimumWidth(300)
+        left_panel.setMinimumWidth(500)
         left_panel.setMaximumWidth(16777215)
 
         # --- Right Panel ---
@@ -573,7 +589,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right)
-        splitter.setSizes([310, 970])
+        splitter.setSizes([420, 860])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
         splitter.setStretchFactor(0, 0)
@@ -606,7 +622,7 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         try:
             total = max(800, self.width())
-            left_w = int(total * 0.35)
+            left_w = max(420, int(total * 0.35))
             right_w = max(300, total - left_w)
             # Apply sizes to splitter
             if hasattr(self, 'splitter'):
@@ -618,20 +634,29 @@ class MainWindow(QMainWindow):
 
     # --- Connection Tab ---
     def _build_connection_tab(self) -> QWidget:
+        # Create a scroll area wrapper to prevent clipping/squishing
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
+
         w = QWidget()
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(8)
 
         # Protocol selector
         self.grp_proto = QGroupBox("🔌 Giao thức")
         pg = QGridLayout()
-        pg.setContentsMargins(8, 10, 8, 8)
+        pg.setContentsMargins(6, 8, 6, 6)
         pg.setSpacing(6)
         self.lbl_proto_type = QLabel("Loại:")
         pg.addWidget(self.lbl_proto_type, 0, 0)
         self.combo_proto = QComboBox()
-        self.combo_proto.setSizeAdjustPolicy(QComboBox.AdjustToContents) # Proto thì tĩnh và ngắn, kệ nó
+        self.combo_proto.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_proto.setMinimumContentsLength(5)
         self.combo_proto.addItems(["Modbus RTU", "Modbus TCP"])
         self.combo_proto.currentTextChanged.connect(self._on_proto_changed)
         pg.addWidget(self.combo_proto, 0, 1)
@@ -641,7 +666,7 @@ class MainWindow(QMainWindow):
         # RTU
         self.grp_rtu = QGroupBox("📡 RTU (RS-485)")
         rg = QGridLayout()
-        rg.setContentsMargins(8, 10, 8, 8)
+        rg.setContentsMargins(6, 8, 6, 6)
         rg.setSpacing(6)
         self.lbl_com_port = QLabel("COM Port:")
         rg.addWidget(self.lbl_com_port, 0, 0)
@@ -664,11 +689,15 @@ class MainWindow(QMainWindow):
         self.lbl_baudrate = QLabel("Baudrate:")
         rg.addWidget(self.lbl_baudrate, 1, 0)
         self.combo_baud = QComboBox()
+        self.combo_baud.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_baud.setMinimumContentsLength(5)
         self.combo_baud.addItems(["9600","19200","38400","57600","115200"])
         rg.addWidget(self.combo_baud, 1, 1, 1, 2)
         self.lbl_parity = QLabel("Parity:")
         rg.addWidget(self.lbl_parity, 2, 0)
         self.combo_parity = QComboBox()
+        self.combo_parity.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_parity.setMinimumContentsLength(5)
         self.combo_parity.addItems(["None (N)","Even (E)","Odd (O)"])
         rg.addWidget(self.combo_parity, 2, 1, 1, 2)
         rg.setColumnStretch(1, 1)
@@ -677,9 +706,13 @@ class MainWindow(QMainWindow):
         # TCP
         self.grp_tcp = QGroupBox("🌐 TCP/IP")
         tg = QGridLayout()
+        tg.setContentsMargins(6, 8, 6, 6)
+        tg.setSpacing(6)
         self.lbl_tcp_ip = QLabel("IP:")
         tg.addWidget(self.lbl_tcp_ip, 0, 0)
         self.combo_ip = QComboBox(); self.combo_ip.setEditable(True)
+        self.combo_ip.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_ip.setMinimumContentsLength(5)
         self.combo_ip.addItem("192.168.1.100")
         tg.addWidget(self.combo_ip, 0, 1)
         self.lbl_tcp_port = QLabel("Port:")
@@ -694,7 +727,7 @@ class MainWindow(QMainWindow):
         # Slave ID
         self.grp_slave = QGroupBox("📋 Slave")
         sg = QGridLayout()
-        sg.setContentsMargins(8, 10, 8, 8)
+        sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
         self.lbl_slave_id = QLabel("Slave ID:")
         sg.addWidget(self.lbl_slave_id, 0, 0)
@@ -706,19 +739,28 @@ class MainWindow(QMainWindow):
 
         lay.addStretch()
         self._scan_com_ports()
-        return w
+        scroll.setWidget(w)
+        return scroll
 
     # --- Config Tab ---
     def _build_config_tab(self) -> QWidget:
+        # Create a scroll area wrapper to prevent clipping/squishing
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
+
         w = QWidget()
         main_lay = QVBoxLayout(w)
-        main_lay.setContentsMargins(8, 8, 8, 8)
+        main_lay.setContentsMargins(4, 4, 4, 4)
         main_lay.setSpacing(8)
 
         # 1. Nhóm Cảm biến & Hiệu chuẩn
         self.grp_sensor = QGroupBox("📊 Cảm biến & Hiệu chuẩn")
         sg = QGridLayout()
-        sg.setContentsMargins(8, 10, 8, 8)
+        sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
 
         self.lbl_measure_unit = QLabel("Đơn vị đo:")
@@ -763,7 +805,7 @@ class MainWindow(QMainWindow):
         for k, v in FILTER_LABELS.items(): self.combo_filter.addItem(v, k)
         stg.addWidget(self.combo_filter, 0, 1)
 
-        stg.setContentsMargins(8, 12, 8, 8)
+        stg.setContentsMargins(6, 8, 6, 6)
         stg.setSpacing(6)
         self.grp_stability.setLayout(stg)
         main_lay.addWidget(self.grp_stability)
@@ -780,6 +822,8 @@ class MainWindow(QMainWindow):
 
         self.grp_quick_cmd = QGroupBox("⚡ Lệnh nhanh")
         cg = QHBoxLayout()
+        cg.setContentsMargins(6, 8, 6, 6)
+        cg.setSpacing(6)
         self.btn_quick_tare = QPushButton("⚖️ Tare (Zero)")
         self.btn_quick_tare.clicked.connect(self._do_tare)
         self.btn_quick_restart  = QPushButton("🔄 Restart Device")
@@ -788,18 +832,27 @@ class MainWindow(QMainWindow):
         self.grp_quick_cmd.setLayout(cg); main_lay.addWidget(self.grp_quick_cmd)
 
         main_lay.addStretch()
-        return w
+        scroll.setWidget(w)
+        return scroll
 
     # --- Acquisition Tab ---
     def _build_acquisition_tab(self) -> QWidget:
+        # Create a scroll area wrapper to prevent clipping/squishing
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
+
         w = QWidget()
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(8)
 
         self.grp_sampling = QGroupBox("⏱️ Lấy mẫu")
         sg = QGridLayout()
-        sg.setContentsMargins(8, 10, 8, 8)
+        sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
         self.lbl_sample_interval = QLabel("Chu kỳ (ms):")
         sg.addWidget(self.lbl_sample_interval, 0, 0)
@@ -833,18 +886,22 @@ class MainWindow(QMainWindow):
         # === 1.5. Nhóm Chương trình đo (R2 Upgrades) ===
         self.grp_program = QGroupBox("⚙️ Chương trình đo")
         pg_lay = QGridLayout()
-        pg_lay.setContentsMargins(8, 10, 8, 8)
+        pg_lay.setContentsMargins(6, 14, 6, 6)
         pg_lay.setSpacing(6)
         
         self.lbl_part_name = QLabel("Sản phẩm:")
         pg_lay.addWidget(self.lbl_part_name, 0, 0)
         self.combo_part_name = QComboBox()
+        self.combo_part_name.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_part_name.setMinimumContentsLength(5)
         self.combo_part_name.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
         pg_lay.addWidget(self.combo_part_name, 0, 1)
         
         self.lbl_test_item = QLabel("Chế độ đo:")
         pg_lay.addWidget(self.lbl_test_item, 1, 0)
         self.combo_test_item = QComboBox()
+        self.combo_test_item.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_test_item.setMinimumContentsLength(5)
         self.combo_test_item.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
         pg_lay.addWidget(self.combo_test_item, 1, 1)
         
@@ -858,34 +915,56 @@ class MainWindow(QMainWindow):
 
         self.grp_recording = QGroupBox("🔴 Ghi dữ liệu")
         rg = QVBoxLayout()
-        btns = QHBoxLayout()
+        rg.setContentsMargins(6, 8, 6, 6)
+        rg.setSpacing(6)
+        
+        # Row 1: Start and Stop recording
+        btns1 = QHBoxLayout()
+        btns1.setSpacing(8)
         self.btn_rec_start = QPushButton("▶️ Bắt đầu ghi")
         self._update_rec_start_btn_style()
         self.btn_rec_start.clicked.connect(self._start_recording)
+        
         self.btn_rec_stop  = QPushButton("⏹ Dừng ghi")
         self._update_rec_stop_btn_style()
         self.btn_rec_stop.clicked.connect(self._stop_recording)
         self.btn_rec_stop.setEnabled(False)
-        # Thêm nút Tare ở tab Thu thập để dễ truy cập
+        
+        # Row 2: Tare and Clear
+        btns2 = QHBoxLayout()
+        btns2.setSpacing(8)
         self.btn_tare_acq = QPushButton("⚖️ Tare")
-        # Slightly larger and more prominent
-        self.btn_tare_acq.setFixedHeight(36)
-        self.btn_tare_acq.setMinimumWidth(100)
-        self.btn_tare_acq.setStyleSheet("font-size:11pt; font-weight:600;")
+        self.btn_tare_acq.setStyleSheet("font-size:10pt; font-weight:600;")
         self.btn_tare_acq.clicked.connect(self._do_tare)
-        btns.addWidget(self.btn_tare_acq)
-        btns.addWidget(self.btn_rec_start); btns.addWidget(self.btn_rec_stop)
-        rg.addLayout(btns)
-
+        
         self.btn_rec_clear = QPushButton("🗑️ Xóa dữ liệu mẫu")
         self._update_rec_clear_btn_style()
         self.btn_rec_clear.clicked.connect(self._clear_samples)
         self.btn_rec_clear.setEnabled(False)
-        rg.addWidget(self.btn_rec_clear)
+        
+        recording_buttons = [
+            self.btn_rec_start,
+            self.btn_rec_stop,
+            self.btn_tare_acq,
+            self.btn_rec_clear,
+        ]
+        for btn in recording_buttons:
+            btn.setMinimumHeight(40)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        btns1.addWidget(self.btn_rec_start, stretch=1)
+        btns1.addWidget(self.btn_rec_stop, stretch=1)
+        rg.addLayout(btns1)
+        
+        btns2.addWidget(self.btn_tare_acq, stretch=1)
+        btns2.addWidget(self.btn_rec_clear, stretch=1)
+        rg.addLayout(btns2)
+        
         self.grp_recording.setLayout(rg); lay.addWidget(self.grp_recording)
 
         self.grp_export = QGroupBox("💾 Xuất dữ liệu")
         eg = QVBoxLayout()
+        eg.setContentsMargins(6, 8, 6, 6)
         eg.setSpacing(6)
         for exp in self._exporters:
             btn = QPushButton(f"📄 {exp.display_name}")
@@ -899,6 +978,7 @@ class MainWindow(QMainWindow):
         if _HAS_PLOT_VIEWER:
             self.grp_import_tools = QGroupBox("📥 Import dữ liệu sang công cụ khác")
             ig = QVBoxLayout()
+            ig.setContentsMargins(6, 8, 6, 6)
             ig.setSpacing(6)
 
             self.btn_import_plot = QPushButton("📊 Import to Plot Viewer")
@@ -909,10 +989,8 @@ class MainWindow(QMainWindow):
             self.grp_import_tools.setLayout(ig); lay.addWidget(self.grp_import_tools)
 
         lay.addStretch()
-        return w
-
-        lay.addStretch()
-        return w
+        scroll.setWidget(w)
+        return scroll
 
     # --- Display group (Redesigned to be compact like draw_plot.py) ---
     def _build_display_group(self) -> QWidget:

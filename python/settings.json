@@ -35,8 +35,8 @@
     "window_s": 60,
     "y_max": 5.0,
     "fixed_y": true,
-    "part_name": "B/Joint",
-    "test_item": "Breakaway Torque (B)",
+    "part_name": "Ball Joint",
+    "test_item": "Oscillating Torque",
     "dark_theme": false,
     "language": "vi"
   }
