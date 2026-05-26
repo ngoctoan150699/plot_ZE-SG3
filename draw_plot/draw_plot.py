@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 CSV Torque Plot Viewer
 ======================
@@ -667,14 +667,14 @@ class CalibrationDialog(QDialog):
     """Dialog to edit per-part K factor configuration."""
     def __init__(self, parent, parts, calibration_data):
         super().__init__(parent)
-        self.setWindowTitle('Calibration Setup (Factor K)')
+        self.setWindowTitle('Calibration Setup')
         self.resize(450, 400)
         self.parts = parts
         self.calibration_data = calibration_data or {}
         layout = QVBoxLayout()
-        # Columns: Part Name, Factor K
+        # Columns: Part Name, Calibration
         self.table = QTableWidget(len(parts), 2)
-        self.table.setHorizontalHeaderLabels(['Part Name', 'Factor K'])
+        self.table.setHorizontalHeaderLabels(['Part Name', 'Calibration'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         for r, part_name in enumerate(parts):
@@ -1051,7 +1051,7 @@ class TorquePlotViewer(QMainWindow):
 
         self.calibration_btn = QPushButton("Calibration")
         self.calibration_btn.setMaximumWidth(90)
-        self.calibration_btn.setToolTip("Configure Factor K per Part")
+        self.calibration_btn.setToolTip("Configure Calibration per Part")
         self.calibration_btn.clicked.connect(self.open_calibration_setup)
         bottom_h.addWidget(self.calibration_btn)
 

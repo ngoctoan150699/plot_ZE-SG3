@@ -16,7 +16,7 @@ Cải thiện UX so với file gốc:
 import logging
 import time
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
@@ -46,6 +46,7 @@ from domain.entities import (
     RecordingSession, SampleData,
 )
 from ui.widgets.realtime_plot import RealTimePlot
+from ui.widgets.torque_angle_plot import TorqueAnglePlot
 
 # Plot Viewer & Converter (tái sử dụng từ draw_plot.py)
 import os
@@ -283,9 +284,11 @@ class MainWindow(QMainWindow):
     MainWindow điều phối toàn bộ ứng dụng.
     Services được inject từ bên ngoài (DIP).
     """
-    # Qt signals cho thread-safe UI update
+    # Qt signals cho thread-safe UI update và servo control
     _sig_status = pyqtSignal(DeviceStatus)
     _sig_error  = pyqtSignal(str)
+    _sig_servo_finished = pyqtSignal()
+    _sig_servo_error = pyqtSignal(str)
 
     def __init__(
         self,
@@ -295,6 +298,9 @@ class MainWindow(QMainWindow):
         settings_repo: ISettingsRepository,
         conn_config: ConnectionConfig,
         dev_config: DeviceConfig,
+        servo_svc: Optional[Any] = None,
+        measurement_svc: Optional[Any] = None,
+        report_svc: Optional[Any] = None,
     ):
         super().__init__()
         # === Inject dependencies ===
@@ -304,6 +310,9 @@ class MainWindow(QMainWindow):
         self._settings    = settings_repo
         self._conn_cfg    = conn_config
         self._dev_cfg     = dev_config
+        self._servo_svc   = servo_svc
+        self._measurement_svc = measurement_svc
+        self._report_svc  = report_svc
 
         # === Trạng thái nội bộ ===
         self._connected   = False
@@ -315,22 +324,39 @@ class MainWindow(QMainWindow):
         self._only_stable = True
         self._chk_stable_only: Optional[QCheckBox] = None
         self._chart_paused = False  # Trạng thái đóng băng biểu đồ
+        self._current_angle = 0.0
+        self._current_cycle = 0
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
         self._sig_error.connect(self._on_error)
+        self._sig_servo_finished.connect(self._handle_servo_finished)
+        self._sig_servo_error.connect(self._handle_servo_error)
 
         # === Đăng ký callback cho DataCollector ===
         self._collector.on_data(lambda s: self._sig_status.emit(s))
         self._collector.on_error(lambda e: self._sig_error.emit(e))
 
-        # Theme state (load từ settings)
+        # === Đăng ký callback cho ServoService nếu có ===
+        if self._servo_svc:
+            self._servo_svc.register_callbacks(
+                on_angle_updated=self._on_servo_angle_updated,
+                on_finished=self._on_servo_finished,
+                on_error=self._on_servo_error
+            )
+
+        # Theme & Ngôn ngữ state (load từ settings)
         ui_cfg = settings_repo.load_ui_settings()
         self._is_dark = ui_cfg.get('dark_theme', False)
+
+        from ui.i18n import I18n
+        lang = ui_cfg.get('language', 'vi')
+        self.i18n = I18n(lang)
 
         self._build_ui()
         self._load_settings_to_ui()
         self._apply_theme(self._is_dark)
+        self._retranslate_ui()
 
     # ===========================================================
     # BUILD UI
@@ -420,11 +446,21 @@ class MainWindow(QMainWindow):
         right_lay.addWidget(self._build_chart_group(), stretch=1)
         right_lay.addWidget(self._build_log_group())
         
+        options_lay = QHBoxLayout()
+
         self.btn_toggle_theme = QPushButton()
         self._update_theme_btn_text()
         self.btn_toggle_theme.setFixedHeight(30)
         self.btn_toggle_theme.clicked.connect(self._toggle_theme)
-        right_lay.addWidget(self.btn_toggle_theme)
+        options_lay.addWidget(self.btn_toggle_theme)
+
+        self.btn_toggle_lang = QPushButton()
+        self._update_language_btn_text()
+        self.btn_toggle_lang.setFixedHeight(30)
+        self.btn_toggle_lang.clicked.connect(self._toggle_language)
+        options_lay.addWidget(self.btn_toggle_lang)
+
+        right_lay.addLayout(options_lay)
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right)
@@ -439,7 +475,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(acq_page, "📡 Thu thập")
 
         # -----------------------------------------------
-        # Tab 1 + 2: Plot Viewer + Converter
+        # Tab 1: Plot Viewer
         # -----------------------------------------------
         if _HAS_PLOT_VIEWER:
             # Plot Viewer: tạo TorquePlotViewer, chỉ lấy plot_tab (loại bỏ tab Converter bên trong)
@@ -447,18 +483,10 @@ class MainWindow(QMainWindow):
             plot_viewer_widget = QWidget()
             pv_lay = QVBoxLayout(plot_viewer_widget)
             pv_lay.setContentsMargins(0, 0, 0, 0)
-            # Lấy riêng plot_tab (không lấy toàn bộ tabs widget có chứa Converter)
             pv_tab = self._plot_viewer.plot_tab
             pv_tab.setParent(plot_viewer_widget)
             pv_lay.addWidget(pv_tab)
             self.main_tabs.addTab(plot_viewer_widget, "📊 Plot Viewer")
-
-            # Converter: tạo ConvertWidget instance
-            self._converter = ConvertWidget()
-            self.main_tabs.addTab(self._converter, "🔄 Converter")
-
-            # Kết nối Import Button của Converter rẽ sang Plot Viewer
-            self._converter.import_requested.connect(self._on_converter_import_requested)
 
     def showEvent(self, event):
         """Set initial splitter sizes as a proportion of the window width on first show.
@@ -487,46 +515,50 @@ class MainWindow(QMainWindow):
         lay.setSpacing(8)
 
         # Protocol selector
-        proto_grp = QGroupBox("🔌 Giao thức")
+        self.grp_proto = QGroupBox("🔌 Giao thức")
         pg = QGridLayout()
         pg.setContentsMargins(8, 10, 8, 8)
         pg.setSpacing(6)
-        pg.addWidget(QLabel("Loại:"), 0, 0)
+        self.lbl_proto_type = QLabel("Loại:")
+        pg.addWidget(self.lbl_proto_type, 0, 0)
         self.combo_proto = QComboBox()
         self.combo_proto.setSizeAdjustPolicy(QComboBox.AdjustToContents) # Proto thì tĩnh và ngắn, kệ nó
         self.combo_proto.addItems(["Modbus RTU", "Modbus TCP"])
         self.combo_proto.currentTextChanged.connect(self._on_proto_changed)
         pg.addWidget(self.combo_proto, 0, 1)
         pg.setColumnStretch(1, 1)
-        proto_grp.setLayout(pg); lay.addWidget(proto_grp)
+        self.grp_proto.setLayout(pg); lay.addWidget(self.grp_proto)
 
         # RTU
         self.grp_rtu = QGroupBox("📡 RTU (RS-485)")
         rg = QGridLayout()
         rg.setContentsMargins(8, 10, 8, 8)
         rg.setSpacing(6)
-        rg.addWidget(QLabel("COM Port:"), 0, 0)
+        self.lbl_com_port = QLabel("COM Port:")
+        rg.addWidget(self.lbl_com_port, 0, 0)
         self.combo_com = QComboBox()
         self.combo_com.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_com.setMinimumContentsLength(10)
         rg.addWidget(self.combo_com, 0, 1)
         # Use a QToolButton with system reload icon to avoid emoji clipping
-        btn_scan = QToolButton()
-        btn_scan.setAutoRaise(True)
-        btn_scan.setToolTip("Làm mới COM ports")
+        self.btn_scan = QToolButton()
+        self.btn_scan.setAutoRaise(True)
+        self.btn_scan.setToolTip("Làm mới COM ports")
         try:
             icon = QApplication.style().standardIcon(QStyle.SP_BrowserReload)
         except Exception:
             icon = QApplication.style().standardIcon(QStyle.SP_DialogResetButton)
-        btn_scan.setIcon(icon)
-        btn_scan.setFixedSize(30, 28)
-        btn_scan.clicked.connect(self._scan_com_ports)
-        rg.addWidget(btn_scan, 0, 2)
-        rg.addWidget(QLabel("Baudrate:"), 1, 0)
+        self.btn_scan.setIcon(icon)
+        self.btn_scan.setFixedSize(30, 28)
+        self.btn_scan.clicked.connect(self._scan_com_ports)
+        rg.addWidget(self.btn_scan, 0, 2)
+        self.lbl_baudrate = QLabel("Baudrate:")
+        rg.addWidget(self.lbl_baudrate, 1, 0)
         self.combo_baud = QComboBox()
         self.combo_baud.addItems(["9600","19200","38400","57600","115200"])
         rg.addWidget(self.combo_baud, 1, 1, 1, 2)
-        rg.addWidget(QLabel("Parity:"), 2, 0)
+        self.lbl_parity = QLabel("Parity:")
+        rg.addWidget(self.lbl_parity, 2, 0)
         self.combo_parity = QComboBox()
         self.combo_parity.addItems(["None (N)","Even (E)","Odd (O)"])
         rg.addWidget(self.combo_parity, 2, 1, 1, 2)
@@ -536,11 +568,13 @@ class MainWindow(QMainWindow):
         # TCP
         self.grp_tcp = QGroupBox("🌐 TCP/IP")
         tg = QGridLayout()
-        tg.addWidget(QLabel("IP:"), 0, 0)
+        self.lbl_tcp_ip = QLabel("IP:")
+        tg.addWidget(self.lbl_tcp_ip, 0, 0)
         self.combo_ip = QComboBox(); self.combo_ip.setEditable(True)
         self.combo_ip.addItem("192.168.1.100")
         tg.addWidget(self.combo_ip, 0, 1)
-        tg.addWidget(QLabel("Port:"), 1, 0)
+        self.lbl_tcp_port = QLabel("Port:")
+        tg.addWidget(self.lbl_tcp_port, 1, 0)
         self.spin_tcp_port = QSpinBox(); self.spin_tcp_port.setRange(1,65535)
         self.spin_tcp_port.setValue(502)
         tg.addWidget(self.spin_tcp_port, 1, 1)
@@ -549,16 +583,17 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.grp_tcp)
 
         # Slave ID
-        slave_grp = QGroupBox("📋 Slave")
+        self.grp_slave = QGroupBox("📋 Slave")
         sg = QGridLayout()
         sg.setContentsMargins(8, 10, 8, 8)
         sg.setSpacing(6)
-        sg.addWidget(QLabel("Slave ID:"), 0, 0)
+        self.lbl_slave_id = QLabel("Slave ID:")
+        sg.addWidget(self.lbl_slave_id, 0, 0)
         self.spin_slave = QSpinBox(); self.spin_slave.setRange(1,247)
         self.spin_slave.setValue(1)
         sg.addWidget(self.spin_slave, 0, 1)
         sg.setColumnStretch(1, 1)
-        slave_grp.setLayout(sg); lay.addWidget(slave_grp)
+        self.grp_slave.setLayout(sg); lay.addWidget(self.grp_slave)
 
         lay.addStretch()
         self._scan_com_ports()
@@ -572,42 +607,47 @@ class MainWindow(QMainWindow):
         main_lay.setSpacing(8)
 
         # 1. Nhóm Cảm biến & Hiệu chuẩn
-        sensor_grp = QGroupBox("📊 Cảm biến & Hiệu chuẩn")
+        self.grp_sensor = QGroupBox("📊 Cảm biến & Hiệu chuẩn")
         sg = QGridLayout()
         sg.setContentsMargins(8, 10, 8, 8)
         sg.setSpacing(6)
 
-        sg.addWidget(QLabel("Đơn vị đo:"), 0, 0)
+        self.lbl_measure_unit = QLabel("Đơn vị đo:")
+        sg.addWidget(self.lbl_measure_unit, 0, 0)
         self.combo_unit = QComboBox()
         self.combo_unit.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_unit.setMinimumContentsLength(5)
         for k, v in UNITS.items(): self.combo_unit.addItem(f"{k}: {v}", k)
         sg.addWidget(self.combo_unit, 0, 1)
 
-        sg.addWidget(QLabel("Chế độ đo:"), 1, 0)
+        self.lbl_measure_mode = QLabel("Chế độ đo:")
+        sg.addWidget(self.lbl_measure_mode, 1, 0)
         self.combo_mtype = QComboBox()
         self.combo_mtype.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_mtype.setMinimumContentsLength(10)
         self.combo_mtype.addItems(["0: 2 chiều (+/-)", "1: 1 chiều (+)"])
         sg.addWidget(self.combo_mtype, 1, 1)
 
-        sg.addWidget(QLabel("Full Scale (Nm):"), 2, 0)
+        self.lbl_full_scale = QLabel("Full Scale (Nm):")
+        sg.addWidget(self.lbl_full_scale, 2, 0)
         self.spin_fs = QDoubleSpinBox()
         self.spin_fs.setRange(0.1, 1000000); self.spin_fs.setDecimals(2); self.spin_fs.setValue(49.70)
         sg.addWidget(self.spin_fs, 2, 1)
 
-        sg.addWidget(QLabel("Sensitivity (mV/V):"), 3, 0)
+        self.lbl_sensitivity = QLabel("Sensitivity (mV/V):")
+        sg.addWidget(self.lbl_sensitivity, 3, 0)
         self.spin_sens = QDoubleSpinBox()
         self.spin_sens.setRange(0.001, 100); self.spin_sens.setDecimals(4); self.spin_sens.setValue(1.9880)
         sg.addWidget(self.spin_sens, 3, 1)
 
-        sensor_grp.setLayout(sg); main_lay.addWidget(sensor_grp)
+        self.grp_sensor.setLayout(sg); main_lay.addWidget(self.grp_sensor)
 
         # 2. Nhóm Ổn định & Lọc
-        stable_grp = QGroupBox("🛡️ Ổn định & Lọc")
+        self.grp_stability = QGroupBox("🛡️ Ổn định & Lọc")
         stg = QGridLayout()
 
-        stg.addWidget(QLabel("Mức lọc nhiễu:"), 0, 0)
+        self.lbl_filter_level = QLabel("Mức lọc nhiễu:")
+        stg.addWidget(self.lbl_filter_level, 0, 0)
         self.combo_filter = QComboBox()
         self.combo_filter.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_filter.setMinimumContentsLength(10)
@@ -616,27 +656,27 @@ class MainWindow(QMainWindow):
 
         stg.setContentsMargins(8, 12, 8, 8)
         stg.setSpacing(6)
-        stable_grp.setLayout(stg)
-        main_lay.addWidget(stable_grp)
+        self.grp_stability.setLayout(stg)
+        main_lay.addWidget(self.grp_stability)
 
 
         # Buttons
         btn_row = QHBoxLayout()
-        btn_write = QPushButton("📝 Ghi cấu hình")
-        btn_write.clicked.connect(self._write_config)
-        btn_read  = QPushButton("📖 Đọc từ thiết bị")
-        btn_read.clicked.connect(self._read_config)
-        btn_row.addWidget(btn_write); btn_row.addWidget(btn_read)
+        self.btn_write_cfg = QPushButton("📝 Ghi cấu hình")
+        self.btn_write_cfg.clicked.connect(self._write_config)
+        self.btn_read_cfg  = QPushButton("📖 Đọc từ thiết bị")
+        self.btn_read_cfg.clicked.connect(self._read_config)
+        btn_row.addWidget(self.btn_write_cfg); btn_row.addWidget(self.btn_read_cfg)
         main_lay.addLayout(btn_row)
 
-        cmd_grp = QGroupBox("⚡ Lệnh nhanh")
+        self.grp_quick_cmd = QGroupBox("⚡ Lệnh nhanh")
         cg = QHBoxLayout()
-        btn_tare = QPushButton("⚖️ Tare (Zero)")
-        btn_tare.clicked.connect(self._do_tare)
-        btn_rst  = QPushButton("🔄 Restart Device")
-        btn_rst.clicked.connect(self._do_restart)
-        cg.addWidget(btn_tare); cg.addWidget(btn_rst)
-        cmd_grp.setLayout(cg); main_lay.addWidget(cmd_grp)
+        self.btn_quick_tare = QPushButton("⚖️ Tare (Zero)")
+        self.btn_quick_tare.clicked.connect(self._do_tare)
+        self.btn_quick_restart  = QPushButton("🔄 Restart Device")
+        self.btn_quick_restart.clicked.connect(self._do_restart)
+        cg.addWidget(self.btn_quick_tare); cg.addWidget(self.btn_quick_restart)
+        self.grp_quick_cmd.setLayout(cg); main_lay.addWidget(self.grp_quick_cmd)
 
         main_lay.addStretch()
         return w
@@ -648,24 +688,27 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(8)
 
-        sample_grp = QGroupBox("⏱️ Lấy mẫu")
+        self.grp_sampling = QGroupBox("⏱️ Lấy mẫu")
         sg = QGridLayout()
         sg.setContentsMargins(8, 10, 8, 8)
         sg.setSpacing(6)
-        sg.addWidget(QLabel("Chu kỳ (ms):"), 0, 0)
+        self.lbl_sample_interval = QLabel("Chu kỳ (ms):")
+        sg.addWidget(self.lbl_sample_interval, 0, 0)
         self.spin_interval = QSpinBox()
         self.spin_interval.setRange(1, 10000)
         self.spin_interval.setValue(DEFAULT_SAMPLE_INTERVAL_MS)
         self.spin_interval.editingFinished.connect(self._on_acquisition_settings_changed)
         sg.addWidget(self.spin_interval, 0, 1)
-        sg.addWidget(QLabel("Cửa sổ biểu đồ (s):"), 1, 0)
+        self.lbl_chart_window = QLabel("Cửa sổ biểu đồ (s):")
+        sg.addWidget(self.lbl_chart_window, 1, 0)
         self.spin_window = QSpinBox()
         self.spin_window.setRange(10, 600); self.spin_window.setValue(60)
         self.spin_window.editingFinished.connect(self._on_acquisition_settings_changed)
         sg.addWidget(self.spin_window, 1, 1)
 
         # --- Y Axis Scale ---
-        sg.addWidget(QLabel("Giới hạn Y (Nm):"), 2, 0)
+        self.lbl_y_limits = QLabel("Giới hạn Y (Nm):")
+        sg.addWidget(self.lbl_y_limits, 2, 0)
         self.spin_ymax = QDoubleSpinBox()
         self.spin_ymax.setRange(0.1, 10000); self.spin_ymax.setDecimals(1)
         self.spin_ymax.setValue(5.0)
@@ -676,9 +719,9 @@ class MainWindow(QMainWindow):
         self.chk_fixed_y.setChecked(True)
         self.chk_fixed_y.toggled.connect(lambda _: self._update_plot_limits())
         sg.addWidget(self.chk_fixed_y, 3, 0, 1, 2)
-        sample_grp.setLayout(sg); lay.addWidget(sample_grp)
+        self.grp_sampling.setLayout(sg); lay.addWidget(self.grp_sampling)
 
-        rec_grp = QGroupBox("🔴 Ghi dữ liệu")
+        self.grp_recording = QGroupBox("🔴 Ghi dữ liệu")
         rg = QVBoxLayout()
         btns = QHBoxLayout()
         self.btn_rec_start = QPushButton("▶️ Bắt đầu ghi")
@@ -704,9 +747,9 @@ class MainWindow(QMainWindow):
         self.btn_rec_clear.clicked.connect(self._clear_samples)
         self.btn_rec_clear.setEnabled(False)
         rg.addWidget(self.btn_rec_clear)
-        rec_grp.setLayout(rg); lay.addWidget(rec_grp)
+        self.grp_recording.setLayout(rg); lay.addWidget(self.grp_recording)
 
-        export_grp = QGroupBox("💾 Xuất dữ liệu")
+        self.grp_export = QGroupBox("💾 Xuất dữ liệu")
         eg = QVBoxLayout()
         eg.setSpacing(6)
         for exp in self._exporters:
@@ -715,33 +758,31 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda checked, e=exp: self._export(e))
             eg.addWidget(btn)
 
-        export_grp.setLayout(eg); lay.addWidget(export_grp)
+        self.grp_export.setLayout(eg); lay.addWidget(self.grp_export)
 
-        # --- Import to Plot Viewer / Converter ---
+        # --- Import to Plot Viewer ---
         if _HAS_PLOT_VIEWER:
-            import_grp = QGroupBox("📥 Import dữ liệu sang công cụ khác")
+            self.grp_import_tools = QGroupBox("📥 Import dữ liệu sang công cụ khác")
             ig = QVBoxLayout()
             ig.setSpacing(6)
 
-            btn_to_plot = QPushButton("📊 Import to Plot Viewer")
-            btn_to_plot.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
-            btn_to_plot.clicked.connect(self._import_to_plot_viewer)
-            ig.addWidget(btn_to_plot)
+            self.btn_import_plot = QPushButton("📊 Import to Plot Viewer")
+            self.btn_import_plot.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+            self.btn_import_plot.clicked.connect(self._import_to_plot_viewer)
+            ig.addWidget(self.btn_import_plot)
 
-            btn_to_conv = QPushButton("🔄 Import to Converter")
-            btn_to_conv.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;")
-            btn_to_conv.clicked.connect(self._import_to_converter)
-            ig.addWidget(btn_to_conv)
+            self.grp_import_tools.setLayout(ig); lay.addWidget(self.grp_import_tools)
 
-            import_grp.setLayout(ig); lay.addWidget(import_grp)
+        lay.addStretch()
+        return w
 
         lay.addStretch()
         return w
 
     # --- Display group (Redesigned to be compact like draw_plot.py) ---
     def _build_display_group(self) -> QWidget:
-        grp = QGroupBox("📊 Real-time Data Info")
-        grp.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.display_panel_grp = QGroupBox("📊 Real-time Data Info")
+        self.display_panel_grp.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         g = QGridLayout()
         g.setContentsMargins(6, 8, 6, 6)
         g.setSpacing(4)
@@ -750,68 +791,105 @@ class MainWindow(QMainWindow):
         self.lbl_torque = QLabel("0.000 Nm")
         self.lbl_torque.setFont(QFont('Segoe UI', 14, QFont.Bold))
         self.lbl_torque.setStyleSheet("color: #1976D2;") 
-        g.addWidget(QLabel("Torque:"), 0, 0)
+        self.lbl_display_torque_title = QLabel("Torque:")
+        g.addWidget(self.lbl_display_torque_title, 0, 0)
         g.addWidget(self.lbl_torque, 0, 1, 1, 3)
 
         # Row 1: Status & Pts
-        g.addWidget(QLabel("Status:"), 1, 0)
+        self.lbl_display_status_title = QLabel("Status:")
+        g.addWidget(self.lbl_display_status_title, 1, 0)
         self.lbl_stable = QLabel("---")
         self.lbl_stable.setStyleSheet("font-weight: bold; font-size: 11px;")
         g.addWidget(self.lbl_stable, 1, 1)
 
-        g.addWidget(QLabel("Samples:"), 1, 2)
+        self.lbl_display_samples_title = QLabel("Samples:")
+        g.addWidget(self.lbl_display_samples_title, 1, 2)
         self.lbl_count = QLabel("0")
         self.lbl_count.setStyleSheet("font-weight: bold;")
         g.addWidget(self.lbl_count, 1, 3)
 
         # Row 2: Tare & Time
-        g.addWidget(QLabel("Tare:"), 2, 0)
+        self.lbl_display_tare_title = QLabel("Tare:")
+        g.addWidget(self.lbl_display_tare_title, 2, 0)
         self.lbl_tare = QLabel("--- Nm")
         g.addWidget(self.lbl_tare, 2, 1)
 
-        g.addWidget(QLabel("Time:"), 2, 2)
+        self.lbl_display_time_title = QLabel("Time:")
+        g.addWidget(self.lbl_display_time_title, 2, 2)
         self.lbl_rectime = QLabel("0.0 s")
         g.addWidget(self.lbl_rectime, 2, 3)
 
         # Row 3: Max
         info_style = "font-weight: bold; font-size: 12px;"
-        g.addWidget(QLabel("Maximum:"), 3, 0)
+        self.lbl_display_max_title = QLabel("Maximum:")
+        g.addWidget(self.lbl_display_max_title, 3, 0)
         self.lbl_max = QLabel("---")
         self.lbl_max.setStyleSheet(f"color: #1976D2; {info_style}")
         g.addWidget(self.lbl_max, 3, 1)
 
         # Row 4: Min
-        g.addWidget(QLabel("Minimum:"), 4, 0)
+        self.lbl_display_min_title = QLabel("Minimum:")
+        g.addWidget(self.lbl_display_min_title, 4, 0)
         self.lbl_min = QLabel("---")
         self.lbl_min.setStyleSheet(f"color: #D32F2F; {info_style}")
         g.addWidget(self.lbl_min, 4, 1)
 
         g.setColumnStretch(1, 1)
         g.setColumnStretch(3, 1)
-        grp.setLayout(g)
-        return grp
+        self.display_panel_grp.setLayout(g)
+        return self.display_panel_grp
 
 
 
     # --- Chart group ---
     def _build_chart_group(self) -> QWidget:
-        grp = QGroupBox("📈 Torque – Time")
+        self.chart_group = QGroupBox("📈 Torque vs Time & Angle")
         lay = QVBoxLayout()
         lay.setContentsMargins(6, 6, 6, 6)
-        lay.setSpacing(2)
+        lay.setSpacing(4)
+
+        # Splitter to display Time and Angle charts side-by-side
+        self.chart_splitter = QSplitter(Qt.Horizontal)
+        self.chart_splitter.setHandleWidth(8)
+
+        # 1. Torque-Time Chart Container
+        time_container = QWidget()
+        time_lay = QVBoxLayout(time_container)
+        time_lay.setContentsMargins(0, 0, 0, 0)
+        time_lay.setSpacing(2)
 
         self.plot = RealTimePlot(
             title="Torque vs Time",
             xlabel="Time (s)", ylabel="Torque (Nm)",
             max_window_s=DEFAULT_TIME_WINDOW_S,
         )
-        
-        # Thêm CustomToolbar thay vì NavigationToolbar mặc định
         self.toolbar = CustomToolbar(self.plot, self)
         self.toolbar.setMaximumHeight(32)
-        lay.addWidget(self.toolbar)
-        lay.addWidget(self.plot)
+        time_lay.addWidget(self.toolbar)
+        time_lay.addWidget(self.plot)
+        self.chart_splitter.addWidget(time_container)
 
+        # 2. Torque-Angle Chart Container
+        angle_container = QWidget()
+        angle_lay = QVBoxLayout(angle_container)
+        angle_lay.setContentsMargins(0, 0, 0, 0)
+        angle_lay.setSpacing(2)
+
+        self.angle_plot = TorqueAnglePlot(
+            title="Torque vs Angle",
+            xlabel="Angle (deg)", ylabel="Torque (Nm)",
+        )
+        self.angle_toolbar = CustomToolbar(self.angle_plot, self)
+        self.angle_toolbar.setMaximumHeight(32)
+        angle_lay.addWidget(self.angle_toolbar)
+        angle_lay.addWidget(self.angle_plot)
+        self.chart_splitter.addWidget(angle_container)
+
+        # Set equal initial sizes
+        self.chart_splitter.setSizes([500, 500])
+        lay.addWidget(self.chart_splitter, stretch=1)
+
+        # Control buttons row (Pause & Clear)
         btn_row = QHBoxLayout()
         self.btn_pause_chart = QPushButton("⏸ Dừng vẽ")
         self.btn_pause_chart.setCheckable(True)
@@ -823,8 +901,8 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(btn_clear)
         
         lay.addLayout(btn_row)
-        grp.setLayout(lay)
-        return grp
+        self.chart_group.setLayout(lay)
+        return self.chart_group
 
     def _toggle_pause_chart(self, checked: bool):
         self._chart_paused = checked
@@ -887,52 +965,81 @@ class MainWindow(QMainWindow):
             self._apply_chart_theme(dark)
 
     def _apply_chart_theme(self, dark: bool):
-        ax = self.plot.ax
-        fig = self.plot.fig
-        if dark:
-            fig.patch.set_facecolor('#1e1e2e')
-            ax.set_facecolor('#181825')
-            ax.tick_params(colors='#bac2de')
-            ax.title.set_color('#cdd6f4')
-            ax.xaxis.label.set_color('#bac2de')
-            ax.yaxis.label.set_color('#bac2de')
-            ax.grid(True, alpha=0.15, color='#a6adc8')
-            for spine in ax.spines.values():
-                spine.set_edgecolor('#45475a')
-            self.plot.line.set_color('#89b4fa')
-        else:
-            fig.patch.set_facecolor('#f5f5f5')
-            ax.set_facecolor('#ffffff')
-            ax.tick_params(colors='#212121')
-            ax.title.set_color('#1565c0')
-            ax.xaxis.label.set_color('#424242')
-            ax.yaxis.label.set_color('#424242')
-            ax.grid(True, alpha=0.4, color='#dddddd')
-            for spine in ax.spines.values():
-                spine.set_edgecolor('#bdbdbd')
-            self.plot.line.set_color('#1976d2')
-        self.plot.draw_idle()
+        if hasattr(self, 'plot'):
+            ax = self.plot.ax
+            fig = self.plot.fig
+            if dark:
+                fig.patch.set_facecolor('#1e1e2e')
+                ax.set_facecolor('#181825')
+                ax.tick_params(colors='#bac2de')
+                ax.title.set_color('#cdd6f4')
+                ax.xaxis.label.set_color('#bac2de')
+                ax.yaxis.label.set_color('#bac2de')
+                ax.grid(True, alpha=0.15, color='#a6adc8')
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('#45475a')
+                self.plot.line.set_color('#89b4fa')
+            else:
+                fig.patch.set_facecolor('#f5f5f5')
+                ax.set_facecolor('#ffffff')
+                ax.tick_params(colors='#212121')
+                ax.title.set_color('#1565c0')
+                ax.xaxis.label.set_color('#424242')
+                ax.yaxis.label.set_color('#424242')
+                ax.grid(True, alpha=0.4, color='#dddddd')
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('#bdbdbd')
+                self.plot.line.set_color('#1976d2')
+            self.plot.draw_idle()
+
+        if hasattr(self, 'angle_plot'):
+            ax = self.angle_plot.ax
+            fig = self.angle_plot.fig
+            self.angle_plot._bg = None  # Invalidate blit background cache
+            if dark:
+                fig.patch.set_facecolor('#1e1e2e')
+                ax.set_facecolor('#181825')
+                ax.tick_params(colors='#bac2de')
+                ax.title.set_color('#cdd6f4')
+                ax.xaxis.label.set_color('#bac2de')
+                ax.yaxis.label.set_color('#bac2de')
+                ax.grid(True, alpha=0.15, color='#a6adc8')
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('#45475a')
+                self.angle_plot.line.set_color('#fab387')
+            else:
+                fig.patch.set_facecolor('#f5f5f5')
+                ax.set_facecolor('#ffffff')
+                ax.tick_params(colors='#212121')
+                ax.title.set_color('#1565c0')
+                ax.xaxis.label.set_color('#424242')
+                ax.yaxis.label.set_color('#424242')
+                ax.grid(True, alpha=0.4, color='#dddddd')
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('#bdbdbd')
+                self.angle_plot.line.set_color('#e65100')
+            self.angle_plot.draw_idle()
 
     # --- Log group ---
     def _build_log_group(self) -> QWidget:
-        grp = QGroupBox("📝 Terminal Log")
+        self.grp_log = QGroupBox("📝 Terminal Log")
         lay = QVBoxLayout()
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True)
         self.log_box.setMaximumHeight(140)
         lay.addWidget(self.log_box)
-        grp.setLayout(lay)
-        return grp
+        self.grp_log.setLayout(lay)
+        return self.grp_log
 
     # --- Helper to update button styles based on state and theme ---
     def _update_connect_btn_style(self):
         if self._connected:
             color = "#F44336" if not self._is_dark else "#f38ba8" # Red
             text_color = "white" if not self._is_dark else "#1e1e2e"
-            self.btn_connect.setText("🔌 Ngắt kết nối")
+            self.btn_connect.setText(self.i18n.t('btn_disconnect'))
         else:
             color = "#4CAF50" if not self._is_dark else "#a6e3a1" # Green
             text_color = "white" if not self._is_dark else "#1e1e2e"
-            self.btn_connect.setText("🔗 Kết nối")
+            self.btn_connect.setText(self.i18n.t('btn_connect'))
         self.btn_connect.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; padding: 8px;")
 
     def _update_rec_start_btn_style(self):
@@ -1170,15 +1277,15 @@ class MainWindow(QMainWindow):
         self.lbl_min.setText(f"{status.min_net_weight:.3f}")
 
         if status.is_stable:
-            self.lbl_stable.setText("🟢 Stable")
+            self.lbl_stable.setText(self.i18n.t('status_stable') if hasattr(self, 'i18n') else "🟢 Stable")
             color = "#4CAF50" if not self._is_dark else "#a6e3a1"
             self.lbl_stable.setStyleSheet(f"color: {color};")
         elif status.is_fullscale:
-            self.lbl_stable.setText("🔴 Full Scale!")
+            self.lbl_stable.setText(self.i18n.t('status_fullscale') if hasattr(self, 'i18n') else "🔴 Full Scale!")
             color = "#F44336" if not self._is_dark else "#f38ba8"
             self.lbl_stable.setStyleSheet(f"color: {color};")
         else:
-            self.lbl_stable.setText("🟡 Unstable")
+            self.lbl_stable.setText(self.i18n.t('status_unstable') if hasattr(self, 'i18n') else "🟡 Unstable")
             color = "#FF9800" if not self._is_dark else "#f9e2af"
             self.lbl_stable.setStyleSheet(f"color: {color};")
 
@@ -1186,6 +1293,8 @@ class MainWindow(QMainWindow):
         # Chart update (nếu không đang PAUSE)
         if not self._chart_paused:
             self.plot.add_point(elapsed, status.net_weight)
+            if hasattr(self, 'angle_plot'):
+                self.angle_plot.add_point(self._current_angle, status.net_weight)
 
         # Ghi session nếu đang recording
         if self._recording:
@@ -1202,6 +1311,8 @@ class MainWindow(QMainWindow):
                     torque_Nm=status.net_weight, # Lặp lại giá trị mới nhất
                     stable=status.is_stable,
                     timestamp=time.time(),
+                    angle_deg=self._current_angle,
+                    cycle=self._current_cycle,
                 )
                 self._session.samples.append(sample)
                 
@@ -1441,7 +1552,7 @@ class MainWindow(QMainWindow):
         return tmp_path if ok else ""
 
     def _import_to_plot_viewer(self):
-        """Export session CSV → load vào Plot Viewer → nhảy sang tab."""
+        """Export session CSV -> load vào Plot Viewer -> nhảy sang tab."""
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
             self._log("⚠️ Plot Viewer chưa sẵn sàng"); return
         if not self._session.samples:
@@ -1456,43 +1567,16 @@ class MainWindow(QMainWindow):
         else:
             self._log("⚠️ Import sang Plot Viewer thất bại")
 
-    def _import_to_converter(self):
-        """Export session CSV → load vào Converter → nhảy sang tab."""
-        if not _HAS_PLOT_VIEWER or not hasattr(self, '_converter'):
-            self._log("⚠️ Converter chưa sẵn sàng"); return
-        if not self._session.samples:
-            self._log("⚠️ Không có dữ liệu để import"); return
-        tmp = self._export_session_to_temp_csv()
-        if not tmp:
-            self._log("⚠️ Xuất CSV tạm thất bại"); return
-        try:
-            self._converter.input_file = tmp
-            self._converter.input_path_label.setText(tmp)
-            self._converter.load_input_file(tmp)
-            self._converter.btn_convert.setEnabled(True)
-            self._converter.output_folder = os.path.dirname(tmp)
-            self._converter.output_folder_label.setText(self._converter.output_folder)
-            self._converter.update_output_filename()
-            self.main_tabs.setCurrentIndex(2)  # Tab Converter
-            self._log(f"🔄 Đã import {self._session.count} mẫu sang Converter")
-        except Exception as e:
-            self._log(f"⚠️ Import sang Converter thất bại: {e}")
-
-    def _on_converter_import_requested(self, path: str):
-        """Được gọi khi người dùng bấm Import to Plot Viewer trong tab Converter."""
-        if hasattr(self, '_plot_viewer'):
-            self._plot_viewer.load_file_from_path_signal(path)
-            self.main_tabs.setCurrentIndex(1)  # Tab Plot Viewer
-            self._log(f"📊 Đã import Dữ liệu Converter ({os.path.basename(path)}) vào Plot Viewer")
-
     # ===========================================================
     # UTIL
     # ===========================================================
 
     def _clear_chart(self):
         self.plot.clear()
+        if hasattr(self, 'angle_plot'):
+            self.angle_plot.clear()
         self._ref_time = time.monotonic()
-        self._log("🗑️ Đã xóa biểu đồ")
+        self._log(self.i18n.t('msg_chart_cleared') if hasattr(self, 'i18n') else "🗑️ Đã xóa biểu đồ")
 
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -1507,7 +1591,193 @@ class MainWindow(QMainWindow):
         ui['dark_theme'] = self._is_dark
         ui['interval_ms'] = self.spin_interval.value()
         ui['window_s'] = self.spin_window.value()
+        if hasattr(self, 'i18n'):
+            ui['language'] = self.i18n.current_language
         self._settings.save_ui_settings(ui)
         if self._connected:
             self._disconnect()
         super().closeEvent(event)
+
+    # ===========================================================
+    # BILINGUAL & SERVO CALLBACKS
+    # ===========================================================
+
+    def _update_language_btn_text(self):
+        if self.i18n.current_language == 'vi':
+            self.btn_toggle_lang.setText("🌐 English (EN)")
+        else:
+            self.btn_toggle_lang.setText("🌐 Tiếng Việt (VI)")
+
+    def _toggle_language(self):
+        new_lang = self.i18n.toggle()
+        self._retranslate_ui()
+        self._update_language_btn_text()
+        
+        # Lưu vào settings
+        ui = self._settings.load_ui_settings()
+        ui['language'] = new_lang
+        self._settings.save_ui_settings(ui)
+        self._log(f"🌐 Đổi ngôn ngữ thành: {new_lang.upper()}")
+
+    def _retranslate_ui(self):
+        # 1. Main tabs & sub tabs
+        self.main_tabs.setTabText(0, self.i18n.t('tab_acquisition'))
+        self.main_tabs.setTabText(1, self.i18n.t('tab_plot_viewer'))
+        
+        self.tabs.setTabText(0, self.i18n.t('tab_connection'))
+        self.tabs.setTabText(1, self.i18n.t('tab_config'))
+        self.tabs.setTabText(2, self.i18n.t('tab_acquisition'))
+
+        # 2. Display Group
+        if hasattr(self, 'display_panel_grp'):
+            self.display_panel_grp.setTitle(self.i18n.t('display_grp'))
+        if hasattr(self, 'lbl_display_torque_title'):
+            self.lbl_display_torque_title.setText(self.i18n.t('lbl_torque'))
+        if hasattr(self, 'lbl_display_status_title'):
+            self.lbl_display_status_title.setText(self.i18n.t('lbl_status'))
+        if hasattr(self, 'lbl_display_samples_title'):
+            self.lbl_display_samples_title.setText(self.i18n.t('lbl_samples'))
+        if hasattr(self, 'lbl_display_tare_title'):
+            self.lbl_display_tare_title.setText(self.i18n.t('lbl_tare'))
+        if hasattr(self, 'lbl_display_time_title'):
+            self.lbl_display_time_title.setText(self.i18n.t('lbl_time'))
+        if hasattr(self, 'lbl_display_max_title'):
+            self.lbl_display_max_title.setText(self.i18n.t('lbl_max'))
+        if hasattr(self, 'lbl_display_min_title'):
+            self.lbl_display_min_title.setText(self.i18n.t('lbl_min'))
+
+        # Retranslate connection status live text
+        if not self._connected:
+            self.lbl_conn_status.setText(self.i18n.t('status_unconnected'))
+        else:
+            self.lbl_conn_status.setText(self.i18n.t('status_connected'))
+
+        # 3. Connection Tab
+        if hasattr(self, 'grp_proto'):
+            self.grp_proto.setTitle(self.i18n.t('proto_grp'))
+        if hasattr(self, 'lbl_proto_type'):
+            self.lbl_proto_type.setText(self.i18n.t('proto_lbl'))
+        if hasattr(self, 'grp_rtu'):
+            self.grp_rtu.setTitle(self.i18n.t('rtu_grp'))
+        if hasattr(self, 'lbl_com_port'):
+            self.lbl_com_port.setText(self.i18n.t('com_lbl'))
+        if hasattr(self, 'btn_scan'):
+            self.btn_scan.setToolTip(self.i18n.t('btn_scan_tooltip'))
+        if hasattr(self, 'lbl_baudrate'):
+            self.lbl_baudrate.setText(self.i18n.t('baud_lbl'))
+        if hasattr(self, 'lbl_parity'):
+            self.lbl_parity.setText(self.i18n.t('parity_lbl'))
+        if hasattr(self, 'grp_tcp'):
+            self.grp_tcp.setTitle(self.i18n.t('tcp_grp'))
+        if hasattr(self, 'lbl_tcp_ip'):
+            self.lbl_tcp_ip.setText(self.i18n.t('ip_lbl'))
+        if hasattr(self, 'lbl_tcp_port'):
+            self.lbl_tcp_port.setText(self.i18n.t('port_lbl'))
+        if hasattr(self, 'grp_slave'):
+            self.grp_slave.setTitle(self.i18n.t('slave_grp'))
+        if hasattr(self, 'lbl_slave_id'):
+            self.lbl_slave_id.setText(self.i18n.t('slave_lbl'))
+        
+        # Connect Button
+        self._update_connect_btn_style()
+
+        # 4. Config Tab
+        if hasattr(self, 'grp_sensor'):
+            self.grp_sensor.setTitle(self.i18n.t('sensor_grp'))
+        if hasattr(self, 'lbl_measure_unit'):
+            self.lbl_measure_unit.setText(self.i18n.t('unit_lbl'))
+        if hasattr(self, 'lbl_measure_mode'):
+            self.lbl_measure_mode.setText(self.i18n.t('mode_lbl'))
+        if hasattr(self, 'lbl_full_scale'):
+            self.lbl_full_scale.setText(self.i18n.t('fs_lbl'))
+        if hasattr(self, 'lbl_sensitivity'):
+            self.lbl_sensitivity.setText(self.i18n.t('sens_lbl'))
+        if hasattr(self, 'grp_stability'):
+            self.grp_stability.setTitle(self.i18n.t('stable_grp'))
+        if hasattr(self, 'lbl_filter_level'):
+            self.lbl_filter_level.setText(self.i18n.t('filter_lbl'))
+        if hasattr(self, 'btn_write_cfg'):
+            self.btn_write_cfg.setText(self.i18n.t('btn_write_cfg'))
+        if hasattr(self, 'btn_read_cfg'):
+            self.btn_read_cfg.setText(self.i18n.t('btn_read_cfg'))
+        if hasattr(self, 'grp_quick_cmd'):
+            self.grp_quick_cmd.setTitle(self.i18n.t('quick_cmd_grp'))
+        if hasattr(self, 'btn_quick_tare'):
+            self.btn_quick_tare.setText(self.i18n.t('btn_quick_tare'))
+        if hasattr(self, 'btn_quick_restart'):
+            self.btn_quick_restart.setText(self.i18n.t('btn_quick_restart'))
+
+        # 5. Acquisition Tab
+        if hasattr(self, 'grp_sampling'):
+            self.grp_sampling.setTitle(self.i18n.t('sampling_grp'))
+        if hasattr(self, 'lbl_sample_interval'):
+            self.lbl_sample_interval.setText(self.i18n.t('interval_lbl'))
+        if hasattr(self, 'lbl_chart_window'):
+            self.lbl_chart_window.setText(self.i18n.t('window_lbl'))
+        if hasattr(self, 'lbl_y_limits'):
+            self.lbl_y_limits.setText(self.i18n.t('ymax_lbl'))
+        if hasattr(self, 'chk_fixed_y'):
+            self.chk_fixed_y.setText(self.i18n.t('chk_fixed_y'))
+        
+        if hasattr(self, 'grp_recording'):
+            self.grp_recording.setTitle(self.i18n.t('recording_grp'))
+        if hasattr(self, 'btn_rec_start'):
+            self._update_rec_start_btn_style()
+            if not self._recording:
+                self.btn_rec_start.setText(self.i18n.t('btn_start_record'))
+            else:
+                self.btn_rec_start.setText(self.i18n.t('btn_stop_record'))
+        if hasattr(self, 'btn_rec_stop'):
+            self.btn_rec_stop.setText(self.i18n.t('btn_stop_record'))
+        if hasattr(self, 'btn_rec_clear'):
+            self.btn_rec_clear.setText(self.i18n.t('btn_clear_samples'))
+        if hasattr(self, 'btn_tare_acq'):
+            self.btn_tare_acq.setText(self.i18n.t('btn_tare_acq'))
+        
+        if hasattr(self, 'grp_export'):
+            self.grp_export.setTitle(self.i18n.t('export_grp'))
+        if hasattr(self, 'grp_import_tools'):
+            self.grp_import_tools.setTitle(self.i18n.t('import_tools_grp'))
+        if hasattr(self, 'btn_import_plot'):
+            self.btn_import_plot.setText(self.i18n.t('btn_import_plot'))
+
+        # 6. Chart Group
+        if hasattr(self, 'chart_group'):
+            self.chart_group.setTitle(self.i18n.t('chart_torque_time') + " & " + self.i18n.t('chart_torque_angle'))
+        
+        # Redraw charts with translated titles and axes labels
+        if hasattr(self, 'plot'):
+            self.plot.ax.set_title(self.i18n.t('chart_title_time'), fontsize=11, fontweight='bold')
+            self.plot.ax.set_xlabel(self.i18n.t('axis_time'))
+            self.plot.ax.set_ylabel(self.i18n.t('axis_torque'))
+            self.plot.draw_idle()
+
+        if hasattr(self, 'angle_plot'):
+            self.angle_plot.ax.set_title(self.i18n.t('chart_title_angle'), fontsize=11, fontweight='bold')
+            self.angle_plot.ax.set_xlabel(self.i18n.t('axis_angle'))
+            self.angle_plot.ax.set_ylabel(self.i18n.t('axis_torque'))
+            self.angle_plot._bg = None  # Invalidate blit cache
+            self.angle_plot.draw_idle()
+
+        # 7. Log Group
+        if hasattr(self, 'grp_log'):
+            self.grp_log.setTitle(self.i18n.t('display_grp') if self.i18n.current_language == 'en' else "📝 Terminal Log")
+
+    # === Servo callbacks ===
+
+    def _on_servo_angle_updated(self, angle: float, cycle: int, recording_active: bool):
+        self._current_angle = angle
+        self._current_cycle = cycle
+
+    def _on_servo_finished(self):
+        self._sig_servo_finished.emit()
+
+    def _on_servo_error(self, err_msg: str):
+        self._sig_servo_error.emit(err_msg)
+
+    def _handle_servo_finished(self):
+        self._log("🏁 Chu trình chạy Servo đã hoàn thành")
+
+    def _handle_servo_error(self, err_msg: str):
+        self._log(f"❌ Lỗi Servo: {err_msg}")
+        QMessageBox.warning(self, self.i18n.t('msg_err'), f"Lỗi Servo: {err_msg}")

@@ -28,6 +28,11 @@ TRANSLATIONS = {
         'btn_disconnect': '🔌 Ngắt kết nối',
         'status_unconnected': '⚪ Chưa kết nối',
         'status_connected': '🟢 Đã kết nối',
+        'status_stable': '🟢 Ổn định',
+        'status_fullscale': '🔴 Quá tải!',
+        'status_unstable': '🟡 Không ổn định',
+        'btn_scan_tooltip': 'Làm mới COM ports',
+        'msg_chart_cleared': '🗑️ Đã xóa biểu đồ',
         
         # Config Tab
         'sensor_grp': '📊 Cảm biến & Hiệu chuẩn',
@@ -120,6 +125,11 @@ TRANSLATIONS = {
         'btn_disconnect': '🔌 Disconnect',
         'status_unconnected': '⚪ Disconnected',
         'status_connected': '🟢 Connected',
+        'status_stable': '🟢 Stable',
+        'status_fullscale': '🔴 Full Scale!',
+        'status_unstable': '🟡 Unstable',
+        'btn_scan_tooltip': 'Refresh COM ports',
+        'msg_chart_cleared': '🗑️ Chart cleared',
         
         # Config Tab
         'sensor_grp': '📊 Sensor & Calibration',
