@@ -1,7 +1,7 @@
 {
   "connection": {
     "mode": "RTU",
-    "port": "COM1",
+    "port": "COM6",
     "baudrate": 115200,
     "parity": "N",
     "stopbits": 1,
@@ -35,7 +35,7 @@
     "window_s": 60,
     "y_max": 5.0,
     "fixed_y": true,
-    "part_name": "Ball Joint",
+    "part_name": "Outer Tie Rod",
     "test_item": "Oscillating Torque",
     "dark_theme": false,
     "language": "vi"

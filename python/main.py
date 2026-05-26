@@ -111,6 +111,7 @@ def main():
         measurement_svc=measurement_svc,
         report_svc=report_svc,
     )
+
     window.show()
 
     logger.info("Ứng dụng ZE-SG3 đã khởi động")

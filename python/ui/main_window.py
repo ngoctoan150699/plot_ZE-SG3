@@ -988,9 +988,48 @@ class MainWindow(QMainWindow):
 
             self.grp_import_tools.setLayout(ig); lay.addWidget(self.grp_import_tools)
 
+        self._apply_acquisition_draw_plot_skin()
+
         lay.addStretch()
         scroll.setWidget(w)
         return scroll
+
+    def _apply_acquisition_draw_plot_skin(self):
+        """Apply draw_plot.py-like visual skin without changing layout or behavior."""
+        group_style = "QGroupBox{font-weight:bold;}"
+        for group in (
+            getattr(self, 'grp_sampling', None),
+            getattr(self, 'grp_program', None),
+            getattr(self, 'grp_recording', None),
+            getattr(self, 'grp_export', None),
+            getattr(self, 'grp_import_tools', None),
+        ):
+            if group is not None:
+                group.setStyleSheet(group_style)
+
+        button_specs = [
+            (getattr(self, 'btn_rec_start', None), '#4CAF50', 'white'),
+            (getattr(self, 'btn_rec_stop', None), '#F44336', 'white'),
+            (getattr(self, 'btn_tare_acq', None), '#FF9800', 'white'),
+            (getattr(self, 'btn_rec_clear', None), '#F44336', 'white'),
+            (getattr(self, 'btn_servo_setup', None), '#607D8B', 'white'),
+            (getattr(self, 'btn_import_plot', None), '#4CAF50', 'white'),
+        ]
+        for btn, bg, fg in button_specs:
+            if btn is not None:
+                btn.setStyleSheet(
+                    f"background-color: {bg}; color: {fg}; "
+                    "font-weight: bold; padding: 4px; border-radius: 3px;"
+                )
+
+        # Exporter buttons are created dynamically; style them by scanning export group.
+        if hasattr(self, 'grp_export'):
+            for btn in self.grp_export.findChildren(QPushButton):
+                if btn is not getattr(self, 'btn_import_plot', None):
+                    btn.setStyleSheet(
+                        "background-color: #2196F3; color: white; "
+                        "font-weight: bold; padding: 4px; border-radius: 3px;"
+                    )
 
     # --- Display group (Redesigned to be compact like draw_plot.py) ---
     def _build_display_group(self) -> QWidget:

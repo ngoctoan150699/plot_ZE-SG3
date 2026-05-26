@@ -39,7 +39,7 @@ from pymodbus.server import ModbusSerialServer, ServerStop
 from pymodbus.datastore import (
     ModbusDeviceContext as ModbusSlaveContext,
     ModbusServerContext,
-    ModbusSequentialDataBlock,
+    ModbusSimulatorContext,
 )
 from pymodbus.framer import FramerType
 
@@ -405,14 +405,71 @@ class TorqueSimulatorWindow(QMainWindow):
         self.lbl_torque.setText(f"{v:.2f} Nm")
         self.lbl_torque.setStyleSheet(f"color: {color};")
 
+    def _context_set_values(self, address: int, values):
+        """Write holding registers through the server context across pymodbus versions."""
+        if self._loop and self._loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                self._context.async_setValues(self._slave_id, 3, address, values),
+                self._loop,
+            )
+            future.result(timeout=1)
+        else:
+            asyncio.run(self._context.async_setValues(self._slave_id, 3, address, values))
+
+    def _context_get_values(self, address: int, count: int = 1):
+        """Read holding registers through the server context across pymodbus versions."""
+        if self._loop and self._loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                self._context.async_getValues(self._slave_id, 3, address, count),
+                self._loop,
+            )
+            return future.result(timeout=1)
+        return asyncio.run(self._context.async_getValues(self._slave_id, 3, address, count))
+
     def _create_datastore(self):
         """Tạo Modbus datastore với register map tương thích ZE-SG3."""
-        # TRONG PYMODBUS 3.X: Cần khởi tạo block tại address 1 để bù trừ lệch +1 của Context
-        hr_block = ModbusSequentialDataBlock(1, [0] * 255)
+        # pymodbus 3.13 deprecates direct DataBlock read/write methods.
+        # Use ModbusSimulatorContext so server requests and GUI updates share
+        # the same register array via async_getValues/async_setValues.
+        config = {
+            "setup": {
+                "co size": 0,
+                "di size": 0,
+                "ir size": 255,
+                "hr size": 255,
+                "shared blocks": True,
+                "type exception": False,
+                "defaults": {
+                    "value": {
+                        "bits": 0,
+                        "uint16": 0,
+                        "uint32": 0,
+                        "float32": 0,
+                        "string": "",
+                    },
+                    "action": {
+                        "bits": None,
+                        "uint16": None,
+                        "uint32": None,
+                        "float32": None,
+                        "string": None,
+                    },
+                },
+            },
+            "invalid": [],
+            "write": [[0, 254]],
+            "bits": [],
+            "uint16": [{"addr": [0, 254], "value": 0}],
+            "uint32": [],
+            "float32": [],
+            "string": [],
+            "repeat": [],
+        }
+        simulator = ModbusSimulatorContext(config, custom_actions=None)
+        context = ModbusServerContext(devices={self._slave_id: simulator}, single=False)
 
-        # Ghi giá trị mặc định vào block (phải dùng reg + 1)
         def _set_init(reg, vals):
-            hr_block.setValues(reg + 1, vals)
+            asyncio.run(context.async_setValues(self._slave_id, 3, reg + 1, vals))
 
         _set_init(REG_MACHINE_ID, [0x5A53])
         _set_init(REG_FIRMWARE_REV, [0x0100])
@@ -436,8 +493,7 @@ class TorqueSimulatorWindow(QMainWindow):
         # Status: stable
         _set_init(REG_STATUS, [STATUS_BIT_STABLE])
 
-        slave = ModbusSlaveContext(hr=hr_block, ir=hr_block)
-        return ModbusServerContext(devices={self._slave_id: slave}, single=False)
+        return context
 
     def _start_server(self):
         port = self.combo_port.currentData()
@@ -586,16 +642,13 @@ class TorqueSimulatorWindow(QMainWindow):
         int_tare = int(tare * 1000)
 
         # Encode all
-        slave = self._context[self._slave_id]
-        hr_block = slave.store['h'] # Lấy direct Holding Register block
-
         def _set_float(reg, value):
             hi, lo = float_to_regs(value)
-            hr_block.setValues(reg + 1, [hi, lo])
+            self._context_set_values(reg + 1, [hi, lo])
 
         def _set_int32(reg, value):
             hi, lo = int32_to_regs(value)
-            hr_block.setValues(reg + 1, [hi, lo])
+            self._context_set_values(reg + 1, [hi, lo])
 
         _set_float(REG_NET_WEIGHT_HI, net)
         _set_float(REG_GROSS_WEIGHT_HI, gross)
@@ -606,19 +659,14 @@ class TorqueSimulatorWindow(QMainWindow):
         _set_float(REG_MAX_NET_HI, self._max_net)
         _set_float(REG_MIN_NET_HI, self._min_net)
 
-        # Status: always stable
-        hr_block.setValues(REG_STATUS + 1, [STATUS_BIT_STABLE])
+        self._context_set_values(REG_STATUS + 1, [STATUS_BIT_STABLE])
 
     def _check_commands(self):
         """Kiểm tra Command Register để phản hồi lệnh từ phần mềm chính."""
         if not self._context:
             return
 
-        slave = self._context[self._slave_id]
-        hr_block = slave.store['h']
-        
-        # Đọc direct từ block (phải dùng reg + 1)
-        cmd_vals = hr_block.getValues(REG_COMMAND + 1, count=1)
+        cmd_vals = self._context_get_values(REG_COMMAND + 1, count=1)
         if not cmd_vals or cmd_vals[0] == 0:
             return
         
@@ -642,8 +690,7 @@ class TorqueSimulatorWindow(QMainWindow):
         else:
             self._log(f"📩 Nhận lệnh: {cmd_val}")
 
-        # Xóa command register sau khi xử lý
-        hr_block.setValues(REG_COMMAND + 1, [0])
+        self._context_set_values(REG_COMMAND + 1, [0])
 
     def _log(self, msg: str):
         from datetime import datetime
