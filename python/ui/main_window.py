@@ -839,13 +839,13 @@ class MainWindow(QMainWindow):
         self.lbl_part_name = QLabel("Sản phẩm:")
         pg_lay.addWidget(self.lbl_part_name, 0, 0)
         self.combo_part_name = QComboBox()
-        self.combo_part_name.addItems(["ITR", "B/Joint", "OTR", "S/Link"])
+        self.combo_part_name.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
         pg_lay.addWidget(self.combo_part_name, 0, 1)
         
         self.lbl_test_item = QLabel("Chế độ đo:")
         pg_lay.addWidget(self.lbl_test_item, 1, 0)
         self.combo_test_item = QComboBox()
-        self.combo_test_item.addItems(["Breakaway Torque (B)", "Operating Torque (O)"])
+        self.combo_test_item.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
         pg_lay.addWidget(self.combo_test_item, 1, 1)
         
         self.btn_servo_setup = QPushButton("⚙️ Thiết lập Servo")
@@ -1804,21 +1804,10 @@ class MainWindow(QMainWindow):
 
         # Đồng bộ hóa Test Item & Part Name trực tiếp từ UI Thu thập sang Plot Viewer
         if hasattr(self, 'combo_test_item'):
-            ti = self.combo_test_item.currentText()
-            if 'Breakaway' in ti:
-                self._plot_viewer.test_item_combo.setCurrentText("Breakaway Torque")
-            elif 'Operating' in ti:
-                self._plot_viewer.test_item_combo.setCurrentText("Operating Torque")
+            self._plot_viewer.test_item_combo.setCurrentText(self.combo_test_item.currentText())
         
         if hasattr(self, 'combo_part_name'):
-            pn = self.combo_part_name.currentText()
-            mapping = {
-                'ITR': 'Inner Tie Rod',
-                'B/Joint': 'Ball Joint',
-                'OTR': 'Outer Tie Rod',
-                'S/Link': 'Stabilizer Link'
-            }
-            self._plot_viewer.part_name_combo.setCurrentText(mapping.get(pn, pn))
+            self._plot_viewer.part_name_combo.setCurrentText(self.combo_part_name.currentText())
 
         ok = self._plot_viewer.load_file_from_path(tmp)
         if ok:
@@ -1830,56 +1819,30 @@ class MainWindow(QMainWindow):
     def _sync_part_name_to_plot_viewer(self, text: str):
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
             return
-        mapping = {
-            'ITR': 'Inner Tie Rod',
-            'B/Joint': 'Ball Joint',
-            'OTR': 'Outer Tie Rod',
-            'S/Link': 'Stabilizer Link'
-        }
-        target = mapping.get(text, text)
         self._plot_viewer.part_name_combo.blockSignals(True)
-        self._plot_viewer.part_name_combo.setCurrentText(target)
+        self._plot_viewer.part_name_combo.setCurrentText(text)
         self._plot_viewer.part_name_combo.blockSignals(False)
 
     def _sync_test_item_to_plot_viewer(self, text: str):
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
             return
-        target = ""
-        if 'Breakaway' in text:
-            target = "Breakaway Torque"
-        elif 'Operating' in text:
-            target = "Operating Torque"
-        if target:
-            self._plot_viewer.test_item_combo.blockSignals(True)
-            self._plot_viewer.test_item_combo.setCurrentText(target)
-            self._plot_viewer.test_item_combo.blockSignals(False)
+        self._plot_viewer.test_item_combo.blockSignals(True)
+        self._plot_viewer.test_item_combo.setCurrentText(text)
+        self._plot_viewer.test_item_combo.blockSignals(False)
 
     def _sync_part_name_to_acquisition(self, text: str):
         if not hasattr(self, 'combo_part_name'):
             return
-        mapping = {
-            'Inner Tie Rod': 'ITR',
-            'Ball Joint': 'B/Joint',
-            'Outer Tie Rod': 'OTR',
-            'Stabilizer Link': 'S/Link'
-        }
-        target = mapping.get(text, text)
         self.combo_part_name.blockSignals(True)
-        self.combo_part_name.setCurrentText(target)
+        self.combo_part_name.setCurrentText(text)
         self.combo_part_name.blockSignals(False)
 
     def _sync_test_item_to_acquisition(self, text: str):
         if not hasattr(self, 'combo_test_item'):
             return
-        target = ""
-        if 'Breakaway' in text:
-            target = "Breakaway Torque (B)"
-        elif 'Operating' in text:
-            target = "Operating Torque (O)"
-        if target:
-            self.combo_test_item.blockSignals(True)
-            self.combo_test_item.setCurrentText(target)
-            self.combo_test_item.blockSignals(False)
+        self.combo_test_item.blockSignals(True)
+        self.combo_test_item.setCurrentText(text)
+        self.combo_test_item.blockSignals(False)
 
     # ===========================================================
     # UTIL
