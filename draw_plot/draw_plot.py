@@ -1558,6 +1558,7 @@ class TorquePlotViewer(QMainWindow):
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(left_container)
         left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setMinimumWidth(420)
         # Style the scroll area to match background
         left_scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
         
