@@ -13,6 +13,40 @@ import os
 import tempfile
 from datetime import datetime
 import json
+import unicodedata
+
+# Add python directory to sys.path to allow imports when running draw_plot.py standalone
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_dir = os.path.dirname(_script_dir)
+_python_dir = os.path.join(_project_dir, 'python')
+if _python_dir not in sys.path:
+    sys.path.append(_python_dir)
+
+# Import domain constants (resilient to standalone execution)
+FALLBACK_TEAMS = ['PM', 'QM', 'PT', 'EDTV']
+FALLBACK_LINE_NOS = [
+    'ITR #1', 'ITR #2', 'ITR #3',
+    'B/Joint #1', 'B/Joint #2', 'B/Joint #3',
+    'OTR #1', 'OTR #2', 'OTR #3',
+    'S/Link #1', 'S/Link #2', 'S/Link #3', 'S/Link #4',
+    'Other'
+]
+try:
+    from domain.constants import TEAMS, LINE_NOS
+except Exception:
+    TEAMS = FALLBACK_TEAMS
+    LINE_NOS = FALLBACK_LINE_NOS
+
+def remove_diacritics_no_strip(text: str) -> str:
+    """Helper to remove Vietnamese diacritics and uppercase without stripping spaces."""
+    if not text:
+        return ""
+    nfd_form = unicodedata.normalize('NFD', text)
+    clean_chars = [c for c in nfd_form if not unicodedata.combining(c)]
+    clean_text = "".join(clean_chars)
+    clean_text = clean_text.replace('đ', 'd').replace('Đ', 'D').replace('đ', 'd')
+    return clean_text.upper()
+
 
 # ========== Excel layout defaults (module-level for easy maintenance) ==========
 # Title
@@ -804,6 +838,18 @@ class TorquePlotViewer(QMainWindow):
             self.calibration_data = {}
         self.k_factor = 1.0
 
+        self.csv_dir = ""
+        self.report_dir = ""
+        try:
+            cfg = get_config_file('report_paths.json')
+            if cfg.exists():
+                with open(cfg, 'r', encoding='utf-8') as f:
+                    pdata = json.load(f)
+                    self.csv_dir = pdata.get('csv_dir', '')
+                    self.report_dir = pdata.get('report_dir', '')
+        except Exception:
+            pass
+
         self.init_ui()
         # Ensure correct UI labels for default plot mode
         try:
@@ -1102,6 +1148,7 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(QLabel("TEST ITEM:"), 0, 0)
         self.test_item_combo = QComboBox()
         self.test_item_combo.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
+        self.test_item_combo.setEnabled(False) # Locked editing, synced from Thu thap
         try:
             self.test_item_combo.currentIndexChanged.connect(self.on_test_item_changed)
         except: pass
@@ -1110,8 +1157,8 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(QLabel("PART NAME:"), 0, 2)
         self.part_name_combo = QComboBox()
         self.part_name_combo.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
+        self.part_name_combo.setEnabled(False) # Locked editing, synced from Thu thap
         meta_layout.addWidget(self.part_name_combo, 0, 3)
-        # When part changes, if Data Range is Default, apply configured times
         try:
             self.part_name_combo.currentIndexChanged.connect(self.on_part_name_changed)
         except Exception:
@@ -1119,8 +1166,16 @@ class TorquePlotViewer(QMainWindow):
 
         meta_layout.addWidget(QLabel("PART NO:"), 1, 0)
         self.part_no_edit = QLineEdit("")
-        # Slightly reduce PART NO width so SPECIFICATION controls have room
         self.part_no_edit.setMaximumWidth(140)
+        def _on_part_no_changed(text):
+            pos = self.part_no_edit.cursorPosition()
+            upp = text.upper()
+            if text != upp:
+                self.part_no_edit.blockSignals(True)
+                self.part_no_edit.setText(upp)
+                self.part_no_edit.setCursorPosition(pos)
+                self.part_no_edit.blockSignals(False)
+        self.part_no_edit.textChanged.connect(_on_part_no_changed)
         meta_layout.addWidget(self.part_no_edit, 1, 1)
 
         # Report role fields (Write / Review / Approval) placed in a single horizontal row (compact)
@@ -1138,13 +1193,10 @@ class TorquePlotViewer(QMainWindow):
         self.approval_edit = QLineEdit("")
         self.approval_edit.setMaximumWidth(140)
         report_h.addWidget(self.approval_edit)
-        # Insert the horizontal layout into the grid at row 3 spanning 4 columns
         meta_layout.addLayout(report_h, 3, 0, 1, 4)
 
         # SPECIFICATION moved to its own row below PART NO
         meta_layout.addWidget(QLabel("SPECIFICATION:"), 2, 0)
-        # Specification: Min / Max (Nm)
-        # Specification: Min / Max (Nm)
         spec_h = QHBoxLayout()
         self.spec_min_spin = None
         self.spec_max_spin = None
@@ -1169,20 +1221,12 @@ class TorquePlotViewer(QMainWindow):
             self.spec_max_spin.setToolTip('Specification maximum (Nm)')
             spec_h.addWidget(QLabel("Max:"))
             spec_h.addWidget(self.spec_max_spin)
-
             try:
                 self.spec_max_spin.valueChanged.connect(self.update_average)
             except Exception:
                 pass
-            # Ensure widgets are visible in case layout compressed them
-            try:
-                self.spec_min_spin.show()
-            except Exception:
-                pass
-            try:
-                self.spec_max_spin.show()
-            except Exception:
-                pass
+            self.spec_min_spin.show()
+            self.spec_max_spin.show()
         except Exception:
             pass
             self.spec_edit = QLineEdit("")
@@ -1192,10 +1236,7 @@ class TorquePlotViewer(QMainWindow):
                 self.spec_edit.textChanged.connect(self.update_average)
             except Exception:
                 pass
-        # Place spec inputs on row 2 spanning the remaining columns so Min/Max spinboxes are visible
         meta_layout.addLayout(spec_h, 2, 1, 1, 3)
-
-        # (Removed separate TORQUE TYPE / PART TYPE rows - TEST ITEM and PART NAME combos used)
 
         meta_layout.addWidget(QLabel("DATE:"), 4, 0)
         self.date_edit = QDateEdit(QDate.currentDate())
@@ -1206,31 +1247,35 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(QLabel("TESTER:"), 4, 2)
         self.tester_edit = QLineEdit("")
         self.tester_edit.setMaximumWidth(180)
+        def _on_tester_changed(text):
+            pos = self.tester_edit.cursorPosition()
+            clean = remove_diacritics_no_strip(text)
+            if text != clean:
+                self.tester_edit.blockSignals(True)
+                self.tester_edit.setText(clean)
+                self.tester_edit.setCursorPosition(pos)
+                self.tester_edit.blockSignals(False)
+        self.tester_edit.textChanged.connect(_on_tester_changed)
         meta_layout.addWidget(self.tester_edit, 4, 3)
 
         meta_layout.addWidget(QLabel("TEST PURPOSE:"), 5, 0)
         self.test_purpose_combo = QComboBox()
         self.test_purpose_combo.addItems([
-            "Development", 
-            "Setting",
-            "First,Middle,Final",
-            "Long-term Torque test", 
-            "Others"
+            "Setting (S)",
+            "First (F)",
+            "Middle (M)",
+            "Final (Z)",
+            "Development (D)",
+            "Long-term (L)",
+            "other (O)"
         ])
         self.test_purpose_combo.setMaximumWidth(240)
         self.test_purpose_combo.currentIndexChanged.connect(self.on_test_purpose_changed)
         
-        # 'Other' text input, hidden by default unless 'Others' is selected
         self.test_purpose_other_edit = QLineEdit("")
         self.test_purpose_other_edit.setPlaceholderText("Enter test purpose...")
         self.test_purpose_other_edit.hide()
-        # Add to layout in same cell? No, maybe next row or replace combo? 
-        # Better: Add to same cell as combo using HLayout or just add below. 
-        # Grid layout limits us. Let's add it to row 6 col 1 and push others down.
-        # But row 6 occupied. Let's make cell (5,1) a layout.
         
-        # Simplify: Just add it to layout at 5,1 too? No, grid cell overwrite.
-        # We will create a container widget for (5,1)
         tp_container = QWidget()
         tp_layout = QHBoxLayout(tp_container)
         tp_layout.setContentsMargins(0,0,0,0)
@@ -1239,7 +1284,6 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(tp_container, 5, 1)
         
         # Judgment display label (show OK/NG)
-        # Move Judgment to new row to prevent overlap with Ratio control
         meta_layout.addWidget(QLabel("JUDGMENT:"), 5, 2)
         self.judgment_h = QHBoxLayout()
         self.judgment_label = QLabel("")
@@ -1248,37 +1292,53 @@ class TorquePlotViewer(QMainWindow):
         self.judgment_h.addWidget(self.judgment_label)
         meta_layout.addLayout(self.judgment_h, 5, 3)
         
-        # Graph Aspect Ratio Control (New Row 6)
+        # Aspect ratio and Quantity together on Row 6 Col 0-1
         meta_layout.addWidget(QLabel("Graph H/W Ratio:"), 6, 0)
+        ratio_qty_h = QHBoxLayout()
+        ratio_qty_h.setSpacing(4)
+        ratio_qty_h.setContentsMargins(0, 0, 0, 0)
+        
         self.aspect_ratio_spin = CommaDoubleSpinBox()
         self.aspect_ratio_spin.setRange(0.1, 2.0)
         self.aspect_ratio_spin.setDecimals(2)
         self.aspect_ratio_spin.setSingleStep(0.05)
         self.aspect_ratio_spin.setValue(0.75)
         self.aspect_ratio_spin.setToolTip("Height to Width ratio for exported graph (0.75 = 3/4)")
-        self.aspect_ratio_spin.setMaximumWidth(80)
-        meta_layout.addWidget(self.aspect_ratio_spin, 6, 1)
+        self.aspect_ratio_spin.setMaximumWidth(70)
+        ratio_qty_h.addWidget(self.aspect_ratio_spin)
+        
+        ratio_qty_h.addWidget(QLabel("Qty:"))
+        self.quantity_spin = QSpinBox()
+        self.quantity_spin.setRange(1, 1000000)
+        self.quantity_spin.setValue(1)
+        self.quantity_spin.setMaximumWidth(70)
+        ratio_qty_h.addWidget(self.quantity_spin)
+        
+        ratio_qty_widget = QWidget()
+        ratio_qty_widget.setLayout(ratio_qty_h)
+        meta_layout.addWidget(ratio_qty_widget, 6, 1)
 
-        # Torque Factor K (Removed from UI, moved to Calibration config)
-        # However, to preserve grid alignment if needed, we might leave empty or remove.
-        # Removing for now.
-        # meta_layout.addWidget(QLabel("Factor k:"), 6, 2)
-        # self.k_spin = ...
+        # Team combo on Row 6 Col 2-3
+        meta_layout.addWidget(QLabel("TEAM:"), 6, 2)
+        self.team_combo = QComboBox()
+        self.team_combo.addItems(TEAMS)
+        self.team_combo.setMaximumWidth(180)
+        meta_layout.addWidget(self.team_combo, 6, 3)
 
-        # Move to row 7
+        # Lot No on Row 7 Col 0-1
         meta_layout.addWidget(QLabel("LOT NO:"), 7, 0)
         self.lot_no_edit = QLineEdit("")
         self.lot_no_edit.setMaximumWidth(180)
         meta_layout.addWidget(self.lot_no_edit, 7, 1)
 
-        meta_layout.addWidget(QLabel("QUANTITY:"), 7, 2)
-        self.quantity_spin = QSpinBox()
-        self.quantity_spin.setRange(1, 1000000)
-        self.quantity_spin.setValue(1)
-        self.quantity_spin.setMaximumWidth(120)
-        meta_layout.addWidget(self.quantity_spin, 7, 3)
+        # Line No combo on Row 7 Col 2-3
+        meta_layout.addWidget(QLabel("LINE NO:"), 7, 2)
+        self.line_no_combo = QComboBox()
+        self.line_no_combo.addItems(LINE_NOS)
+        self.line_no_combo.setMaximumWidth(180)
+        meta_layout.addWidget(self.line_no_combo, 7, 3)
 
-        # Profile save/load buttons
+        # Profile save/load buttons (Row 8)
         prof_h = QHBoxLayout()
         prof_h.setSpacing(8)
         self.save_profile_btn = QPushButton("Save Profile")
@@ -1290,6 +1350,43 @@ class TorquePlotViewer(QMainWindow):
         self.load_profile_btn.clicked.connect(self.load_profile)
         prof_h.addWidget(self.load_profile_btn)
         meta_layout.addLayout(prof_h, 8, 0, 1, 4)
+
+        # Folder Paths (Row 9 & 10)
+        meta_layout.addWidget(QLabel("CSV File path:"), 9, 0)
+        csv_path_h = QHBoxLayout()
+        csv_path_h.setSpacing(4)
+        csv_path_h.setContentsMargins(0, 0, 0, 0)
+        self.csv_path_edit = QLineEdit(self.csv_dir)
+        csv_path_h.addWidget(self.csv_path_edit)
+        self.csv_browse_btn = QPushButton("📂")
+        self.csv_browse_btn.setFixedSize(28, 28)
+        self.csv_browse_btn.clicked.connect(self.browse_csv_path)
+        csv_path_h.addWidget(self.csv_browse_btn)
+        csv_path_widget = QWidget()
+        csv_path_widget.setLayout(csv_path_h)
+        meta_layout.addWidget(csv_path_widget, 9, 1, 1, 3)
+
+        meta_layout.addWidget(QLabel("Report File path:"), 10, 0)
+        report_path_h = QHBoxLayout()
+        report_path_h.setSpacing(4)
+        report_path_h.setContentsMargins(0, 0, 0, 0)
+        self.report_path_edit = QLineEdit(self.report_dir)
+        report_path_h.addWidget(self.report_path_edit)
+        self.report_browse_btn = QPushButton("📂")
+        self.report_browse_btn.setFixedSize(28, 28)
+        self.report_browse_btn.clicked.connect(self.browse_report_path)
+        report_path_h.addWidget(self.report_browse_btn)
+        report_path_widget = QWidget()
+        report_path_widget.setLayout(report_path_h)
+        meta_layout.addWidget(report_path_widget, 10, 1, 1, 3)
+
+        # Save Report Button (Row 11)
+        self.save_report_btn = QPushButton("💾 Save the Report")
+        self.save_report_btn.setFixedHeight(32)
+        self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 10pt;")
+        self.save_report_btn.clicked.connect(self.save_report)
+        meta_layout.addWidget(self.save_report_btn, 11, 0, 1, 4)
+
         # Place judgment in its own column so it's always visible
         meta_layout.addWidget(QLabel("JUDGMENT:"), 5, 2)
         meta_layout.addWidget(self.judgment_label, 5, 3)
@@ -4250,8 +4347,6 @@ class TorquePlotViewer(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Save Profile", suggested, "JSON Files (*.json);;All Files (*)")
         if not path:
             return
-        # Build spec representation depending on available widgets
-        spec_text = ''
         profile = {
             'test_item': self.test_item_combo.currentText(),
             'part_name': self.part_name_combo.currentText(),
@@ -4262,13 +4357,13 @@ class TorquePlotViewer(QMainWindow):
             'write': self.write_edit.text().strip() if hasattr(self, 'write_edit') else '',
             'review': self.review_edit.text().strip() if hasattr(self, 'review_edit') else '',
             'approval': self.approval_edit.text().strip() if hasattr(self, 'approval_edit') else '',
-            'approval': self.approval_edit.text().strip() if hasattr(self, 'approval_edit') else '',
-            'test_purpose': (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "Others" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")),
-            'lot_no': self.lot_no_edit.text().strip() if hasattr(self, 'lot_no_edit') else '',
+            'test_purpose': (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "other (O)" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")),
             'lot_no': self.lot_no_edit.text().strip() if hasattr(self, 'lot_no_edit') else '',
             'quantity': int(self.quantity_spin.value()) if hasattr(self, 'quantity_spin') else 1,
-            'stt_start': int(self.start_spin.value()),
-            'stt_end': int(self.end_spin.value())
+            'stt_start': int(self.start_spin.value()) if hasattr(self, 'start_spin') else 1,
+            'stt_end': int(self.end_spin.value()) if hasattr(self, 'end_spin') else 100,
+            'team': self.team_combo.currentText() if hasattr(self, 'team_combo') else '',
+            'line_no': self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else '',
         }
         try:
             if getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None):
@@ -4280,7 +4375,6 @@ class TorquePlotViewer(QMainWindow):
             elif getattr(self, 'spec_edit', None):
                 profile['spec'] = self.spec_edit.text().strip()
         except Exception:
-            # best-effort: try to include textual spec if present
             try:
                 if getattr(self, 'spec_edit', None):
                     profile['spec'] = self.spec_edit.text().strip()
@@ -4331,7 +4425,6 @@ class TorquePlotViewer(QMainWindow):
                 except Exception:
                     pass
             elif 'spec' in profile:
-                # If we have spinboxes, try to extract numeric values from the string
                 try:
                     if getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None):
                         import re
@@ -4343,9 +4436,6 @@ class TorquePlotViewer(QMainWindow):
                                 self.spec_max_spin.setValue(float(nums[1]))
                             except Exception:
                                 pass
-                        else:
-                            # fallback to leaving spins unchanged
-                            pass
                     else:
                         if getattr(self, 'spec_edit', None):
                             self.spec_edit.setText(profile.get('spec', ''))
@@ -4370,18 +4460,21 @@ class TorquePlotViewer(QMainWindow):
                 self.review_edit.setText(profile.get('review', ''))
             if 'approval' in profile and hasattr(self, 'approval_edit'):
                 self.approval_edit.setText(profile.get('approval', ''))
+            if 'team' in profile and hasattr(self, 'team_combo'):
+                self.team_combo.setCurrentText(profile.get('team', ''))
+            if 'line_no' in profile and hasattr(self, 'line_no_combo'):
+                self.line_no_combo.setCurrentText(profile.get('line_no', ''))
             if 'test_purpose' in profile and hasattr(self, 'test_purpose_combo'):
                 val = profile.get('test_purpose', '')
                 if val:
                     self.test_purpose_combo.blockSignals(True)
                     try:
                         idx = self.test_purpose_combo.findText(val)
-                        if idx >= 0 and val != "Others":
+                        if idx >= 0 and val != "other (O)":
                              self.test_purpose_combo.setCurrentIndex(idx)
                              self.test_purpose_other_edit.hide()
-                        else: 
-                             # Not in list or is custom text -> Select Others and fill text
-                             idx_other = self.test_purpose_combo.findText("Others")
+                        else:
+                             idx_other = self.test_purpose_combo.findText("other (O)")
                              if idx_other >= 0:
                                 self.test_purpose_combo.setCurrentIndex(idx_other)
                                 self.test_purpose_other_edit.setText(val)
@@ -4389,7 +4482,6 @@ class TorquePlotViewer(QMainWindow):
                     finally:
                         self.test_purpose_combo.blockSignals(False)
                 else:
-                    # Empty value: default to first item (Development)
                     self.test_purpose_combo.setCurrentIndex(0)
                     self.test_purpose_other_edit.clear()
                     self.test_purpose_other_edit.hide()
@@ -4414,6 +4506,181 @@ class TorquePlotViewer(QMainWindow):
             QMessageBox.information(self, "Profile Loaded", f"Profile loaded from:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
+
+    def browse_csv_path(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Select CSV Save Directory", self.csv_path_edit.text())
+        if dir_path:
+            self.csv_path_edit.setText(dir_path)
+            
+    def browse_report_path(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Report Save Directory", self.report_path_edit.text())
+        if dir_path:
+            self.report_path_edit.setText(dir_path)
+
+    def save_report(self):
+        """Save both raw CSV and CTR report CSV using ReportService."""
+        if not self.samples:
+            QMessageBox.warning(self, "No Data", "No imported samples to save.")
+            return
+
+        sel = self.file_select_combo.currentText()
+        if sel == "All":
+            active_sample = self.samples[0]
+        else:
+            active_sample = next((x for x in self.samples if x['name'] == sel), None)
+
+        if not active_sample:
+            QMessageBox.warning(self, "No Data", "Active sample not found.")
+            return
+
+        csv_dir = self.csv_path_edit.text().strip()
+        report_dir = self.report_path_edit.text().strip()
+
+        if not csv_dir or not report_dir:
+            QMessageBox.warning(self, "Missing Path", "Please select both CSV File path and Report File path directories.")
+            return
+
+        if not os.path.exists(csv_dir):
+            try:
+                os.makedirs(csv_dir, exist_ok=True)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Could not create CSV directory:\n{e}")
+                return
+
+        if not os.path.exists(report_dir):
+            try:
+                os.makedirs(report_dir, exist_ok=True)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Could not create Report directory:\n{e}")
+                return
+
+        from domain.entities import RecordingSession, SampleData, ReportMetadata
+
+        # 1. Create list of SampleData from active_sample
+        times = active_sample.get('time', [])
+        torques = active_sample.get('torque', [])
+        angles = active_sample.get('angle', [])
+        cycles = active_sample.get('cycle', [])
+
+        # Determine average sample interval in ms
+        interval_ms = 100
+        if len(times) > 1:
+            try:
+                interval_ms = int(round((times[1] - times[0]) * 1000.0))
+                if interval_ms <= 0:
+                    interval_ms = 100
+            except:
+                pass
+
+        k = getattr(self, 'k_factor', 1.0)
+        raw_samples = []
+        for i in range(len(times)):
+            t = times[i]
+            trq = torques[i]
+            if k != 1.0:
+                trq = trq * k
+            ang = angles[i] if i < len(angles) else 0.0
+            cyc = cycles[i] if i < len(cycles) else 1
+            raw_samples.append(SampleData(
+                time_s=t,
+                torque_Nm=trq,
+                stable=True,
+                angle_deg=ang,
+                cycle=cyc
+            ))
+
+        raw_session = RecordingSession(
+            samples=raw_samples,
+            sample_interval_ms=interval_ms
+        )
+
+        # 2. Get trimmed samples for CTR report
+        # Determine whether current plot mode is Angle or Time
+        try:
+            mode_text = (self.plot_mode_combo.currentText() or '').strip().lower() if getattr(self, 'plot_mode_combo', None) else ''
+            is_angle_mode = mode_text.startswith('angle')
+        except Exception:
+            is_angle_mode = False
+
+        range_mode = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
+        st = None
+        en = None
+
+        if range_mode == 'Manual':
+            if getattr(self, 'start_time_spin', None) and getattr(self, 'end_time_spin', None):
+                st = float(self.start_time_spin.value())
+                en = float(self.end_time_spin.value())
+        else:
+            pname = self.part_name_combo.currentText() if getattr(self, 'part_name_combo', None) else None
+            item_name = self.test_item_combo.currentText()
+            ranges = self.test_item_angle_ranges if is_angle_mode else self.test_item_time_ranges
+            part_ranges = ranges.get(pname, {})
+            pr = part_ranges.get(item_name, {})
+            if isinstance(pr, dict):
+                st = float(pr.get('start', 0.0))
+                en = float(pr.get('end', 0.0))
+
+        selected_c = active_sample.get('selected_cycles', [])
+        trimmed_samples = []
+        for s in raw_samples:
+            # 1. Cycle selection check
+            if selected_c and s.cycle not in selected_c:
+                continue
+            # 2. Bound check
+            if st is not None and en is not None:
+                x_val = s.angle_deg if is_angle_mode else s.time_s
+                if x_val < st or x_val > en:
+                    continue
+            trimmed_samples.append(s)
+
+        if not trimmed_samples:
+            trimmed_samples = raw_samples
+
+        # Create ReportMetadata
+        metadata = ReportMetadata(
+            test_item=self.test_item_combo.currentText(),
+            part_name=self.part_name_combo.currentText(),
+            part_no=self.part_no_edit.text().strip(),
+            test_purpose=self.test_purpose_combo.currentText(),
+            tester=self.tester_edit.text().strip(),
+            team=self.team_combo.currentText() if hasattr(self, 'team_combo') else '',
+            line_no=self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else '',
+            date=self.date_edit.date().toString('yyyy-MM-dd'),
+            csv_path=csv_dir,
+            report_path=report_dir
+        )
+
+        from application.report_service import ReportService
+        report_svc = ReportService()
+
+        try:
+            filename = report_svc.generate_filename(metadata, csv_dir)
+            raw_path = report_svc.save_raw_csv(raw_session, csv_dir, filename)
+            report_path = report_svc.save_ctr_report(
+                trimmed_samples=trimmed_samples,
+                report_dir=report_dir,
+                filename=filename,
+                session_interval_ms=interval_ms,
+                metadata=metadata
+            )
+
+            QMessageBox.information(
+                self, "Report Saved",
+                f"Successfully saved both reports:\n\n1. Raw CSV: {raw_path}\n2. CTR Report: {report_path}"
+            )
+
+            # Save report paths to report_paths.json
+            self.csv_dir = csv_dir
+            self.report_dir = report_dir
+            try:
+                cfg = get_config_file('report_paths.json')
+                with open(cfg, 'w', encoding='utf-8') as f:
+                    json.dump({'csv_dir': csv_dir, 'report_dir': report_dir}, f, indent=2)
+            except:
+                pass
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save reports:\n{e}")
 
 def main():
     app = QApplication(sys.argv)
