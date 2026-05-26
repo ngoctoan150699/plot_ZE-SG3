@@ -158,3 +158,34 @@ class ISettingsRepository(ABC):
     def save_report_paths(self, csv_dir: str, report_dir: str) -> None:
         """Lưu đường dẫn thư mục lưu báo cáo CSV & Report."""
 
+
+class IPLCServoController(ABC):
+    """
+    Hợp đồng điều khiển Servo thông qua Modbus PLC.
+    """
+
+    @abstractmethod
+    def set_target_angle(self, angle: float) -> bool:
+        """Ghi góc đích (Float32) lên PLC."""
+
+    @abstractmethod
+    def set_speed(self, speed: float) -> bool:
+        """Ghi tốc độ (Float32, rpm) lên PLC."""
+
+    @abstractmethod
+    def write_command(self, cmd: int) -> bool:
+        """Ghi mã lệnh điều khiển lên thanh ghi control của PLC."""
+
+    @abstractmethod
+    def read_status(self) -> Optional[int]:
+        """Đọc trạng thái thô từ thanh ghi status của PLC."""
+
+    @abstractmethod
+    def is_moving(self) -> bool:
+        """Kiểm tra Servo có đang di chuyển không."""
+
+    @abstractmethod
+    def is_in_position(self) -> bool:
+        """Kiểm tra Servo đã đến vị trí đích chưa."""
+
+
