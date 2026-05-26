@@ -279,6 +279,106 @@ class CustomToolbar(NavigationToolbar):
         self.canvas.draw()
 
 
+from PyQt5.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
+
+class ServoSetupDialog(QDialog):
+    def __init__(self, parent, settings_repo, part_name, test_item, i18n):
+        super().__init__(parent)
+        self._settings = settings_repo
+        self._part_name = part_name
+        self._test_item = test_item
+        self.i18n = i18n
+        self._build_ui()
+        
+    def _build_ui(self):
+        self.setWindowTitle(self.i18n.t('btn_servo_setup'))
+        self.resize(320, 220)
+        
+        # Style sheet matching parent theme
+        is_dark = self.parent()._is_dark if self.parent() else False
+        self.setStyleSheet(DARK_STYLE if is_dark else LIGHT_STYLE)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        
+        # Header info
+        self.lbl_info = QLabel(f"🤖 Profile: {self._part_name}\n📊 Chế độ: {self._test_item}")
+        self.lbl_info.setStyleSheet("font-weight: bold; color: #89b4fa;" if is_dark else "font-weight: bold; color: #1976d2;")
+        layout.addWidget(self.lbl_info)
+        
+        form = QFormLayout()
+        form.setSpacing(8)
+        
+        # Load profile
+        part_map = {
+            'Inner Tie Rod': 'ITR', 'Ball Joint': 'B/Joint', 'Outer Tie Rod': 'OTR', 'Stabilizer Link': 'S/Link',
+            'ITR': 'ITR', 'B/Joint': 'B/Joint', 'OTR': 'OTR', 'S/Link': 'S/Link'
+        }
+        part_short = part_map.get(self._part_name, 'ITR')
+        is_breakaway = "Breakaway" in self._test_item or "B" == self._test_item
+        test_char = 'B' if is_breakaway else 'O'
+        self._profile_key = f"{part_short}_{test_char}"
+        
+        profiles = self._settings.load_servo_profiles()
+        profile = profiles.get(self._profile_key)
+        if not profile:
+            from domain.entities import ServoProfile
+            profile = ServoProfile(
+                negative_angle=0.0 if is_breakaway else -36.0,
+                positive_angle=36.0,
+                speed=10.0
+            )
+            
+        # Speed
+        self.spin_speed = QDoubleSpinBox()
+        self.spin_speed.setRange(0.1, 120.0)
+        self.spin_speed.setDecimals(1)
+        self.spin_speed.setValue(profile.speed)
+        self.spin_speed.setSuffix(" rpm")
+        
+        # Positive Angle
+        self.spin_pos = QDoubleSpinBox()
+        self.spin_pos.setRange(0.0, 360.0)
+        self.spin_pos.setDecimals(1)
+        self.spin_pos.setValue(profile.positive_angle)
+        self.spin_pos.setSuffix(" °")
+        
+        # Negative Angle
+        self.spin_neg = QDoubleSpinBox()
+        self.spin_neg.setRange(-360.0, 0.0)
+        self.spin_neg.setDecimals(1)
+        self.spin_neg.setValue(profile.negative_angle)
+        self.spin_neg.setSuffix(" °")
+        # In Breakaway mode, negative angle is usually not used/fixed to 0
+        if is_breakaway:
+            self.spin_neg.setEnabled(False)
+            self.spin_neg.setValue(0.0)
+            
+        # Labels
+        self.lbl_speed = QLabel("Vận tốc (speed):" if self.i18n.current_language == 'vi' else "Speed:")
+        self.lbl_pos = QLabel("Góc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
+        self.lbl_neg = QLabel("Góc nghịch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
+        
+        form.addRow(self.lbl_speed, self.spin_speed)
+        form.addRow(self.lbl_pos, self.spin_pos)
+        form.addRow(self.lbl_neg, self.spin_neg)
+        layout.addLayout(form)
+        
+        # Buttons
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, self)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+        
+    def get_values(self):
+        return {
+            'speed': self.spin_speed.value(),
+            'positive_angle': self.spin_pos.value(),
+            'negative_angle': self.spin_neg.value()
+        }
+
+
 class MainWindow(QMainWindow):
     """
     MainWindow điều phối toàn bộ ứng dụng.
@@ -721,6 +821,32 @@ class MainWindow(QMainWindow):
         sg.addWidget(self.chk_fixed_y, 3, 0, 1, 2)
         self.grp_sampling.setLayout(sg); lay.addWidget(self.grp_sampling)
 
+        # === 1.5. Nhóm Chương trình đo (R2 Upgrades) ===
+        self.grp_program = QGroupBox("⚙️ Chương trình đo")
+        pg_lay = QGridLayout()
+        pg_lay.setContentsMargins(8, 10, 8, 8)
+        pg_lay.setSpacing(6)
+        
+        self.lbl_part_name = QLabel("Sản phẩm:")
+        pg_lay.addWidget(self.lbl_part_name, 0, 0)
+        self.combo_part_name = QComboBox()
+        self.combo_part_name.addItems(["ITR", "B/Joint", "OTR", "S/Link"])
+        pg_lay.addWidget(self.combo_part_name, 0, 1)
+        
+        self.lbl_test_item = QLabel("Chế độ đo:")
+        pg_lay.addWidget(self.lbl_test_item, 1, 0)
+        self.combo_test_item = QComboBox()
+        self.combo_test_item.addItems(["Breakaway Torque (B)", "Operating Torque (O)"])
+        pg_lay.addWidget(self.combo_test_item, 1, 1)
+        
+        self.btn_servo_setup = QPushButton("⚙️ Thiết lập Servo")
+        self.btn_servo_setup.clicked.connect(self._on_btn_servo_setup_clicked)
+        self.btn_servo_setup.setStyleSheet("background-color: #313244; color: white; font-weight: bold; height: 26px;")
+        pg_lay.addWidget(self.btn_servo_setup, 2, 0, 1, 2)
+        
+        self.grp_program.setLayout(pg_lay)
+        lay.addWidget(self.grp_program)
+
         self.grp_recording = QGroupBox("🔴 Ghi dữ liệu")
         rg = QVBoxLayout()
         btns = QHBoxLayout()
@@ -1095,6 +1221,10 @@ class MainWindow(QMainWindow):
             self.spin_ymax.setValue(float(ui['y_max']))
         if 'fixed_y' in ui:
             self.chk_fixed_y.setChecked(bool(ui['fixed_y']))
+        if 'part_name' in ui and hasattr(self, 'combo_part_name'):
+            self.combo_part_name.setCurrentText(ui['part_name'])
+        if 'test_item' in ui and hasattr(self, 'combo_test_item'):
+            self.combo_test_item.setCurrentText(ui['test_item'])
         
         # Apply initial plot limits
         self._update_plot_limits()
@@ -1138,12 +1268,17 @@ class MainWindow(QMainWindow):
             slave_id=self.spin_slave.value(),
         )
         self._settings.save_device_config(dev)
-        self._settings.save_ui_settings({
+        ui_dict = {
             'interval_ms': self.spin_interval.value(),
             'window_s':    self.spin_window.value(),
             'y_max':       self.spin_ymax.value(),
             'fixed_y':     self.chk_fixed_y.isChecked(),
-        })
+        }
+        if hasattr(self, 'combo_part_name'):
+            ui_dict['part_name'] = self.combo_part_name.currentText()
+        if hasattr(self, 'combo_test_item'):
+            ui_dict['test_item'] = self.combo_test_item.currentText()
+        self._settings.save_ui_settings(ui_dict)
 
     def _update_plot_limits(self):
         """Cập nhật giới hạn trục Y của biểu đồ dựa trên UI."""
@@ -1507,11 +1642,8 @@ class MainWindow(QMainWindow):
 
         # R2 Upgrade: Start Servo sequence dynamically
         if self._servo_svc:
-            part_name = "ITR"
-            test_item = "Operating Torque"
-            if hasattr(self, '_plot_viewer'):
-                part_name = self._plot_viewer.part_name_combo.currentText()
-                test_item = self._plot_viewer.test_item_combo.currentText()
+            part_name = self.combo_part_name.currentText()
+            test_item = self.combo_test_item.currentText()
                 
             part_map = {
                 'Inner Tie Rod': 'ITR',
@@ -1621,6 +1753,36 @@ class MainWindow(QMainWindow):
         ok = ctr_exp.export(self._session, tmp_path)
         return tmp_path if ok else ""
 
+    def _on_btn_servo_setup_clicked(self):
+        from PyQt5.QtWidgets import QDialog
+        part = self.combo_part_name.currentText()
+        test = self.combo_test_item.currentText()
+        dialog = ServoSetupDialog(self, self._settings, part, test, self.i18n)
+        if dialog.exec_() == QDialog.Accepted:
+            vals = dialog.get_values()
+            
+            # Map selected part and test type to profile key
+            part_map = {
+                'Inner Tie Rod': 'ITR', 'Ball Joint': 'B/Joint', 'Outer Tie Rod': 'OTR', 'Stabilizer Link': 'S/Link',
+                'ITR': 'ITR', 'B/Joint': 'B/Joint', 'OTR': 'OTR', 'S/Link': 'S/Link'
+            }
+            part_short = part_map.get(part, 'ITR')
+            is_breakaway = "Breakaway" in test or "B" == test
+            test_char = 'B' if is_breakaway else 'O'
+            profile_key = f"{part_short}_{test_char}"
+            
+            # Load, modify, and save
+            profiles = self._settings.load_servo_profiles()
+            from domain.entities import ServoProfile
+            profiles[profile_key] = ServoProfile(
+                negative_angle=vals['negative_angle'],
+                positive_angle=vals['positive_angle'],
+                speed=vals['speed']
+            )
+            self._settings.save_servo_profiles(profiles)
+            
+            self._log(f"✅ Đã cập nhật cấu hình cho {profile_key}: Speed={vals['speed']} rpm, Pos={vals['positive_angle']}°, Neg={vals['negative_angle']}°")
+
     def _import_to_plot_viewer(self):
         """Export session CSV -> load vào Plot Viewer -> nhảy sang tab."""
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
@@ -1631,18 +1793,16 @@ class MainWindow(QMainWindow):
         if not tmp:
             self._log("⚠️ Xuất CSV tạm thất bại"); return
 
-        # Đồng bộ hóa Test Item & Part Name sang Plot Viewer
-        if hasattr(self._session, 'test_item') and self._session.test_item:
-            ti = self._session.test_item
-            if 'Breakaway' in ti or ti == 'B':
+        # Đồng bộ hóa Test Item & Part Name trực tiếp từ UI Thu thập sang Plot Viewer
+        if hasattr(self, 'combo_test_item'):
+            ti = self.combo_test_item.currentText()
+            if 'Breakaway' in ti:
                 self._plot_viewer.test_item_combo.setCurrentText("Breakaway Torque")
-            elif 'Operating' in ti or ti == 'O':
+            elif 'Operating' in ti:
                 self._plot_viewer.test_item_combo.setCurrentText("Operating Torque")
-            else:
-                self._plot_viewer.test_item_combo.setCurrentText(ti)
-                
-        if hasattr(self._session, 'part_name') and self._session.part_name:
-            pn = self._session.part_name
+        
+        if hasattr(self, 'combo_part_name'):
+            pn = self.combo_part_name.currentText()
             mapping = {
                 'ITR': 'Inner Tie Rod',
                 'B/Joint': 'Ball Joint',
@@ -1810,6 +1970,15 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'chk_fixed_y'):
             self.chk_fixed_y.setText(self.i18n.t('chk_fixed_y'))
         
+        if hasattr(self, 'grp_program'):
+            self.grp_program.setTitle(self.i18n.t('part_program_grp'))
+        if hasattr(self, 'lbl_part_name'):
+            self.lbl_part_name.setText(self.i18n.t('part_name_lbl'))
+        if hasattr(self, 'lbl_test_item'):
+            self.lbl_test_item.setText(self.i18n.t('test_item_lbl'))
+        if hasattr(self, 'btn_servo_setup'):
+            self.btn_servo_setup.setText(self.i18n.t('btn_servo_setup'))
+
         if hasattr(self, 'grp_recording'):
             self.grp_recording.setTitle(self.i18n.t('recording_grp'))
         if hasattr(self, 'btn_rec_start'):
