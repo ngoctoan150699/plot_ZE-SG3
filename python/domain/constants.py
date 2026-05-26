@@ -157,3 +157,59 @@ DEFAULT_BAUDRATE            = 115200
 DEFAULT_TCP_PORT            = 502
 DEFAULT_TCP_IP              = "192.168.90.101"
 MODBUS_TIMEOUT_S            = 1.5
+
+# === YÊU CẦU R2: PLC MODBUS SERVO REGISTERS (Holding Registers, base-0) ===
+PLC_DEFAULT_SLAVE_ID     = 2
+
+# Control & Status
+REG_PLC_CONTROL          = 0    # 40001: Control Word (W)
+REG_PLC_STATUS           = 1    # 40002: Status Word (R)
+REG_PLC_ERROR_CODE       = 2    # 40003: Error Code (R)
+
+# Parameters (Write)
+REG_PLC_TARGET_ANGLE     = 3    # 40004-05: Target Angle (Float32, °)
+REG_PLC_SPEED            = 5    # 40006-07: Speed (Float32, rpm)
+REG_PLC_ACCEL            = 7    # 40008-09: Acceleration (Float32, rpm/s)
+REG_PLC_DECEL            = 9    # 40010-11: Deceleration (Float32, rpm/s)
+
+# === PLC SERVO CONTROL WORD VALUES ===
+PLC_CMD_IDLE             = 0x0000
+PLC_CMD_START            = 0x0001
+PLC_CMD_STOP             = 0x0002
+PLC_CMD_HOME             = 0x0003
+PLC_CMD_RESET_ERROR      = 0x0004
+PLC_CMD_SERVO_ON         = 0x0005
+PLC_CMD_SERVO_OFF        = 0x0006
+
+# === PLC SERVO STATUS WORD BIT MASKS ===
+PLC_STATUS_READY         = 0x0001  # Bit 0
+PLC_STATUS_ENABLED       = 0x0002  # Bit 1
+PLC_STATUS_MOVING        = 0x0004  # Bit 2
+PLC_STATUS_IN_POSITION   = 0x0008  # Bit 3
+PLC_STATUS_ERROR         = 0x0010  # Bit 4
+
+# === YÊU CẦU R2: DANH MỤC TRƯỜNG DỮ LIỆU ===
+PART_NAMES = ['ITR', 'B/Joint', 'OTR', 'S/Link']
+
+TEST_ITEMS = ['Breakaway Torque (B)', 'Operating Torque (O)']
+
+TEST_PURPOSES = [
+    'Setting (S)',
+    'First (F)',
+    'Middle (M)',
+    'Final (Z)',
+    'Development (D)',
+    'Long-term (L)',
+    'other (O)'
+]
+
+TEAMS = ['PM', 'QM', 'PT', 'EDTV']
+
+LINE_NOS = [
+    'ITR #1', 'ITR #2', 'ITR #3',
+    'B/Joint #1', 'B/Joint #2', 'B/Joint #3',
+    'OTR #1', 'OTR #2', 'OTR #3',
+    'S/Link #1', 'S/Link #2', 'S/Link #3', 'S/Link #4',
+    'Other'
+]
+

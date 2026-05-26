@@ -20,7 +20,7 @@ REM --onefile: Create a single executable file
 REM --windowed: No console window
 REM --add-data: Include the png file for the internal icon usage
 REM --icon: Set the .exe icon
-"C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m PyInstaller --noconfirm --onefile --windowed --name "CSV Torque Plot Viewer" --icon "data-analysis.ico" --add-data "data-analysis.png;." draw_plot.py
+"C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m PyInstaller --noconfirm --onefile --windowed --name "CSV Torque Plot Viewer" --icon "assets\icons\data-analysis.ico" --add-data "assets\icons\data-analysis.png;." draw_plot\draw_plot.py
 
 if errorlevel 1 (
     echo.

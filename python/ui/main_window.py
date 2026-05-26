@@ -49,7 +49,16 @@ from ui.widgets.realtime_plot import RealTimePlot
 
 # Plot Viewer & Converter (tái sử dụng từ draw_plot.py)
 import os
+import sys
 import tempfile
+
+# Thêm thư mục draw_plot vào sys.path để import các module độc lập
+_cur_dir = os.path.dirname(os.path.abspath(__file__))
+_workspace_dir = os.path.dirname(os.path.dirname(_cur_dir))
+_draw_plot_path = os.path.join(_workspace_dir, "draw_plot")
+if _draw_plot_path not in sys.path:
+    sys.path.insert(0, _draw_plot_path)
+
 try:
     from draw_plot import TorquePlotViewer
     from convert_may_gui import ConvertWidget

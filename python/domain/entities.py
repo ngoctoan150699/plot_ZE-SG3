@@ -65,6 +65,9 @@ class SampleData:
     torque_Nm: float    # Giá trị torque/lực đọc từ Net Weight (N.m hoặc đơn vị tương ứng)
     stable: bool        # True nếu Status Bit 4 = 1 (trọng số ổn định)
     timestamp: float    = 0.0   # Unix timestamp tuyệt đối (time.time())
+    # === YÊU CẦU R2 ===
+    angle_deg: float    = 0.0   # Góc xoay tính toán của Servo (độ)
+    cycle: int          = 0     # Số thứ tự chu kỳ (cycle) hiện tại (1, 2, 3...)
 
 
 @dataclass
@@ -106,6 +109,46 @@ class ConnectionConfig:
 
 
 @dataclass
+class ServoProfile:
+    """Cấu hình hành trình/tốc độ của Servo cho từng loại sản phẩm."""
+    negative_angle: float = -36.0
+    positive_angle: float = 36.0
+    speed: float          = 10.0  # Tốc độ (rpm)
+
+
+@dataclass
+class OperatingTorqueSetup:
+    """Cấu hình phạm vi tính toán cho phép đo mô-men hoạt động."""
+    center_percent: float = 80.0  # Tỷ lệ lấy dữ liệu ở giữa (ví dụ 80% bỏ 10% hai đầu)
+    cycle: int            = 3     # Vòng chu kỳ lấy dữ liệu (mặc định cycle 3)
+
+
+@dataclass
+class MeasurementResult:
+    """Kết quả tính toán sau khi chạy đo."""
+    breakaway_max: float = 0.0
+    operating_avg: float = 0.0
+    operating_max: float = 0.0
+    operating_min: float = 0.0
+    ok_ng_status: dict   = field(default_factory=dict) # {'breakaway_max': True, 'operating_avg': False...}
+
+
+@dataclass
+class ReportMetadata:
+    """Metadata thông tin sản phẩm và lượt đo để tạo báo cáo."""
+    test_item: str    = ""
+    part_name: str    = ""
+    part_no: str      = ""
+    test_purpose: str = ""
+    tester: str       = ""
+    team: str         = ""
+    line_no: str      = ""
+    date: str         = ""
+    csv_path: str     = ""
+    report_path: str  = ""
+
+
+@dataclass
 class RecordingSession:
     """
     Phiên ghi dữ liệu – chứa toàn bộ mẫu thu thập được.
@@ -114,6 +157,10 @@ class RecordingSession:
     start_time: float         = 0.0
     end_time: float           = 0.0
     sample_interval_ms: int   = 100
+    # === YÊU CẦU R2 ===
+    current_cycle: int        = 0
+    test_item: str            = ""
+    part_name: str            = ""
 
     @property
     def duration_s(self) -> float:
