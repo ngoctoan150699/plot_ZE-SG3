@@ -3718,7 +3718,7 @@ class TorquePlotViewer(QMainWindow):
             ('PART NAME', self.part_name_combo.currentText(), 'TESTER', self.tester_edit.text()),
             ('PART NO', self.part_no_edit.text(), 'LOT NO', self.lot_no_edit.text()),
             ('SPECIFICATION', spec_text, 'QUANTITY', str(self.quantity_spin.value())),
-            ('TEST PURPOSE', (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "Others" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")), 'JUDGMENT', self.judgment_label.text()),
+            ('TEST PURPOSE', (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "other (O)" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")), 'JUDGMENT', self.judgment_label.text()),
             ('COEFF K', str(self.k_spin.value()) if hasattr(self, 'k_spin') else '1.0', '', '')
         ]
 

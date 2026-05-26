@@ -458,6 +458,15 @@ class MainWindow(QMainWindow):
         self._apply_theme(self._is_dark)
         self._retranslate_ui()
 
+        # Real-time bi-directional synchronization between Thu thập tab and Plot Viewer tab
+        if hasattr(self, 'combo_part_name') and _HAS_PLOT_VIEWER:
+            self.combo_part_name.currentTextChanged.connect(self._sync_part_name_to_plot_viewer)
+            self._plot_viewer.part_name_combo.currentTextChanged.connect(self._sync_part_name_to_acquisition)
+            
+        if hasattr(self, 'combo_test_item') and _HAS_PLOT_VIEWER:
+            self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
+            self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
+
     # ===========================================================
     # BUILD UI
     # ===========================================================
@@ -1817,6 +1826,60 @@ class MainWindow(QMainWindow):
             self._log(f"📊 Đã import {self._session.count} mẫu sang Plot Viewer")
         else:
             self._log("⚠️ Import sang Plot Viewer thất bại")
+
+    def _sync_part_name_to_plot_viewer(self, text: str):
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+            return
+        mapping = {
+            'ITR': 'Inner Tie Rod',
+            'B/Joint': 'Ball Joint',
+            'OTR': 'Outer Tie Rod',
+            'S/Link': 'Stabilizer Link'
+        }
+        target = mapping.get(text, text)
+        self._plot_viewer.part_name_combo.blockSignals(True)
+        self._plot_viewer.part_name_combo.setCurrentText(target)
+        self._plot_viewer.part_name_combo.blockSignals(False)
+
+    def _sync_test_item_to_plot_viewer(self, text: str):
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+            return
+        target = ""
+        if 'Breakaway' in text:
+            target = "Breakaway Torque"
+        elif 'Operating' in text:
+            target = "Operating Torque"
+        if target:
+            self._plot_viewer.test_item_combo.blockSignals(True)
+            self._plot_viewer.test_item_combo.setCurrentText(target)
+            self._plot_viewer.test_item_combo.blockSignals(False)
+
+    def _sync_part_name_to_acquisition(self, text: str):
+        if not hasattr(self, 'combo_part_name'):
+            return
+        mapping = {
+            'Inner Tie Rod': 'ITR',
+            'Ball Joint': 'B/Joint',
+            'Outer Tie Rod': 'OTR',
+            'Stabilizer Link': 'S/Link'
+        }
+        target = mapping.get(text, text)
+        self.combo_part_name.blockSignals(True)
+        self.combo_part_name.setCurrentText(target)
+        self.combo_part_name.blockSignals(False)
+
+    def _sync_test_item_to_acquisition(self, text: str):
+        if not hasattr(self, 'combo_test_item'):
+            return
+        target = ""
+        if 'Breakaway' in text:
+            target = "Breakaway Torque (B)"
+        elif 'Operating' in text:
+            target = "Operating Torque (O)"
+        if target:
+            self.combo_test_item.blockSignals(True)
+            self.combo_test_item.setCurrentText(target)
+            self.combo_test_item.blockSignals(False)
 
     # ===========================================================
     # UTIL
