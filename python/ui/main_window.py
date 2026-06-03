@@ -21,10 +21,11 @@ from typing import List, Optional, Any
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
-    QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
-    QSplitter, QTabWidget, QTextEdit, QVBoxLayout, QWidget, QToolButton,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QGroupBox, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTabWidget, QTextEdit,
+    QVBoxLayout, QWidget, QToolButton,
 )
 
 import serial.tools.list_ports
@@ -45,6 +46,7 @@ from domain.entities import (
     ConnectionConfig, DeviceConfig, DeviceStatus,
     RecordingSession, SampleData,
 )
+from domain.plc_protocol import PlcTestConfig, angle_to_x100, speed_to_x100
 from ui.widgets.realtime_plot import RealTimePlot
 from ui.widgets.torque_angle_plot import TorqueAnglePlot
 
@@ -395,6 +397,72 @@ class ServoSetupDialog(QDialog):
         }
 
 
+class SamplingSettingsDialog(QDialog):
+    def __init__(self, parent, interval_ms: int, window_s: int, y_max: float, fixed_y: bool, i18n):
+        super().__init__(parent)
+        self.i18n = i18n
+        self._interval_ms = interval_ms
+        self._window_s = window_s
+        self._y_max = y_max
+        self._fixed_y = fixed_y
+        self._build_ui()
+
+    def _build_ui(self):
+        self.setWindowTitle("Sampling Setting")
+        self.resize(340, 220)
+        is_dark = self.parent()._is_dark if self.parent() else False
+        self.setStyleSheet(DARK_STYLE if is_dark else LIGHT_STYLE)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        info = QLabel("⏱️ Cài đặt lấy mẫu & biểu đồ")
+        info.setStyleSheet("font-weight: bold; color: #89b4fa;" if is_dark else "font-weight: bold; color: #1976d2;")
+        layout.addWidget(info)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        self.spin_interval = QSpinBox()
+        self.spin_interval.setRange(1, 10000)
+        self.spin_interval.setValue(self._interval_ms)
+        self.spin_interval.setSuffix(" ms")
+
+        self.spin_window = QSpinBox()
+        self.spin_window.setRange(10, 600)
+        self.spin_window.setValue(self._window_s)
+        self.spin_window.setSuffix(" s")
+
+        self.spin_ymax = QDoubleSpinBox()
+        self.spin_ymax.setRange(0.1, 10000)
+        self.spin_ymax.setDecimals(1)
+        self.spin_ymax.setValue(self._y_max)
+        self.spin_ymax.setSuffix(" Nm")
+
+        self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
+        self.chk_fixed_y.setChecked(self._fixed_y)
+
+        form.addRow("Chu kỳ lấy mẫu:", self.spin_interval)
+        form.addRow("Cửa sổ biểu đồ:", self.spin_window)
+        form.addRow("Giới hạn Y:", self.spin_ymax)
+        form.addRow("", self.chk_fixed_y)
+        layout.addLayout(form)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, self)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+    def get_values(self):
+        return {
+            'interval_ms': self.spin_interval.value(),
+            'window_s': self.spin_window.value(),
+            'y_max': self.spin_ymax.value(),
+            'fixed_y': self.chk_fixed_y.isChecked(),
+        }
+
+
 class MainWindow(QMainWindow):
     """
     MainWindow điều phối toàn bộ ứng dụng.
@@ -444,6 +512,8 @@ class MainWindow(QMainWindow):
         self._chart_paused = False  # Trạng thái đóng băng biểu đồ
         self._current_angle = 0.0
         self._current_cycle = 0
+        self._last_plc_status = None
+        self._plc_status_error_logged = False
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
@@ -484,6 +554,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'combo_test_item') and _HAS_PLOT_VIEWER:
             self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
             self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
+
+        self._plc_timer = QTimer(self)
+        self._plc_timer.setInterval(200)
+        self._plc_timer.timeout.connect(self._poll_plc_status)
 
     # ===========================================================
     # BUILD UI
@@ -855,37 +929,52 @@ class MainWindow(QMainWindow):
         lay.setSpacing(8)
 
         self.grp_sampling = QGroupBox("⏱️ Lấy mẫu")
-        sg = QGridLayout()
+        sg = QVBoxLayout()
         sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
+
+        self.btn_sampling_settings = QPushButton("⏱️ Sampling Setting")
+        self.btn_sampling_settings.setMinimumHeight(34)
+        self.btn_sampling_settings.clicked.connect(self._open_sampling_settings)
+        sg.addWidget(self.btn_sampling_settings)
+
+        self.lbl_sampling_summary = QLabel()
+        self.lbl_sampling_summary.setStyleSheet("color: #a6adc8; font-size: 9pt;")
+        sg.addWidget(self.lbl_sampling_summary)
+
+        # Hidden backing widgets keep existing save/load and acquisition logic unchanged.
         self.lbl_sample_interval = QLabel("Chu kỳ (ms):")
-        sg.addWidget(self.lbl_sample_interval, 0, 0)
         self.spin_interval = QSpinBox()
         self.spin_interval.setRange(1, 10000)
         self.spin_interval.setValue(DEFAULT_SAMPLE_INTERVAL_MS)
         self.spin_interval.editingFinished.connect(self._on_acquisition_settings_changed)
-        sg.addWidget(self.spin_interval, 0, 1)
-        self.lbl_chart_window = QLabel("Cửa sổ biểu đồ (s):")
-        sg.addWidget(self.lbl_chart_window, 1, 0)
-        self.spin_window = QSpinBox()
-        self.spin_window.setRange(10, 600); self.spin_window.setValue(60)
-        self.spin_window.editingFinished.connect(self._on_acquisition_settings_changed)
-        sg.addWidget(self.spin_window, 1, 1)
 
-        # --- Y Axis Scale ---
+        self.lbl_chart_window = QLabel("Cửa sổ biểu đồ (s):")
+        self.spin_window = QSpinBox()
+        self.spin_window.setRange(10, 600)
+        self.spin_window.setValue(60)
+        self.spin_window.editingFinished.connect(self._on_acquisition_settings_changed)
+
         self.lbl_y_limits = QLabel("Giới hạn Y (Nm):")
-        sg.addWidget(self.lbl_y_limits, 2, 0)
         self.spin_ymax = QDoubleSpinBox()
-        self.spin_ymax.setRange(0.1, 10000); self.spin_ymax.setDecimals(1)
+        self.spin_ymax.setRange(0.1, 10000)
+        self.spin_ymax.setDecimals(1)
         self.spin_ymax.setValue(5.0)
         self.spin_ymax.valueChanged.connect(lambda _: self._update_plot_limits())
-        sg.addWidget(self.spin_ymax, 2, 1)
 
         self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
         self.chk_fixed_y.setChecked(True)
         self.chk_fixed_y.toggled.connect(lambda _: self._update_plot_limits())
-        sg.addWidget(self.chk_fixed_y, 3, 0, 1, 2)
-        self.grp_sampling.setLayout(sg); lay.addWidget(self.grp_sampling)
+
+        for hidden in (
+            self.lbl_sample_interval, self.spin_interval,
+            self.lbl_chart_window, self.spin_window,
+            self.lbl_y_limits, self.spin_ymax, self.chk_fixed_y,
+        ):
+            hidden.setVisible(False)
+
+        self.grp_sampling.setLayout(sg)
+        lay.addWidget(self.grp_sampling)
 
         # === 1.5. Nhóm Chương trình đo (R2 Upgrades) ===
         self.grp_program = QGroupBox("⚙️ Chương trình đo")
@@ -1412,6 +1501,57 @@ class MainWindow(QMainWindow):
     def _plc_jog_minus(self, active: bool):
         self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active))
 
+    def _poll_plc_status(self):
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            return
+        status = self._plc_svc.read_status()
+        if status is None:
+            if not self._plc_status_error_logged:
+                self._log("⚠️ Không đọc được PLC status D120..D135")
+                self._plc_status_error_logged = True
+            return
+        self._last_plc_status = status
+        self._plc_status_error_logged = False
+        self._current_angle = status.current_angle_deg
+        self._current_cycle = status.current_cycle
+
+        if status.has_fault:
+            self._log(f"⚠️ PLC fault D129={status.error_code}")
+
+        if self._recording and status.is_done:
+            self._log("✅ PLC báo hoàn tất test")
+            self._recording = False
+            self._stop_recording()
+
+    def _prepare_plc_recording(self, profile, is_breakaway: bool) -> bool:
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            return True
+
+        plc_status = self._plc_svc.read_status()
+        if plc_status and plc_status.has_fault:
+            self._log(f"❌ PLC đang lỗi D129={plc_status.error_code}; hãy Reset trước khi ghi")
+            return False
+
+        part_select = max(1, self.combo_part_name.currentIndex() + 1) if hasattr(self, 'combo_part_name') else 1
+        config = PlcTestConfig(
+            mode=1 if is_breakaway else 2,
+            pos_angle_x100=angle_to_x100(profile.positive_angle),
+            neg_angle_x100=angle_to_x100(profile.negative_angle),
+            speed_x100=speed_to_x100(profile.speed),
+            cycle_set=1 if is_breakaway else 3,
+            window_percent=10,
+            part_select=part_select,
+            torque_type=1 if is_breakaway else 2,
+        )
+        if not self._plc_svc.write_test_config(config):
+            self._log("❌ Không ghi được PLC config D101..D108")
+            return False
+        if not self._plc_svc.start_record():
+            self._log("❌ Không pulse được START_RECORD D100.b2")
+            return False
+        self._log("✅ Đã ghi PLC config và gửi START_RECORD")
+        return True
+
     # ===========================================================
     # LOAD / SAVE SETTINGS
 
@@ -1457,6 +1597,36 @@ class MainWindow(QMainWindow):
         
         # Apply initial plot limits
         self._update_plot_limits()
+        self._update_sampling_summary()
+
+    def _update_sampling_summary(self):
+        if hasattr(self, 'lbl_sampling_summary'):
+            fixed = "Fixed Y" if self.chk_fixed_y.isChecked() else "Auto Y"
+            self.lbl_sampling_summary.setText(
+                f"{self.spin_interval.value()} ms | {self.spin_window.value()} s | "
+                f"±{self.spin_ymax.value():.1f} Nm | {fixed}"
+            )
+
+    def _open_sampling_settings(self):
+        dialog = SamplingSettingsDialog(
+            self,
+            interval_ms=self.spin_interval.value(),
+            window_s=self.spin_window.value(),
+            y_max=self.spin_ymax.value(),
+            fixed_y=self.chk_fixed_y.isChecked(),
+            i18n=self.i18n,
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        values = dialog.get_values()
+        self.spin_interval.setValue(values['interval_ms'])
+        self.spin_window.setValue(values['window_s'])
+        self.spin_ymax.setValue(values['y_max'])
+        self.chk_fixed_y.setChecked(values['fixed_y'])
+        self._update_plot_limits()
+        self._on_acquisition_settings_changed()
+        self._update_sampling_summary()
 
     def _save_settings_from_ui(self):
         parity_map = {0:'N', 1:'E', 2:'O'}
@@ -1537,6 +1707,7 @@ class MainWindow(QMainWindow):
              ui['y_max'] = self.spin_ymax.value()
              ui['fixed_y'] = self.chk_fixed_y.isChecked()
              self._settings.save_ui_settings(ui)
+        self._update_sampling_summary()
 
     # ===========================================================
     # CONNECTION
@@ -1607,6 +1778,8 @@ class MainWindow(QMainWindow):
 
                 self._collector.set_interval(self.spin_interval.value())
                 self._collector.start()
+                if self._plc_svc and not self._plc_timer.isActive():
+                    self._plc_timer.start()
                 self._save_settings_from_ui()
                 self._log(f"✅ Kết nối thành công (Slave {sid})")
             else:
@@ -1615,6 +1788,8 @@ class MainWindow(QMainWindow):
             self._log(f"❌ Lỗi kết nối: {e}")
 
     def _disconnect(self):
+        if hasattr(self, '_plc_timer'):
+            self._plc_timer.stop()
         self._collector.stop()
         if self._collector._client:
             self._collector._client.disconnect()
@@ -1679,8 +1854,14 @@ class MainWindow(QMainWindow):
 
         # Ghi session nếu đang recording
         if self._recording:
-            interval_s = self._session.sample_interval_ms / 1000.0
             elapsed_time = time.monotonic() - self._start_time
+            if self._plc_svc and self._plc_svc.is_connected():
+                plc_status = self._last_plc_status
+                if plc_status is not None and not plc_status.should_record_sample:
+                    self.lbl_rectime.setText(f"{elapsed_time:.3f} s")
+                    return
+
+            interval_s = self._session.sample_interval_ms / 1000.0
             expected_samples = int(elapsed_time / interval_s)
             
             # Tự động sinh thêm các mẫu bị thiếu để đảm bảo đúng tần số yêu cầu
@@ -1863,70 +2044,66 @@ class MainWindow(QMainWindow):
     # ===========================================================
 
     def _start_recording(self):
+        # R2 Upgrade: prepare Servo/PLC profile before enabling local recording.
+        part_name = self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else 'ITR'
+        test_item = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else 'Operating'
+        part_map = {
+            'Inner Tie Rod': 'ITR',
+            'Ball Joint': 'B/Joint',
+            'Outer Tie Rod': 'OTR',
+            'Stabilizer Link': 'S/Link',
+            'ITR': 'ITR',
+            'B/Joint': 'B/Joint',
+            'OTR': 'OTR',
+            'S/Link': 'S/Link'
+        }
+        part_short = part_map.get(part_name, 'ITR')
+        is_breakaway = "Breakaway" in test_item
+        test_char = 'B' if is_breakaway else 'O'
+        profile_key = f"{part_short}_{test_char}"
+
+        profiles = self._settings.load_servo_profiles()
+        profile = profiles.get(profile_key)
+        if not profile:
+            from domain.entities import ServoProfile
+            profile = ServoProfile(
+                negative_angle=0.0 if is_breakaway else -36.0,
+                positive_angle=36.0,
+                speed=10.0
+            )
+
+        if not self._prepare_plc_recording(profile, is_breakaway):
+            return
+
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
-        # Đồng bộ hóa cả hai loại đồng hồ
+        self._session.test_item = 'B' if is_breakaway else 'O'
+        self._session.part_name = part_short
         now_mono = time.monotonic()
         self._session.start_time = now_mono
-        self._start_time = now_mono 
+        self._start_time = now_mono
         self._recording = True
         self.btn_rec_start.setEnabled(False)
         self.btn_rec_stop.setEnabled(True)
         self.btn_rec_clear.setEnabled(False)
         self.lbl_count.setText("0")
+        self._current_angle = 0.0
+        self._current_cycle = 1
+        if hasattr(self, 'angle_plot'):
+            self.angle_plot.clear()
         self._log("▶️ Bắt đầu ghi dữ liệu")
 
-        # R2 Upgrade: Start Servo sequence dynamically
-        if self._servo_svc:
-            part_name = self.combo_part_name.currentText()
-            test_item = self.combo_test_item.currentText()
-                
-            part_map = {
-                'Inner Tie Rod': 'ITR',
-                'Ball Joint': 'B/Joint',
-                'Outer Tie Rod': 'OTR',
-                'Stabilizer Link': 'S/Link',
-                'ITR': 'ITR',
-                'B/Joint': 'B/Joint',
-                'OTR': 'OTR',
-                'S/Link': 'S/Link'
-            }
-            part_short = part_map.get(part_name, 'ITR')
-            
-            is_breakaway = "Breakaway" in test_item
-            test_char = 'B' if is_breakaway else 'O'
-            profile_key = f"{part_short}_{test_char}"
-            
-            profiles = self._settings.load_servo_profiles()
-            profile = profiles.get(profile_key)
-            if not profile:
-                from domain.entities import ServoProfile
-                profile = ServoProfile(
-                    negative_angle=0.0 if is_breakaway else -36.0,
-                    positive_angle=36.0,
-                    speed=10.0
-                )
-            
-            # Sync session metadata so it can be stored / imported
-            self._session.test_item = 'B' if is_breakaway else 'O'
-            self._session.part_name = part_short
-            
-            self._current_angle = 0.0
-            self._current_cycle = 1
-            if hasattr(self, 'angle_plot'):
-                self.angle_plot.clear()
-            
-            # Trigger corresponding sequence
+        if self._servo_svc and (not self._plc_svc or not self._plc_svc.is_connected()):
             if is_breakaway:
                 ok = self._servo_svc.start_breakaway_test(profile)
             else:
                 ok = self._servo_svc.start_operating_test(profile, num_cycles=3)
-                
             if ok:
-                self._log(f"🚀 Khởi chạy Servo: {profile_key} (tốc độ: {profile.speed} rpm)")
+                self._log(f"🚀 Khởi chạy Servo fallback: {profile_key} (tốc độ: {profile.speed} rpm)")
             else:
                 self._log("❌ Không thể khởi chạy Servo sequence!")
 
     def _stop_recording(self):
+        was_recording = self._recording
         self._session.end_time = time.monotonic()
         self._recording = False
         duration = self._session.end_time - self._session.start_time
@@ -1935,7 +2112,10 @@ class MainWindow(QMainWindow):
         self.btn_rec_clear.setEnabled(True)
         self._log(f"⏹ Đã dừng ghi – {self._session.count} mẫu, {duration:.1f}s")
 
-        # R2 Upgrade: Stop Servo sequence if running
+        # R2 Upgrade: Stop PLC/Servo sequence if running
+        if was_recording and self._plc_svc and self._plc_svc.is_connected():
+            self._plc_svc.stop_record()
+            self._log("⏹ Đã gửi STOP_RECORD tới PLC")
         if self._servo_svc and self._servo_svc.is_running():
             self._servo_svc.stop()
             self._log("⏹ Đã dừng chu trình Servo")
