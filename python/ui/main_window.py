@@ -319,7 +319,7 @@ class ServoSetupDialog(QDialog):
         layout.setSpacing(10)
         
         # Header info
-        self.lbl_info = QLabel(f"Profile: {self._part_name}\n📊 Chế độ: {self._test_item}")
+        self.lbl_info = QLabel(f"Profile: {self._part_name}\n📊 Mode: {self._test_item}")
         self.lbl_info.setStyleSheet("font-weight: bold; color: #89b4fa;" if is_dark else "font-weight: bold; color: #1976d2;")
         layout.addWidget(self.lbl_info)
         
@@ -776,7 +776,8 @@ class MainWindow(QMainWindow):
         self.combo_mtype = QComboBox()
         self.combo_mtype.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_mtype.setMinimumContentsLength(10)
-        self.combo_mtype.addItems(["0: 2 chiều (+/-)", "1: 1 chiều (+)"])
+        self.combo_mtype.addItem(self.i18n.t('measure_mode_0'), 0)
+        self.combo_mtype.addItem(self.i18n.t('measure_mode_1'), 1)
         sg.addWidget(self.combo_mtype, 1, 1)
 
         self.lbl_full_scale = QLabel("Full Scale (Nm):")
@@ -802,7 +803,8 @@ class MainWindow(QMainWindow):
         self.combo_filter = QComboBox()
         self.combo_filter.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_filter.setMinimumContentsLength(10)
-        for k, v in FILTER_LABELS.items(): self.combo_filter.addItem(v, k)
+        for k in FILTER_LABELS:
+            self.combo_filter.addItem(self.i18n.t(f'filter_{k}'), k)
         stg.addWidget(self.combo_filter, 0, 1)
 
         stg.setContentsMargins(6, 8, 6, 6)
@@ -1143,14 +1145,14 @@ class MainWindow(QMainWindow):
 
         # Control buttons row (Pause & Clear)
         btn_row = QHBoxLayout()
-        self.btn_pause_chart = QPushButton("⏸ Dừng vẽ")
+        self.btn_pause_chart = QPushButton(self.i18n.t('btn_pause_chart'))
         self.btn_pause_chart.setCheckable(True)
         self.btn_pause_chart.toggled.connect(self._toggle_pause_chart)
         btn_row.addWidget(self.btn_pause_chart)
 
-        btn_clear = QPushButton("🗑️ Xóa biểu đồ")
-        btn_clear.clicked.connect(self._clear_chart)
-        btn_row.addWidget(btn_clear)
+        self.btn_clear_chart = QPushButton(self.i18n.t('btn_clear_chart'))
+        self.btn_clear_chart.clicked.connect(self._clear_chart)
+        btn_row.addWidget(self.btn_clear_chart)
         
         lay.addLayout(btn_row)
         self.chart_group.setLayout(lay)
@@ -1159,22 +1161,22 @@ class MainWindow(QMainWindow):
     def _toggle_pause_chart(self, checked: bool):
         self._chart_paused = checked
         if checked:
-            self.btn_pause_chart.setText("▶️ Tiếp tục vẽ")
+            self.btn_pause_chart.setText(self.i18n.t('btn_resume_chart'))
             self._log("⏸ Đã tạm dừng cập nhật Torque-Time")
         else:
-            self.btn_pause_chart.setText("⏸ Dừng vẽ")
+            self.btn_pause_chart.setText(self.i18n.t('btn_pause_chart'))
             self._log("▶️ Tiếp tục cập nhật Torque-Time")
 
 
 
     def _update_theme_btn_text(self):
         if self._is_dark:
-            self.btn_toggle_theme.setText("☀️  Giao diện Sáng")
+            self.btn_toggle_theme.setText(self.i18n.t('btn_theme_light'))
             self.btn_toggle_theme.setStyleSheet(
                 "background:#313244; color:#cdd6f4; font-size:9pt; border-radius:4px; border:1px solid #45475a;"
             )
         else:
-            self.btn_toggle_theme.setText("🌙  Giao diện Tối")
+            self.btn_toggle_theme.setText(self.i18n.t('btn_theme_dark'))
             self.btn_toggle_theme.setStyleSheet(
                 "background:#e0e0e0; color:#333; font-size:9pt; border-radius:4px; border:1px solid #ccc;"
             )
@@ -2147,6 +2149,33 @@ class MainWindow(QMainWindow):
         # 6. Chart Group
         if hasattr(self, 'chart_group'):
             self.chart_group.setTitle(self.i18n.t('chart_torque_time') + " & " + self.i18n.t('chart_torque_angle'))
+        if hasattr(self, 'btn_pause_chart'):
+            self.btn_pause_chart.setText(
+                self.i18n.t('btn_resume_chart') if self._chart_paused else self.i18n.t('btn_pause_chart')
+            )
+        if hasattr(self, 'btn_clear_chart'):
+            self.btn_clear_chart.setText(self.i18n.t('btn_clear_chart'))
+        if hasattr(self, 'combo_mtype'):
+            current_data = self.combo_mtype.currentData()
+            self.combo_mtype.blockSignals(True)
+            self.combo_mtype.setItemText(0, self.i18n.t('measure_mode_0'))
+            self.combo_mtype.setItemText(1, self.i18n.t('measure_mode_1'))
+            idx = self.combo_mtype.findData(current_data)
+            if idx >= 0:
+                self.combo_mtype.setCurrentIndex(idx)
+            self.combo_mtype.blockSignals(False)
+        if hasattr(self, 'combo_filter'):
+            current_data = self.combo_filter.currentData()
+            self.combo_filter.blockSignals(True)
+            for idx in range(self.combo_filter.count()):
+                data = self.combo_filter.itemData(idx)
+                self.combo_filter.setItemText(idx, self.i18n.t(f'filter_{data}'))
+            idx = self.combo_filter.findData(current_data)
+            if idx >= 0:
+                self.combo_filter.setCurrentIndex(idx)
+            self.combo_filter.blockSignals(False)
+        if hasattr(self, 'btn_toggle_theme'):
+            self._update_theme_btn_text()
         
         # Redraw charts with translated titles and axes labels
         if hasattr(self, 'plot'):

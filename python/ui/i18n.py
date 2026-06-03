@@ -101,6 +101,17 @@ TRANSLATIONS = {
         'msg_write_failed': 'Lỗi ghi cấu hình!',
         'msg_read_success': 'Đọc cấu hình thành công!',
         'msg_read_failed': 'Lỗi đọc cấu hình!',
+        'measure_mode_0': '0: 2 chiều (+/-)',
+        'measure_mode_1': '1: 1 chiều (+)',
+        'filter_0': '0: Tắt lọc',
+        'filter_1': '1: Thấp',
+        'filter_2': '2: Trung bình',
+        'filter_3': '3: Cao',
+        'btn_pause_chart': '⏸ Dừng vẽ',
+        'btn_resume_chart': '▶️ Tiếp tục vẽ',
+        'btn_clear_chart': '🗑️ Xóa biểu đồ',
+        'btn_theme_light': '☀️  Giao diện Sáng',
+        'btn_theme_dark': '🌙  Giao diện Tối',
     },
     'en': {
         # Tab Headers
@@ -198,6 +209,17 @@ TRANSLATIONS = {
         'msg_write_failed': 'Failed to write configuration!',
         'msg_read_success': 'Configuration loaded successfully!',
         'msg_read_failed': 'Failed to read configuration!',
+        'measure_mode_0': '0: Bidirectional (+/-)',
+        'measure_mode_1': '1: Unidirectional (+)',
+        'filter_0': '0: Filter off',
+        'filter_1': '1: Low',
+        'filter_2': '2: Medium',
+        'filter_3': '3: High',
+        'btn_pause_chart': '⏸ Pause drawing',
+        'btn_resume_chart': '▶️ Resume drawing',
+        'btn_clear_chart': '🗑️ Clear chart',
+        'btn_theme_light': '☀️  Light Theme',
+        'btn_theme_dark': '🌙  Dark Theme',
     }
 }
 
