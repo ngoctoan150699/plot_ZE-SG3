@@ -188,6 +188,95 @@ PLC_STATUS_MOVING        = 0x0004  # Bit 2
 PLC_STATUS_IN_POSITION   = 0x0008  # Bit 3
 PLC_STATUS_ERROR         = 0x0010  # Bit 4
 
+# === PLC MODBUS PLAN D100..D135 (actual offset/address = 100) ===
+# PC reads ZE-SG3 torque directly; PLC handles servo/state machine only.
+PLC_D100_CMD_WORD             = 100
+PLC_D101_MODE                 = 101
+PLC_D102_POS_ANGLE_X100       = 102
+PLC_D103_NEG_ANGLE_X100       = 103
+PLC_D104_SPEED_X100           = 104
+PLC_D105_CYCLE_SET            = 105
+PLC_D106_WINDOW_PERCENT       = 106
+PLC_D107_PART_SELECT          = 107
+PLC_D108_TORQUE_TYPE          = 108
+PLC_D109_RESET_FAULT          = 109
+PLC_D110_JOG_PLUS             = 110
+PLC_D111_JOG_MINUS            = 111
+PLC_D112_HOME_CMD             = 112
+
+PLC_D120_STATUS_WORD          = 120
+PLC_D121_CURRENT_MODE         = 121
+PLC_D122_CURRENT_PHASE        = 122
+PLC_D123_CURRENT_CYCLE        = 123
+PLC_D124_CURRENT_ANGLE_X100   = 124
+PLC_D125_TARGET_ANGLE_X100    = 125
+PLC_D126_CURRENT_SPEED_X100   = 126
+PLC_D127_SERVO_PULSE_LOW      = 127
+PLC_D128_SERVO_PULSE_HIGH     = 128
+PLC_D129_ERROR_CODE           = 129
+PLC_D130_DATA_VALID           = 130
+PLC_D131_RECORD_ENABLE        = 131
+PLC_D132_CYLINDER_STATUS      = 132
+PLC_D133_SERVO_ON_STATUS      = 133
+PLC_D134_TEST_DONE            = 134
+PLC_D135_SAMPLE_INDEX         = 135
+
+PLC_STATUS_START_ADDRESS      = PLC_D120_STATUS_WORD
+PLC_STATUS_REGISTER_COUNT     = 16
+PLC_CONFIG_START_ADDRESS      = PLC_D101_MODE
+PLC_CONFIG_REGISTER_COUNT     = 8
+
+# D100 command word bit masks
+PLC_CMD_START_RUN             = 1 << 0
+PLC_CMD_STOP_RUN              = 1 << 1
+PLC_CMD_START_RECORD          = 1 << 2
+PLC_CMD_STOP_RECORD           = 1 << 3
+PLC_CMD_CYLINDER_TOGGLE       = 1 << 4
+PLC_CMD_SERVO_ON              = 1 << 5
+PLC_CMD_ABORT                 = 1 << 6
+PLC_CMD_CLEAR_DONE            = 1 << 7
+
+# D120 status word bit masks
+PLC_STATUS_RUN                = 1 << 0
+PLC_STATUS_SERVO_ON_NEW       = 1 << 1
+PLC_STATUS_CYLINDER_CLAMPED   = 1 << 2
+PLC_STATUS_TEST_RUNNING       = 1 << 3
+PLC_STATUS_RECORDING          = 1 << 4
+PLC_STATUS_DATA_VALID         = 1 << 5
+PLC_STATUS_DONE               = 1 << 6
+PLC_STATUS_FAULT              = 1 << 7
+
+PLC_MODE_MANUAL               = 0
+PLC_MODE_BREAKAWAY            = 1
+PLC_MODE_OPERATING            = 2
+
+PLC_TORQUE_TYPE_BREAKAWAY     = 1
+PLC_TORQUE_TYPE_OPERATING     = 2
+
+PLC_PART_SELECT_MAP = {
+    'ITR': 1,
+    'B/Joint': 2,
+    'OTR': 3,
+    'S/Link': 4,
+}
+
+PLC_ERROR_MESSAGES = {
+    0: 'No error',
+    1: 'Emergency stop / abort',
+    2: 'Servo not ready',
+    3: 'Invalid mode',
+    4: 'Invalid speed',
+    5: 'Invalid cycle setting',
+    6: 'Cylinder not clamped',
+    7: 'PLC sequence timeout',
+}
+
+PLC_DEFAULT_POS_ANGLE_DEG     = 36.0
+PLC_DEFAULT_NEG_ANGLE_DEG     = -36.0
+PLC_DEFAULT_SPEED_DEG_S       = 10.0
+PLC_DEFAULT_CYCLE_SET         = 3
+PLC_DEFAULT_WINDOW_PERCENT    = 80
+
 # === YÊU CẦU R2: DANH MỤC TRƯỜNG DỮ LIỆU ===
 PART_NAMES = ['ITR', 'B/Joint', 'OTR', 'S/Link']
 
