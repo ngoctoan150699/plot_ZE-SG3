@@ -107,6 +107,54 @@ CMD_RESTART           = 43948
 CMD_RESET_MAX         = 49151
 CMD_RESET_MIN         = 45056
 
+# PLC simulator register map D100..D135 (base-0), shared on same Modbus slave.
+PLC_D100_CMD_WORD             = 100
+PLC_D101_MODE                 = 101
+PLC_D102_POS_ANGLE_X100       = 102
+PLC_D103_NEG_ANGLE_X100       = 103
+PLC_D104_SPEED_X100           = 104
+PLC_D105_CYCLE_SET            = 105
+PLC_D106_WINDOW_PERCENT       = 106
+PLC_D107_PART_SELECT          = 107
+PLC_D108_TORQUE_TYPE          = 108
+PLC_D109_RESET_FAULT          = 109
+PLC_D110_JOG_PLUS             = 110
+PLC_D111_JOG_MINUS            = 111
+PLC_D112_HOME_CMD             = 112
+PLC_D120_STATUS_WORD          = 120
+PLC_D121_CURRENT_MODE         = 121
+PLC_D122_CURRENT_PHASE        = 122
+PLC_D123_CURRENT_CYCLE        = 123
+PLC_D124_CURRENT_ANGLE_X100   = 124
+PLC_D125_TARGET_ANGLE_X100    = 125
+PLC_D126_CURRENT_SPEED_X100   = 126
+PLC_D127_SERVO_PULSE_LOW      = 127
+PLC_D128_SERVO_PULSE_HIGH     = 128
+PLC_D129_ERROR_CODE           = 129
+PLC_D130_DATA_VALID           = 130
+PLC_D131_RECORD_ENABLE        = 131
+PLC_D132_CYLINDER_STATUS      = 132
+PLC_D133_SERVO_ON_STATUS      = 133
+PLC_D134_TEST_DONE            = 134
+PLC_D135_SAMPLE_INDEX         = 135
+
+PLC_CMD_START_RUN             = 1 << 0
+PLC_CMD_STOP_RUN              = 1 << 1
+PLC_CMD_START_RECORD          = 1 << 2
+PLC_CMD_STOP_RECORD           = 1 << 3
+PLC_CMD_CYLINDER_TOGGLE       = 1 << 4
+PLC_CMD_SERVO_ON              = 1 << 5
+PLC_CMD_ABORT                 = 1 << 6
+PLC_CMD_CLEAR_DONE            = 1 << 7
+PLC_STATUS_RUN                = 1 << 0
+PLC_STATUS_SERVO_ON           = 1 << 1
+PLC_STATUS_CYLINDER_CLAMPED   = 1 << 2
+PLC_STATUS_TEST_RUNNING       = 1 << 3
+PLC_STATUS_RECORDING          = 1 << 4
+PLC_STATUS_DATA_VALID         = 1 << 5
+PLC_STATUS_DONE               = 1 << 6
+PLC_STATUS_FAULT              = 1 << 7
+
 
 def float_to_regs(value: float):
     """Encode Python float → 2 × uint16 (Big-Endian)."""
@@ -199,6 +247,24 @@ class TorqueSimulatorWindow(QMainWindow):
         self._sine_enabled = False
         self._sine_amplitude = 5.0
         self._sine_freq = 0.5
+        self._step_enabled = False
+        self._step_low = 0.0
+        self._step_high = 8.0
+        self._step_period_s = 2.0
+
+        # PLC simulator state (D100..D135).
+        self._plc_enabled = True
+        self._plc_run = False
+        self._plc_recording = False
+        self._plc_clamped = False
+        self._plc_servo_on = True
+        self._plc_done = False
+        self._plc_fault_code = 0
+        self._plc_angle_deg = 0.0
+        self._plc_target_deg = 0.0
+        self._plc_cycle = 0
+        self._plc_sample_index = 0
+        self._plc_last_update = time.monotonic()
 
         self._build_ui()
         self.setStyleSheet(self.STYLESHEET)
@@ -351,8 +417,50 @@ class TorqueSimulatorWindow(QMainWindow):
         self.spin_sine_freq.valueChanged.connect(lambda v: setattr(self, '_sine_freq', v))
         eg.addWidget(self.spin_sine_freq, 2, 2)
 
+        self.chk_step = QCheckBox("Torque step tự động")
+        self.chk_step.setChecked(False)
+        self.chk_step.toggled.connect(lambda v: setattr(self, '_step_enabled', v))
+        eg.addWidget(self.chk_step, 3, 0)
+
+        eg.addWidget(QLabel("Step high (Nm):"), 3, 1)
+        self.spin_step_high = QDoubleSpinBox()
+        self.spin_step_high.setRange(-50.0, 50.0)
+        self.spin_step_high.setValue(8.0)
+        self.spin_step_high.valueChanged.connect(lambda v: setattr(self, '_step_high', v))
+        eg.addWidget(self.spin_step_high, 3, 2)
+
+        eg.addWidget(QLabel("Chu kỳ step (s):"), 4, 1)
+        self.spin_step_period = QDoubleSpinBox()
+        self.spin_step_period.setRange(0.2, 30.0)
+        self.spin_step_period.setDecimals(1)
+        self.spin_step_period.setValue(2.0)
+        self.spin_step_period.valueChanged.connect(lambda v: setattr(self, '_step_period_s', v))
+        eg.addWidget(self.spin_step_period, 4, 2)
+
         effect_grp.setLayout(eg)
         layout.addWidget(effect_grp)
+
+        # ── PLC Simulation ──
+        plc_grp = QGroupBox("🤖 PLC Simulator D100..D135")
+        pg = QGridLayout()
+        self.chk_plc_enabled = QCheckBox("Bật mô phỏng PLC cùng slave")
+        self.chk_plc_enabled.setChecked(True)
+        self.chk_plc_enabled.toggled.connect(lambda v: setattr(self, '_plc_enabled', v))
+        pg.addWidget(self.chk_plc_enabled, 0, 0, 1, 2)
+
+        self.btn_plc_clamp = QPushButton("Clamp toggle")
+        self.btn_plc_clamp.clicked.connect(self._toggle_plc_clamp)
+        pg.addWidget(self.btn_plc_clamp, 1, 0)
+
+        self.btn_plc_done = QPushButton("Clear Done")
+        self.btn_plc_done.clicked.connect(self._clear_plc_done)
+        pg.addWidget(self.btn_plc_done, 1, 1)
+
+        self.lbl_plc = QLabel("PLC: Ready")
+        self.lbl_plc.setStyleSheet("color: #455a64; font-weight: 600;")
+        pg.addWidget(self.lbl_plc, 2, 0, 1, 2)
+        plc_grp.setLayout(pg)
+        layout.addWidget(plc_grp)
 
         # ── Status / Log ──
         log_grp = QGroupBox("📋 Log")
@@ -398,6 +506,15 @@ class TorqueSimulatorWindow(QMainWindow):
         self.slider_torque.setValue(0)
         self.spin_torque.setValue(0.0)
         self._update_display()
+
+    def _toggle_plc_clamp(self):
+        self._plc_clamped = not self._plc_clamped
+        self._log("🔩 PLC Clamp ON" if self._plc_clamped else "🔓 PLC Clamp OFF")
+
+    def _clear_plc_done(self):
+        self._plc_done = False
+        self._plc_sample_index = 0
+        self._log("✅ PLC Done đã clear")
 
     def _update_display(self):
         v = self._torque_value
@@ -619,6 +736,18 @@ class TorqueSimulatorWindow(QMainWindow):
             self._torque_value = base
             self._update_display()
 
+        if self._step_enabled:
+            phase = (time.time() % self._step_period_s) / self._step_period_s
+            base = self._step_high if phase >= 0.5 else self._step_low
+            self.slider_torque.blockSignals(True)
+            self.slider_torque.setValue(int(base * 100))
+            self.slider_torque.blockSignals(False)
+            self.spin_torque.blockSignals(True)
+            self.spin_torque.setValue(base)
+            self.spin_torque.blockSignals(False)
+            self._torque_value = base
+            self._update_display()
+
         # Noise
         noise = 0.0
         if self._noise_enabled:
@@ -660,11 +789,97 @@ class TorqueSimulatorWindow(QMainWindow):
         _set_float(REG_MIN_NET_HI, self._min_net)
 
         self._context_set_values(REG_STATUS + 1, [STATUS_BIT_STABLE])
+        self._update_plc_registers()
+
+    def _update_plc_registers(self):
+        if not self._context or not self._plc_enabled:
+            return
+
+        now = time.monotonic()
+        dt = max(0.001, now - self._plc_last_update)
+        self._plc_last_update = now
+
+        try:
+            mode, pos_x100, neg_x100, speed_x100, cycle_set = self._context_get_values(PLC_D101_MODE + 1, 5)
+        except Exception:
+            mode, pos_x100, neg_x100, speed_x100, cycle_set = 0, 3600, 0xF1F0, 1000, 1
+
+        target_x100 = pos_x100 if mode != 2 else neg_x100
+        if target_x100 & 0x8000:
+            target_x100 -= 0x10000
+        self._plc_target_deg = target_x100 / 100.0
+        speed_deg_s = max(1.0, speed_x100 / 100.0)
+
+        if self._plc_run and not self._plc_done and not self._plc_fault_code:
+            delta = self._plc_target_deg - self._plc_angle_deg
+            step = speed_deg_s * dt
+            if abs(delta) <= step:
+                self._plc_angle_deg = self._plc_target_deg
+                self._plc_cycle += 1
+                if self._plc_cycle >= max(1, cycle_set):
+                    self._plc_done = True
+                    self._plc_run = False
+                    self._plc_recording = False
+            else:
+                self._plc_angle_deg += step if delta > 0 else -step
+
+        if self._plc_recording and self._plc_run:
+            self._plc_sample_index = (self._plc_sample_index + 1) & 0xFFFF
+
+        status = 0
+        if self._plc_run:
+            status |= PLC_STATUS_RUN | PLC_STATUS_TEST_RUNNING
+        if self._plc_servo_on:
+            status |= PLC_STATUS_SERVO_ON
+        if self._plc_clamped:
+            status |= PLC_STATUS_CYLINDER_CLAMPED
+        if self._plc_recording:
+            status |= PLC_STATUS_RECORDING | PLC_STATUS_DATA_VALID
+        if self._plc_done:
+            status |= PLC_STATUS_DONE
+        if self._plc_fault_code:
+            status |= PLC_STATUS_FAULT
+
+        angle_x100 = int(round(self._plc_angle_deg * 100)) & 0xFFFF
+        target_u16 = int(round(self._plc_target_deg * 100)) & 0xFFFF
+        speed_u16 = int(round(speed_deg_s * 100)) & 0xFFFF
+        pulse = int(round(self._plc_angle_deg * 1000)) & 0xFFFFFFFF
+        regs = [
+            status, mode, 1 if self._plc_run else 0, self._plc_cycle & 0xFFFF,
+            angle_x100, target_u16, speed_u16, pulse & 0xFFFF, (pulse >> 16) & 0xFFFF,
+            self._plc_fault_code & 0xFFFF, 1 if self._plc_recording else 0,
+            1 if self._plc_recording else 0, 1 if self._plc_clamped else 0,
+            1 if self._plc_servo_on else 0, 1 if self._plc_done else 0, self._plc_sample_index,
+        ]
+        self._context_set_values(PLC_D120_STATUS_WORD + 1, regs)
+        self.lbl_plc.setText(
+            f"PLC: run={int(self._plc_run)} rec={int(self._plc_recording)} "
+            f"angle={self._plc_angle_deg:.1f}° cycle={self._plc_cycle} done={int(self._plc_done)}"
+        )
 
     def _check_commands(self):
         """Kiểm tra Command Register để phản hồi lệnh từ phần mềm chính."""
         if not self._context:
             return
+
+        if self._plc_enabled:
+            plc_cmd_vals = self._context_get_values(PLC_D100_CMD_WORD + 1, count=1)
+            if plc_cmd_vals and plc_cmd_vals[0]:
+                self._handle_plc_command(plc_cmd_vals[0])
+                self._context_set_values(PLC_D100_CMD_WORD + 1, [0])
+
+        reset_vals = self._context_get_values(PLC_D109_RESET_FAULT + 1, count=4)
+        if reset_vals:
+            if reset_vals[0]:
+                self._plc_fault_code = 0
+                self._plc_done = False
+                self._log("🧹 PLC Reset fault")
+                self._context_set_values(PLC_D109_RESET_FAULT + 1, [0])
+            if reset_vals[3]:
+                self._plc_angle_deg = 0.0
+                self._plc_cycle = 0
+                self._log("🏠 PLC Home command")
+                self._context_set_values(PLC_D112_HOME_CMD + 1, [0])
 
         cmd_vals = self._context_get_values(REG_COMMAND + 1, count=1)
         if not cmd_vals or cmd_vals[0] == 0:
@@ -691,6 +906,41 @@ class TorqueSimulatorWindow(QMainWindow):
             self._log(f"📩 Nhận lệnh: {cmd_val}")
 
         self._context_set_values(REG_COMMAND + 1, [0])
+
+    def _handle_plc_command(self, cmd_word: int):
+        if cmd_word & PLC_CMD_CYLINDER_TOGGLE:
+            self._plc_clamped = not self._plc_clamped
+            self._log("🔩 PLC command: Clamp toggle")
+        if cmd_word & PLC_CMD_CLEAR_DONE:
+            self._plc_done = False
+            self._plc_sample_index = 0
+            self._log("✅ PLC command: Clear Done")
+        if cmd_word & PLC_CMD_ABORT:
+            self._plc_run = False
+            self._plc_recording = False
+            self._plc_fault_code = 1
+            self._log("🛑 PLC command: Abort")
+        if cmd_word & PLC_CMD_START_RUN:
+            self._plc_run = True
+            self._plc_done = False
+            self._plc_fault_code = 0
+            self._log("▶️ PLC command: RUN")
+        if cmd_word & PLC_CMD_STOP_RUN:
+            self._plc_run = False
+            self._plc_recording = False
+            self._log("⏹ PLC command: STOP")
+        if cmd_word & PLC_CMD_START_RECORD:
+            self._plc_run = True
+            self._plc_recording = True
+            self._plc_done = False
+            self._plc_sample_index = 0
+            self._log("⏺ PLC command: START_RECORD")
+        if cmd_word & PLC_CMD_STOP_RECORD:
+            self._plc_recording = False
+            self._log("⏹ PLC command: STOP_RECORD")
+        if cmd_word & PLC_CMD_SERVO_ON:
+            self._plc_servo_on = True
+            self._log("🔌 PLC command: Servo ON")
 
     def _log(self, msg: str):
         from datetime import datetime
