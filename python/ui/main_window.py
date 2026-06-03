@@ -415,6 +415,7 @@ class MainWindow(QMainWindow):
         conn_config: ConnectionConfig,
         dev_config: DeviceConfig,
         servo_svc: Optional[Any] = None,
+        plc_svc: Optional[Any] = None,
         measurement_svc: Optional[Any] = None,
         report_svc: Optional[Any] = None,
     ):
@@ -427,6 +428,7 @@ class MainWindow(QMainWindow):
         self._conn_cfg    = conn_config
         self._dev_cfg     = dev_config
         self._servo_svc   = servo_svc
+        self._plc_svc     = plc_svc
         self._measurement_svc = measurement_svc
         self._report_svc  = report_svc
 
@@ -1493,6 +1495,9 @@ class MainWindow(QMainWindow):
                     from infrastructure.plc_servo_controller import PLCServoController
                     self._servo_svc._plc = PLCServoController(new_client, slave_id=sid)
 
+                if self._plc_svc:
+                    self._plc_svc.set_client(new_client, slave_id=sid)
+
                 self._connected = True
                 self._ref_time  = time.monotonic()
                 self._update_connect_btn_style()
@@ -1519,6 +1524,9 @@ class MainWindow(QMainWindow):
         if self._servo_svc:
             from infrastructure.plc_servo_controller import DummyPLCServoController
             self._servo_svc._plc = DummyPLCServoController()
+
+        if self._plc_svc:
+            self._plc_svc.set_client(self._collector._client, slave_id=self.spin_slave.value())
 
         self._connected = False
         self._update_connect_btn_style()

@@ -59,10 +59,12 @@ def main():
     from application.servo_service import ServoService
     from application.measurement_service import MeasurementService
     from application.report_service import ReportService
+    from application.plc_control_service import PlcControlService
     from infrastructure.plc_servo_controller import DummyPLCServoController
 
     collector   = DataCollectorService(null_client, slave_id=conn_cfg.slave_id)
     config_svc  = ConfigService(null_client)
+    plc_svc     = PlcControlService(null_client, slave_id=conn_cfg.slave_id)
     
     # R2 Upgrades: Servo, Measurement & Report Services
     dummy_plc   = DummyPLCServoController()
@@ -108,6 +110,7 @@ def main():
         conn_config=conn_cfg,
         dev_config=dev_cfg,
         servo_svc=servo_svc,
+        plc_svc=plc_svc,
         measurement_svc=measurement_svc,
         report_svc=report_svc,
     )
