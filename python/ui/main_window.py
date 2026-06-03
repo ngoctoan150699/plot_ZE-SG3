@@ -917,6 +917,60 @@ class MainWindow(QMainWindow):
         self.grp_program.setLayout(pg_lay)
         lay.addWidget(self.grp_program)
 
+        self.grp_plc_control = QGroupBox("🕹️ PLC / Servo Control")
+        pc_lay = QVBoxLayout()
+        pc_lay.setContentsMargins(6, 8, 6, 6)
+        pc_lay.setSpacing(6)
+
+        row_run = QHBoxLayout()
+        row_run.setSpacing(6)
+        self.btn_plc_run = QPushButton("▶ RUN")
+        self.btn_plc_stop = QPushButton("⏹ STOP")
+        self.btn_plc_clamp = QPushButton("🔒 Clamp")
+        self.btn_plc_run.clicked.connect(self._plc_start_run)
+        self.btn_plc_stop.clicked.connect(self._plc_stop_run)
+        self.btn_plc_clamp.clicked.connect(self._plc_toggle_clamp)
+        row_run.addWidget(self.btn_plc_run)
+        row_run.addWidget(self.btn_plc_stop)
+        row_run.addWidget(self.btn_plc_clamp)
+        pc_lay.addLayout(row_run)
+
+        row_cmd = QHBoxLayout()
+        row_cmd.setSpacing(6)
+        self.btn_plc_reset = QPushButton("🔄 Reset")
+        self.btn_plc_abort = QPushButton("🛑 Abort")
+        self.btn_plc_home = QPushButton("🏠 Home")
+        self.btn_plc_reset.clicked.connect(self._plc_reset_fault)
+        self.btn_plc_abort.clicked.connect(self._plc_abort)
+        self.btn_plc_home.clicked.connect(self._plc_home)
+        row_cmd.addWidget(self.btn_plc_reset)
+        row_cmd.addWidget(self.btn_plc_abort)
+        row_cmd.addWidget(self.btn_plc_home)
+        pc_lay.addLayout(row_cmd)
+
+        row_jog = QHBoxLayout()
+        row_jog.setSpacing(6)
+        self.btn_plc_jog_minus = QPushButton("◀ Jog-")
+        self.btn_plc_jog_plus = QPushButton("Jog+ ▶")
+        self.btn_plc_jog_minus.pressed.connect(lambda: self._plc_jog_minus(True))
+        self.btn_plc_jog_minus.released.connect(lambda: self._plc_jog_minus(False))
+        self.btn_plc_jog_plus.pressed.connect(lambda: self._plc_jog_plus(True))
+        self.btn_plc_jog_plus.released.connect(lambda: self._plc_jog_plus(False))
+        row_jog.addWidget(self.btn_plc_jog_minus)
+        row_jog.addWidget(self.btn_plc_jog_plus)
+        pc_lay.addLayout(row_jog)
+
+        for btn in (
+            self.btn_plc_run, self.btn_plc_stop, self.btn_plc_clamp,
+            self.btn_plc_reset, self.btn_plc_abort, self.btn_plc_home,
+            self.btn_plc_jog_minus, self.btn_plc_jog_plus,
+        ):
+            btn.setMinimumHeight(34)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        self.grp_plc_control.setLayout(pc_lay)
+        lay.addWidget(self.grp_plc_control)
+
         self.grp_recording = QGroupBox("🔴 Ghi dữ liệu")
         rg = QVBoxLayout()
         rg.setContentsMargins(6, 8, 6, 6)
@@ -1004,6 +1058,7 @@ class MainWindow(QMainWindow):
         for group in (
             getattr(self, 'grp_sampling', None),
             getattr(self, 'grp_program', None),
+            getattr(self, 'grp_plc_control', None),
             getattr(self, 'grp_recording', None),
             getattr(self, 'grp_export', None),
             getattr(self, 'grp_import_tools', None),
@@ -1017,6 +1072,14 @@ class MainWindow(QMainWindow):
             (getattr(self, 'btn_tare_acq', None), '#FF9800', 'white'),
             (getattr(self, 'btn_rec_clear', None), '#F44336', 'white'),
             (getattr(self, 'btn_servo_setup', None), '#607D8B', 'white'),
+            (getattr(self, 'btn_plc_run', None), '#2E7D32', 'white'),
+            (getattr(self, 'btn_plc_stop', None), '#C62828', 'white'),
+            (getattr(self, 'btn_plc_clamp', None), '#6A1B9A', 'white'),
+            (getattr(self, 'btn_plc_reset', None), '#0277BD', 'white'),
+            (getattr(self, 'btn_plc_abort', None), '#B71C1C', 'white'),
+            (getattr(self, 'btn_plc_home', None), '#455A64', 'white'),
+            (getattr(self, 'btn_plc_jog_minus', None), '#EF6C00', 'white'),
+            (getattr(self, 'btn_plc_jog_plus', None), '#EF6C00', 'white'),
             (getattr(self, 'btn_import_plot', None), '#4CAF50', 'white'),
         ]
         for btn, bg, fg in button_specs:
@@ -1312,6 +1375,42 @@ class MainWindow(QMainWindow):
         color = "#757575" if not self._is_dark else "#45475a" # Gray
         text_color = "white" if not self._is_dark else "#cdd6f4"
         self.btn_rec_clear.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
+
+    # ===========================================================
+    # ===========================================================
+    # PLC / SERVO CONTROL PANEL
+    # ===========================================================
+
+    def _plc_command(self, action_name: str, callback) -> None:
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            self._log("⚠️ PLC chưa kết nối")
+            return
+        ok = callback()
+        self._log(("✅" if ok else "❌") + f" PLC: {action_name}")
+
+    def _plc_start_run(self):
+        self._plc_command("RUN", self._plc_svc.start_run)
+
+    def _plc_stop_run(self):
+        self._plc_command("STOP", self._plc_svc.stop_run)
+
+    def _plc_toggle_clamp(self):
+        self._plc_command("Clamp toggle", self._plc_svc.toggle_cylinder)
+
+    def _plc_reset_fault(self):
+        self._plc_command("Reset fault", self._plc_svc.reset_fault)
+
+    def _plc_abort(self):
+        self._plc_command("Abort", self._plc_svc.abort)
+
+    def _plc_home(self):
+        self._plc_command("Home", self._plc_svc.home)
+
+    def _plc_jog_plus(self, active: bool):
+        self._plc_command("Jog+ ON" if active else "Jog+ OFF", lambda: self._plc_svc.jog_plus(active))
+
+    def _plc_jog_minus(self, active: bool):
+        self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active))
 
     # ===========================================================
     # LOAD / SAVE SETTINGS
