@@ -4,14 +4,18 @@ PLC Modbus Simulator – ZE-SG3 Servo Flow
 =======================================
 Mô phỏng PLC điều khiển servo/state machine theo register plan D100..D135.
 
-Cách dùng:
+Khuyến nghị mới:
+  - Nếu cần mô phỏng cả torque + PLC trên cùng COM, hãy chạy
+    python python/torque_simulator.py
+  - File đó tạo 2 slave: torque ID=1 và PLC ID=2.
+
+Cách dùng file PLC đơn lẻ này:
   1. Tạo cặp COM ảo bằng com0com/VSPD, ví dụ COM12 <-> COM13.
   2. Chạy: python python/plc_simulator.py
-  3. Chọn COM simulator, ví dụ COM12, slave ID giống app chính.
+  3. Chọn COM simulator, ví dụ COM12, slave ID mặc định 2.
   4. Trong app chính, kết nối PLC tới COM còn lại, ví dụ COM13.
 
 Lưu ý:
-  - App chính vẫn đọc torque trực tiếp từ ZE-SG3 simulator/cảm biến thật.
   - PLC simulator này chỉ mô phỏng D100..D135 cho servo, gate record, angle, cycle.
 """
 
@@ -175,7 +179,7 @@ class PlcSimulatorWindow(QMainWindow):
         self._server = None
         self._server_thread = None
         self._loop = None
-        self._slave_id = 1
+        self._slave_id = 2
         self._state = PlcRuntimeState()
 
         self._build_ui()
@@ -222,7 +226,7 @@ class PlcSimulatorWindow(QMainWindow):
         cg.addWidget(QLabel("Slave ID:"), 2, 0)
         self.spin_slave = QSpinBox()
         self.spin_slave.setRange(1, 247)
-        self.spin_slave.setValue(1)
+        self.spin_slave.setValue(2)
         cg.addWidget(self.spin_slave, 2, 1)
         conn_grp.setLayout(cg)
         layout.addWidget(conn_grp)

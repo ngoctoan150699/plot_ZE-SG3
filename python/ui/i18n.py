@@ -24,6 +24,8 @@ TRANSLATIONS = {
         'port_lbl': 'Port:',
         'slave_grp': '📋 Slave',
         'slave_lbl': 'Slave ID:',
+        'sensor_slave_lbl': 'Slave cảm biến:',
+        'plc_slave_lbl': 'Slave PLC:',
         'btn_connect': '🔗 Kết nối',
         'btn_disconnect': '🔌 Ngắt kết nối',
         'status_unconnected': '⚪ Chưa kết nối',
@@ -67,6 +69,7 @@ TRANSLATIONS = {
         'btn_tare_acq': '⚖️ Tare',
         
         'export_grp': '💾 Xuất dữ liệu',
+        'csv_simple_display_name': 'CSV Đơn Giản (Time, Torque)',
         'import_tools_grp': '📥 Import dữ liệu sang công cụ khác',
         'btn_import_plot': '📊 Import to Plot Viewer',
         
@@ -132,6 +135,8 @@ TRANSLATIONS = {
         'port_lbl': 'Port:',
         'slave_grp': '📋 Slave Info',
         'slave_lbl': 'Slave ID:',
+        'sensor_slave_lbl': 'Sensor Slave ID:',
+        'plc_slave_lbl': 'PLC Slave ID:',
         'btn_connect': '🔗 Connect',
         'btn_disconnect': '🔌 Disconnect',
         'status_unconnected': '⚪ Disconnected',
@@ -175,6 +180,7 @@ TRANSLATIONS = {
         'btn_tare_acq': '⚖️ Tare',
         
         'export_grp': '💾 Export Data',
+        'csv_simple_display_name': 'Simple CSV (Time, Torque)',
         'import_tools_grp': '📥 Import Data to Other Tools',
         'btn_import_plot': '📊 Import to Plot Viewer',
         

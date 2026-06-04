@@ -805,12 +805,21 @@ class MainWindow(QMainWindow):
         sg = QGridLayout()
         sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
-        self.lbl_slave_id = QLabel("Slave ID:")
+        
+        self.lbl_slave_id = QLabel(self.i18n.t('sensor_slave_lbl'))
         sg.addWidget(self.lbl_slave_id, 0, 0)
         self.spin_slave = QSpinBox(); self.spin_slave.setRange(1,247)
         self.spin_slave.setValue(1)
         sg.addWidget(self.spin_slave, 0, 1)
+
+        self.lbl_plc_slave_id = QLabel(self.i18n.t('plc_slave_lbl'))
+        sg.addWidget(self.lbl_plc_slave_id, 0, 2)
+        self.spin_plc_slave = QSpinBox(); self.spin_plc_slave.setRange(1,247)
+        self.spin_plc_slave.setValue(2)
+        sg.addWidget(self.spin_plc_slave, 0, 3)
+
         sg.setColumnStretch(1, 1)
+        sg.setColumnStretch(3, 1)
         self.grp_slave.setLayout(sg); lay.addWidget(self.grp_slave)
 
         lay.addStretch()
@@ -1113,11 +1122,16 @@ class MainWindow(QMainWindow):
         eg = QVBoxLayout()
         eg.setContentsMargins(6, 8, 6, 6)
         eg.setSpacing(6)
+        self.exporter_buttons = {}
         for exp in self._exporters:
-            btn = QPushButton(f"📄 {exp.display_name}")
+            display_name = exp.display_name
+            if exp.__class__.__name__ == 'CsvSimpleExporter':
+                display_name = self.i18n.t('csv_simple_display_name')
+            btn = QPushButton(f"📄 {display_name}")
             btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
             btn.clicked.connect(lambda checked, e=exp: self._export(e))
             eg.addWidget(btn)
+            self.exporter_buttons[exp] = btn
 
         self.grp_export.setLayout(eg); lay.addWidget(self.grp_export)
 
@@ -1570,6 +1584,8 @@ class MainWindow(QMainWindow):
         self.combo_ip.setCurrentText(c.ip)
         self.spin_tcp_port.setValue(c.tcp_port)
         self.spin_slave.setValue(c.slave_id)
+        if hasattr(self, 'spin_plc_slave'):
+            self.spin_plc_slave.setValue(c.plc_slave_id)
 
         # Device (Config Tab)
         d = self._dev_cfg
@@ -1638,6 +1654,7 @@ class MainWindow(QMainWindow):
             ip=self.combo_ip.currentText(),
             tcp_port=self.spin_tcp_port.value(),
             slave_id=self.spin_slave.value(),
+            plc_slave_id=self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2,
         )
         self._settings.save_connection_config(conn)
 
@@ -1740,6 +1757,7 @@ class MainWindow(QMainWindow):
 
         parity_map = {0:'N', 1:'E', 2:'O'}
         sid = self.spin_slave.value()
+        plc_sid = self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2
 
         try:
             if 'RTU' in self.combo_proto.currentText():
@@ -1763,10 +1781,10 @@ class MainWindow(QMainWindow):
                 # Swap to real PLC Servo Controller when connected
                 if self._servo_svc:
                     from infrastructure.plc_servo_controller import PLCServoController
-                    self._servo_svc._plc = PLCServoController(new_client, slave_id=sid)
+                    self._servo_svc._plc = PLCServoController(new_client, slave_id=plc_sid)
 
                 if self._plc_svc:
-                    self._plc_svc.set_client(new_client, slave_id=sid)
+                    self._plc_svc.set_client(new_client, slave_id=plc_sid)
 
                 self._connected = True
                 self._ref_time  = time.monotonic()
@@ -1781,7 +1799,7 @@ class MainWindow(QMainWindow):
                 if self._plc_svc and not self._plc_timer.isActive():
                     self._plc_timer.start()
                 self._save_settings_from_ui()
-                self._log(f"✅ Kết nối thành công (Slave {sid})")
+                self._log(f"✅ Kết nối thành công (Cảm biến Slave {sid}, PLC Slave {plc_sid})")
             else:
                 self._log("❌ Không thể kết nối")
         except Exception as e:
@@ -1800,7 +1818,7 @@ class MainWindow(QMainWindow):
             self._servo_svc._plc = DummyPLCServoController()
 
         if self._plc_svc:
-            self._plc_svc.set_client(self._collector._client, slave_id=self.spin_slave.value())
+            self._plc_svc.set_client(self._collector._client, slave_id=self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2)
 
         self._connected = False
         self._update_connect_btn_style()
@@ -2359,7 +2377,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'grp_slave'):
             self.grp_slave.setTitle(self.i18n.t('slave_grp'))
         if hasattr(self, 'lbl_slave_id'):
-            self.lbl_slave_id.setText(self.i18n.t('slave_lbl'))
+            self.lbl_slave_id.setText(self.i18n.t('sensor_slave_lbl'))
+        if hasattr(self, 'lbl_plc_slave_id'):
+            self.lbl_plc_slave_id.setText(self.i18n.t('plc_slave_lbl'))
         
         # Connect Button
         self._update_connect_btn_style()
@@ -2428,6 +2448,12 @@ class MainWindow(QMainWindow):
         
         if hasattr(self, 'grp_export'):
             self.grp_export.setTitle(self.i18n.t('export_grp'))
+        if hasattr(self, 'exporter_buttons'):
+            for exp, btn in self.exporter_buttons.items():
+                display_name = exp.display_name
+                if exp.__class__.__name__ == 'CsvSimpleExporter':
+                    display_name = self.i18n.t('csv_simple_display_name')
+                btn.setText(f"📄 {display_name}")
         if hasattr(self, 'grp_import_tools'):
             self.grp_import_tools.setTitle(self.i18n.t('import_tools_grp'))
         if hasattr(self, 'btn_import_plot'):

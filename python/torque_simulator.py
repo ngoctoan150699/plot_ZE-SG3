@@ -1,687 +1,443 @@
 #!/usr/bin/env python3
+"""Integrated ZE-SG3 Torque + PLC Modbus RTU simulator.
+
+Một COM simulator, hai Modbus slave:
+- Slave ID 1: ZE-SG3 torque sensor registers.
+- Slave ID 2: PLC/servo controller D100..D135.
 """
-Torque Sensor Simulator – ZE-SG3 / DYJN-101 50Nm
-==================================================
-Mô phỏng cảm biến torque qua Modbus RTU trên cặp COM port ảo.
+from __future__ import annotations
 
-Yêu cầu:
-  pip install pymodbus pyserial pyqt5 com0com (hoặc dùng com0com/VSPD tạo cặp port)
-
-Cách dùng:
-  1. Tạo cặp COM port ảo bằng com0com hoặc VSPD (VD: COM10 <-> COM11)
-  2. Chạy simulator:  python torque_simulator.py
-  3. Chọn COM port simulator (VD: COM10)
-  4. Trong phần mềm chính (main.py), kết nối tới COM port còn lại (VD: COM11)
-  5. Kéo slider để thay đổi giá trị torque
-"""
-
+import asyncio
+import logging
+import math
+import random
 import struct
 import sys
 import threading
 import time
-import logging
-import math
-import asyncio
-
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QDoubleSpinBox, QGroupBox,
-    QHBoxLayout, QLabel, QMainWindow, QPushButton,
-    QSlider, QSpinBox, QVBoxLayout, QWidget, QCheckBox,
-    QGridLayout, QFrame, QTextEdit,
-)
+from dataclasses import dataclass, field
 
 import serial.tools.list_ports
-
-# ── Modbus Server ──
-from pymodbus.server import ModbusSerialServer, ServerStop
-from pymodbus.datastore import (
-    ModbusDeviceContext as ModbusSlaveContext,
-    ModbusServerContext,
-    ModbusSimulatorContext,
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
+from pymodbus.datastore import ModbusServerContext, ModbusSimulatorContext
 from pymodbus.framer import FramerType
+from pymodbus.server import ModbusSerialServer, ServerStop
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%H:%M:%S',
-)
-logger = logging.getLogger("TorqueSimulator")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+logger = logging.getLogger("IntegratedSimulator")
 
+# ZE-SG3 holding register offsets.
+REG_MACHINE_ID = 0
+REG_FIRMWARE_REV = 1
+REG_MEASURE_UNIT = 2
+REG_MEASURE_TYPE = 3
+REG_CALIB_MODE = 6
+REG_ADDRESS = 8
+REG_BAUD = 9
+REG_PARITY = 10
+REG_CELL_SENS_HI = 13
+REG_CELL_FS_HI = 15
+REG_DELTA_TIME = 31
+REG_ADC_SPS = 34
+REG_FILTER_LEVEL = 42
+REG_RESOLUTION_MODE = 43
+REG_NET_WEIGHT_HI = 63
+REG_GROSS_WEIGHT_HI = 65
+REG_TARE_WEIGHT_HI = 67
+REG_INT_NET_HI = 69
+REG_INT_GROSS_HI = 71
+REG_INT_TARE_HI = 73
+REG_STATUS = 77
+REG_COMMAND = 79
+REG_MAX_NET_HI = 81
+REG_MIN_NET_HI = 83
+STATUS_BIT_STABLE = 0x10
+CMD_TARE = 49914
+CMD_TARE_RAM = 49594
+CMD_RESTART = 43948
+CMD_RESET_MAX = 49151
+CMD_RESET_MIN = 45056
 
-# =====================================================================
-# REGISTER MAP (ZE-SG3 compatible)
-# =====================================================================
-# Holding Registers base-0 (Modbus 40001 = offset 0)
-REG_MACHINE_ID        = 0
-REG_FIRMWARE_REV      = 1
-REG_MEASURE_UNIT      = 2
-REG_MEASURE_TYPE      = 3
-REG_ANALOG_OUT_TYPE   = 4
-REG_DIO_TYPE          = 5
-REG_CALIB_MODE        = 6
-REG_ADDRESS           = 8
-REG_BAUD              = 9
-REG_PARITY            = 10
-REG_CELL_SENS_HI      = 13
-REG_CELL_SENS_LO      = 14
-REG_CELL_FS_HI        = 15
-REG_CELL_FS_LO        = 16
-REG_STD_WEIGHT_HI     = 17
-REG_STD_WEIGHT_LO     = 18
-REG_DELTA_WEIGHT_HI   = 29
-REG_DELTA_WEIGHT_LO   = 30
-REG_DELTA_TIME        = 31
-REG_ADC_SPS           = 34
-REG_FILTER_LEVEL      = 42
-REG_RESOLUTION_MODE   = 43
-REG_ADC_16BIT_FILT    = 62
-REG_NET_WEIGHT_HI     = 63
-REG_NET_WEIGHT_LO     = 64
-REG_GROSS_WEIGHT_HI   = 65
-REG_GROSS_WEIGHT_LO   = 66
-REG_TARE_WEIGHT_HI    = 67
-REG_TARE_WEIGHT_LO    = 68
-REG_INT_NET_HI        = 69
-REG_INT_NET_LO        = 70
-REG_INT_GROSS_HI      = 71
-REG_INT_GROSS_LO      = 72
-REG_INT_TARE_HI       = 73
-REG_INT_TARE_LO       = 74
-REG_FACTORY_TARE_HI   = 75
-REG_FACTORY_TARE_LO   = 76
-REG_STATUS            = 77
-REG_COMMAND           = 79
-REG_PIECES_NR         = 80
-REG_MAX_NET_HI        = 81
-REG_MAX_NET_LO        = 82
-REG_MIN_NET_HI        = 83
-REG_MIN_NET_LO        = 84
+# PLC D100..D135 offsets.
+PLC_D100_CMD_WORD = 100
+PLC_D101_MODE = 101
+PLC_D102_POS_ANGLE_X100 = 102
+PLC_D103_NEG_ANGLE_X100 = 103
+PLC_D104_SPEED_X100 = 104
+PLC_D105_CYCLE_SET = 105
+PLC_D106_WINDOW_PERCENT = 106
+PLC_D107_PART_SELECT = 107
+PLC_D108_TORQUE_TYPE = 108
+PLC_D109_RESET_FAULT = 109
+PLC_D110_JOG_PLUS = 110
+PLC_D111_JOG_MINUS = 111
+PLC_D112_HOME_CMD = 112
+PLC_D120_STATUS_WORD = 120
+PLC_D121_CURRENT_MODE = 121
+PLC_D122_CURRENT_PHASE = 122
+PLC_D123_CURRENT_CYCLE = 123
+PLC_D124_CURRENT_ANGLE_X100 = 124
+PLC_D125_TARGET_ANGLE_X100 = 125
+PLC_D126_CURRENT_SPEED_X100 = 126
+PLC_D127_SERVO_PULSE_LOW = 127
+PLC_D128_SERVO_PULSE_HIGH = 128
+PLC_D129_ERROR_CODE = 129
+PLC_D130_DATA_VALID = 130
+PLC_D131_RECORD_ENABLE = 131
+PLC_D132_CYLINDER_STATUS = 132
+PLC_D133_SERVO_ON_STATUS = 133
+PLC_D134_TEST_DONE = 134
+PLC_D135_SAMPLE_INDEX = 135
 
-STATUS_BIT_STABLE     = 0x10
-CMD_TARE              = 49914
-CMD_TARE_RAM          = 49594
-CMD_RESTART           = 43948
-CMD_RESET_MAX         = 49151
-CMD_RESET_MIN         = 45056
+CMD_START_RUN = 1 << 0
+CMD_STOP_RUN = 1 << 1
+CMD_START_RECORD = 1 << 2
+CMD_STOP_RECORD = 1 << 3
+CMD_CYLINDER_TOGGLE = 1 << 4
+CMD_SERVO_ON = 1 << 5
+CMD_ABORT = 1 << 6
+CMD_CLEAR_DONE = 1 << 7
 
-# PLC simulator register map D100..D135 (base-0), shared on same Modbus slave.
-PLC_D100_CMD_WORD             = 100
-PLC_D101_MODE                 = 101
-PLC_D102_POS_ANGLE_X100       = 102
-PLC_D103_NEG_ANGLE_X100       = 103
-PLC_D104_SPEED_X100           = 104
-PLC_D105_CYCLE_SET            = 105
-PLC_D106_WINDOW_PERCENT       = 106
-PLC_D107_PART_SELECT          = 107
-PLC_D108_TORQUE_TYPE          = 108
-PLC_D109_RESET_FAULT          = 109
-PLC_D110_JOG_PLUS             = 110
-PLC_D111_JOG_MINUS            = 111
-PLC_D112_HOME_CMD             = 112
-PLC_D120_STATUS_WORD          = 120
-PLC_D121_CURRENT_MODE         = 121
-PLC_D122_CURRENT_PHASE        = 122
-PLC_D123_CURRENT_CYCLE        = 123
-PLC_D124_CURRENT_ANGLE_X100   = 124
-PLC_D125_TARGET_ANGLE_X100    = 125
-PLC_D126_CURRENT_SPEED_X100   = 126
-PLC_D127_SERVO_PULSE_LOW      = 127
-PLC_D128_SERVO_PULSE_HIGH     = 128
-PLC_D129_ERROR_CODE           = 129
-PLC_D130_DATA_VALID           = 130
-PLC_D131_RECORD_ENABLE        = 131
-PLC_D132_CYLINDER_STATUS      = 132
-PLC_D133_SERVO_ON_STATUS      = 133
-PLC_D134_TEST_DONE            = 134
-PLC_D135_SAMPLE_INDEX         = 135
+ST_RUN = 1 << 0
+ST_SERVO = 1 << 1
+ST_CLAMP = 1 << 2
+ST_TEST = 1 << 3
+ST_RECORD = 1 << 4
+ST_VALID = 1 << 5
+ST_DONE = 1 << 6
+ST_FAULT = 1 << 7
 
-PLC_CMD_START_RUN             = 1 << 0
-PLC_CMD_STOP_RUN              = 1 << 1
-PLC_CMD_START_RECORD          = 1 << 2
-PLC_CMD_STOP_RECORD           = 1 << 3
-PLC_CMD_CYLINDER_TOGGLE       = 1 << 4
-PLC_CMD_SERVO_ON              = 1 << 5
-PLC_CMD_ABORT                 = 1 << 6
-PLC_CMD_CLEAR_DONE            = 1 << 7
-PLC_STATUS_RUN                = 1 << 0
-PLC_STATUS_SERVO_ON           = 1 << 1
-PLC_STATUS_CYLINDER_CLAMPED   = 1 << 2
-PLC_STATUS_TEST_RUNNING       = 1 << 3
-PLC_STATUS_RECORDING          = 1 << 4
-PLC_STATUS_DATA_VALID         = 1 << 5
-PLC_STATUS_DONE               = 1 << 6
-PLC_STATUS_FAULT              = 1 << 7
+MODE_MANUAL = 0
+MODE_BREAKAWAY = 1
+MODE_OPERATING = 2
+TORQUE_ID = 1
+PLC_ID = 2
+UINT16 = 0xFFFF
 
 
-def float_to_regs(value: float):
-    """Encode Python float → 2 × uint16 (Big-Endian)."""
-    packed = struct.pack('>f', value)
-    hi, lo = struct.unpack('>HH', packed)
-    return hi, lo
+def u16(value: int) -> int:
+    return int(value) & UINT16
 
 
-def int32_to_regs(value: int):
-    """Encode signed int32 → 2 × uint16 (Big-Endian)."""
-    packed = struct.pack('>i', value)
-    hi, lo = struct.unpack('>HH', packed)
-    return hi, lo
+def i16(value: int) -> int:
+    value = int(value) & UINT16
+    return value - 0x10000 if value & 0x8000 else value
 
 
-# =====================================================================
-# SIMULATOR GUI
-# =====================================================================
-class TorqueSimulatorWindow(QMainWindow):
-    """Giao diện mô phỏng cảm biến Torque ZE-SG3."""
+def float_regs(value: float) -> list[int]:
+    return list(struct.unpack(">HH", struct.pack(">f", float(value))))
 
+
+def int32_regs(value: int) -> list[int]:
+    return list(struct.unpack(">HH", struct.pack(">i", int(value))))
+
+
+def sim_context(hr_size: int = 256) -> ModbusSimulatorContext:
+    config = {
+        "setup": {
+            "co size": 0,
+            "di size": 0,
+            "ir size": 0,
+            "hr size": hr_size,
+            "shared blocks": True,
+            "type exception": False,
+            "defaults": {
+                "value": {"bits": 0, "uint16": 0, "uint32": 0, "float32": 0, "string": ""},
+                "action": {"bits": None, "uint16": None, "uint32": None, "float32": None, "string": None},
+            },
+        },
+        "invalid": [],
+        "write": [[0, hr_size - 1]],
+        "bits": [],
+        "uint16": [{"addr": [0, hr_size - 1], "value": 0}],
+        "uint32": [],
+        "float32": [],
+        "string": [],
+        "repeat": [],
+    }
+    return ModbusSimulatorContext(config, custom_actions=None)
+
+
+@dataclass
+class PlantState:
+    run: bool = False
+    servo_on: bool = False
+    clamped: bool = False
+    test_running: bool = False
+    record_enable: bool = False
+    data_valid: bool = False
+    done: bool = False
+    fault_code: int = 0
+    mode: int = MODE_MANUAL
+    phase: int = 0
+    cycle: int = 0
+    sample_index: int = 0
+    angle_deg: float = 0.0
+    target_deg: float = 0.0
+    velocity_deg_s: float = 0.0
+    torque_nm: float = 0.0
+    tare_offset: float = 0.0
+    max_net: float = 0.0
+    min_net: float = 0.0
+    settle_until: float = 0.0
+    op_target_positive: bool = True
+    last_cmd_word: int = 0
+    last_update: float = field(default_factory=time.monotonic)
+
+
+class IntegratedSimulatorWindow(QMainWindow):
     sig_log = pyqtSignal(str)
 
-    # ── Light-theme stylesheet ──
     STYLESHEET = """
-    QMainWindow { background: #f5f5f5; }
-    QGroupBox {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        margin-top: 14px;
-        padding: 12px;
-        font-weight: bold;
-    }
-    QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
-    QLabel { color: #333; }
-    QPushButton {
-        background: #e3f2fd;
-        border: 1px solid #bbdefb;
-        border-radius: 4px;
-        padding: 6px 14px;
-        color: #1565c0;
-        font-weight: 500;
-    }
-    QPushButton:hover { background: #bbdefb; border-color: #1976d2; }
-    QPushButton:pressed { background: #90caf9; }
-    QPushButton#btn_start {
-        background: #4CAF50; color: white; font-weight: bold; font-size: 11pt;
-    }
-    QPushButton#btn_start:hover { background: #388E3C; }
-    QPushButton#btn_stop {
-        background: #f44336; color: white; font-weight: bold; font-size: 11pt;
-    }
-    QPushButton#btn_stop:hover { background: #C62828; }
-    QSlider::groove:horizontal {
-        border: 1px solid #bbb;
-        background: #e0e0e0;
-        height: 8px;
-        border-radius: 4px;
-    }
-    QSlider::handle:horizontal {
-        background: #1976d2;
-        border: 1px solid #1565c0;
-        width: 20px;
-        margin: -6px 0;
-        border-radius: 10px;
-    }
-    QSlider::sub-page:horizontal { background: #64b5f6; border-radius: 4px; }
-    QTextEdit { background: #fafafa; border: 1px solid #e0e0e0; font-family: Consolas; font-size: 9pt; }
-    QComboBox { background: white; border: 1px solid #ccc; border-radius: 4px; padding: 4px 6px; }
-    QSpinBox, QDoubleSpinBox { background: white; border: 1px solid #ccc; border-radius: 4px; padding: 4px; }
+    QGroupBox { margin-top: 10px; padding: 8px; font-weight: normal; }
+    QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }
+    QPushButton { padding: 5px 10px; }
+    QTextEdit { font-family: Consolas; font-size: 9pt; }
     """
 
     def __init__(self):
         super().__init__()
-
-        # Internal state
-        self._server_thread = None
-        self._server_running = False
+        self._context: ModbusServerContext | None = None
         self._server = None
         self._loop = None
-        self._context = None
-        self._slave_id = 1
-        self._torque_value = 0.0
-        self._tare_offset = 0.0
-        self._max_net = 0.0
-        self._min_net = 0.0
-        self._noise_enabled = True
-        self._noise_amplitude = 0.02
-        self._sine_enabled = False
-        self._sine_amplitude = 5.0
-        self._sine_freq = 0.5
-        self._step_enabled = False
-        self._step_low = 0.0
-        self._step_high = 8.0
-        self._step_period_s = 2.0
-
-        # PLC simulator state (D100..D135).
-        self._plc_enabled = True
-        self._plc_run = False
-        self._plc_recording = False
-        self._plc_clamped = False
-        self._plc_servo_on = True
-        self._plc_done = False
-        self._plc_fault_code = 0
-        self._plc_angle_deg = 0.0
-        self._plc_target_deg = 0.0
-        self._plc_cycle = 0
-        self._plc_sample_index = 0
-        self._plc_last_update = time.monotonic()
-
+        self._thread = None
+        self._state = PlantState()
+        self._auto_torque = True
+        self._manual_torque = 0.0
+        self._noise_nm = 0.025
         self._build_ui()
         self.setStyleSheet(self.STYLESHEET)
-
-        # Timer để cập nhật register liên tục
-        self._update_timer = QTimer()
-        self._update_timer.timeout.connect(self._update_registers)
-        self._update_timer.setInterval(50)  # 20 Hz
-
-        # Timer kiểm tra command register
-        self._cmd_timer = QTimer()
-        self._cmd_timer.timeout.connect(self._check_commands)
-        self._cmd_timer.setInterval(100)
-
+        self._scan_ports()
+        self._timer = QTimer(self)
+        self._timer.setInterval(25)
+        self._timer.timeout.connect(self._tick)
+        self._cmd_timer = QTimer(self)
+        self._cmd_timer.setInterval(40)
+        self._cmd_timer.timeout.connect(self._scan_commands)
         self.sig_log.connect(self._log)
 
     def _build_ui(self):
-        self.setWindowTitle("🔧 ZE-SG3 Torque Sensor Simulator")
-        self.setGeometry(100, 100, 600, 700)
-        self.setMinimumSize(500, 600)
-
+        self.setWindowTitle("ZE-SG3 + PLC Simulator (Torque ID 1, PLC ID 2)")
+        self.setGeometry(80, 60, 860, 760)
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
 
-        # ── COM Port + Slave ID ──
-        conn_grp = QGroupBox("🔌 Cấu hình kết nối")
-        cg = QGridLayout()
-        cg.setSpacing(8)
-
-        cg.addWidget(QLabel("COM Port (Simulator):"), 0, 0)
+        conn = QGroupBox("Ket noi Modbus RTU")
+        grid = QGridLayout(conn)
+        grid.addWidget(QLabel("COM simulator:"), 0, 0)
         self.combo_port = QComboBox()
-        self._scan_ports()
-        cg.addWidget(self.combo_port, 0, 1)
-
-        btn_scan = QPushButton("🔄 Quét lại")
+        grid.addWidget(self.combo_port, 0, 1)
+        btn_scan = QPushButton("Quet COM")
         btn_scan.clicked.connect(self._scan_ports)
-        cg.addWidget(btn_scan, 0, 2)
-
-        cg.addWidget(QLabel("Baudrate:"), 1, 0)
+        grid.addWidget(btn_scan, 0, 2)
+        grid.addWidget(QLabel("Baud:"), 1, 0)
         self.combo_baud = QComboBox()
-        for b in [9600, 19200, 38400, 57600, 115200]:
-            self.combo_baud.addItem(str(b), b)
+        for baud in [9600, 19200, 38400, 57600, 115200]:
+            self.combo_baud.addItem(str(baud), baud)
         self.combo_baud.setCurrentText("115200")
-        cg.addWidget(self.combo_baud, 1, 1)
+        grid.addWidget(self.combo_baud, 1, 1)
+        self.lbl_ids = QLabel("Torque slave ID = 1 | PLC slave ID = 2 | 8N1")
+        grid.addWidget(self.lbl_ids, 2, 0, 1, 3)
+        layout.addWidget(conn)
 
-        cg.addWidget(QLabel("Slave ID:"), 2, 0)
-        self.spin_slave = QSpinBox()
-        self.spin_slave.setRange(1, 247)
-        self.spin_slave.setValue(1)
-        cg.addWidget(self.spin_slave, 2, 1)
-
-        conn_grp.setLayout(cg)
-        layout.addWidget(conn_grp)
-
-        # ── Start / Stop buttons ──
-        btn_row = QHBoxLayout()
-        self.btn_start = QPushButton("▶️ Bắt đầu mô phỏng")
-        self.btn_start.setObjectName("btn_start")
-        self.btn_start.setMinimumHeight(40)
+        row = QHBoxLayout()
+        self.btn_start = QPushButton("Bat dau mo phong")
+        self.btn_start.setObjectName("start")
         self.btn_start.clicked.connect(self._start_server)
-        btn_row.addWidget(self.btn_start)
-
-        self.btn_stop = QPushButton("⏹ Dừng mô phỏng")
-        self.btn_stop.setObjectName("btn_stop")
-        self.btn_stop.setMinimumHeight(40)
+        row.addWidget(self.btn_start)
+        self.btn_stop = QPushButton("Dung")
+        self.btn_stop.setObjectName("stop")
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self._stop_server)
-        btn_row.addWidget(self.btn_stop)
-        layout.addLayout(btn_row)
+        row.addWidget(self.btn_stop)
+        layout.addLayout(row)
 
-        # ── Torque Control ──
-        torque_grp = QGroupBox("⚡ Điều khiển Torque (Nm)")
-        tg = QVBoxLayout()
+        machine = QGroupBox("Trang thai may")
+        mg = QGridLayout(machine)
+        self.lamps = {}
+        for idx, name in enumerate(["RUN", "SERVO", "CLAMP", "RECORD", "VALID", "DONE", "FAULT"]):
+            lbl = QLabel(f"{name}: OFF")
+            self.lamps[name] = lbl
+            mg.addWidget(lbl, idx // 4, idx % 4)
+        self.lbl_motion = QLabel("Servo: STOP | Angle 0.00 deg | Target 0.00 deg | Speed 0.00 deg/s")
+        mg.addWidget(self.lbl_motion, 2, 0, 1, 4)
+        self.lbl_cylinder = QLabel("Xi lanh: NHA | Kep phoi: NO")
+        mg.addWidget(self.lbl_cylinder, 3, 0, 1, 2)
+        self.lbl_phase = QLabel("PLC: phase=0 mode=0 cycle=0 D129=0")
+        mg.addWidget(self.lbl_phase, 3, 2, 1, 2)
+        layout.addWidget(machine)
 
-        # Slider
-        self.slider_torque = QSlider(Qt.Horizontal)
-        self.slider_torque.setRange(-5000, 5000)  # -50.00 Nm to 50.00 Nm (x100)
-        self.slider_torque.setValue(0)
-        self.slider_torque.setTickPosition(QSlider.TicksBelow)
-        self.slider_torque.setTickInterval(500)
-        self.slider_torque.valueChanged.connect(self._on_slider_changed)
-        tg.addWidget(self.slider_torque)
-
-        # Value display + spin
-        val_row = QHBoxLayout()
-        self.lbl_torque = QLabel("0.00 Nm")
-        self.lbl_torque.setFont(QFont("Segoe UI", 28, QFont.Bold))
+        torque = QGroupBox("Torque ZE-SG3")
+        tg = QGridLayout(torque)
+        self.lbl_torque = QLabel("0.000 Nm")
         self.lbl_torque.setAlignment(Qt.AlignCenter)
-        self.lbl_torque.setStyleSheet("color: #1976d2;")
-        val_row.addWidget(self.lbl_torque, stretch=1)
-
-        spin_col = QVBoxLayout()
-        spin_col.addWidget(QLabel("Giá trị chính xác:"))
-        self.spin_torque = QDoubleSpinBox()
-        self.spin_torque.setRange(-50.0, 50.0)
-        self.spin_torque.setDecimals(2)
-        self.spin_torque.setSingleStep(0.1)
-        self.spin_torque.setSuffix(" Nm")
-        self.spin_torque.setValue(0.0)
-        self.spin_torque.valueChanged.connect(self._on_spin_changed)
-        spin_col.addWidget(self.spin_torque)
-
-        btn_zero = QPushButton("⚖️ Reset về 0")
-        btn_zero.clicked.connect(self._reset_torque)
-        spin_col.addWidget(btn_zero)
-        val_row.addLayout(spin_col)
-        tg.addLayout(val_row)
-
-        torque_grp.setLayout(tg)
-        layout.addWidget(torque_grp)
-
-        # ── Simulation Effects ──
-        effect_grp = QGroupBox("🎛️ Hiệu ứng mô phỏng")
-        eg = QGridLayout()
-        eg.setSpacing(6)
-
-        self.chk_noise = QCheckBox("Thêm nhiễu ngẫu nhiên")
-        self.chk_noise.setChecked(True)
-        self.chk_noise.toggled.connect(lambda v: setattr(self, '_noise_enabled', v))
-        eg.addWidget(self.chk_noise, 0, 0)
-
-        eg.addWidget(QLabel("Biên độ nhiễu (Nm):"), 0, 1)
+        self.lbl_torque.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        tg.addWidget(self.lbl_torque, 0, 0, 1, 3)
+        self.chk_auto_torque = QCheckBox("Auto torque theo servo/PLC")
+        self.chk_auto_torque.setChecked(True)
+        self.chk_auto_torque.toggled.connect(lambda v: setattr(self, "_auto_torque", v))
+        tg.addWidget(self.chk_auto_torque, 1, 0)
+        tg.addWidget(QLabel("Manual torque:"), 1, 1)
+        self.spin_manual_torque = QDoubleSpinBox()
+        self.spin_manual_torque.setRange(-50, 50)
+        self.spin_manual_torque.setDecimals(3)
+        self.spin_manual_torque.setSuffix(" Nm")
+        self.spin_manual_torque.valueChanged.connect(lambda v: setattr(self, "_manual_torque", v))
+        tg.addWidget(self.spin_manual_torque, 1, 2)
+        tg.addWidget(QLabel("Noise Nm:"), 2, 1)
         self.spin_noise = QDoubleSpinBox()
-        self.spin_noise.setRange(0.001, 1.0)
+        self.spin_noise.setRange(0, 1)
         self.spin_noise.setDecimals(3)
-        self.spin_noise.setValue(0.02)
-        self.spin_noise.valueChanged.connect(lambda v: setattr(self, '_noise_amplitude', v))
-        eg.addWidget(self.spin_noise, 0, 2)
+        self.spin_noise.setValue(self._noise_nm)
+        self.spin_noise.valueChanged.connect(lambda v: setattr(self, "_noise_nm", v))
+        tg.addWidget(self.spin_noise, 2, 2)
+        layout.addWidget(torque)
 
-        self.chk_sine = QCheckBox("Sóng sin tự động")
-        self.chk_sine.setChecked(False)
-        self.chk_sine.toggled.connect(lambda v: setattr(self, '_sine_enabled', v))
-        eg.addWidget(self.chk_sine, 1, 0)
+        manual = QGroupBox("Nut mo phong vat ly")
+        mr = QHBoxLayout(manual)
+        for text, func in [
+            ("RUN", self._manual_run),
+            ("STOP", self._manual_stop),
+            ("Kep/Nha xi lanh", self._toggle_clamp),
+            ("Home 0 deg", self._home),
+            ("Reset Fault/Done", self._reset_fault_done),
+        ]:
+            btn = QPushButton(text)
+            btn.clicked.connect(func)
+            mr.addWidget(btn)
+        layout.addWidget(manual)
 
-        eg.addWidget(QLabel("Biên độ (Nm):"), 1, 1)
-        self.spin_sine_amp = QDoubleSpinBox()
-        self.spin_sine_amp.setRange(0.1, 50.0)
-        self.spin_sine_amp.setValue(5.0)
-        self.spin_sine_amp.valueChanged.connect(lambda v: setattr(self, '_sine_amplitude', v))
-        eg.addWidget(self.spin_sine_amp, 1, 2)
+        regs = QGroupBox("PLC D120..D135")
+        rg = QVBoxLayout(regs)
+        self.lbl_regs = QLabel("-")
+        self.lbl_regs.setWordWrap(True)
+        rg.addWidget(self.lbl_regs)
+        layout.addWidget(regs)
 
-        eg.addWidget(QLabel("Tần số (Hz):"), 2, 1)
-        self.spin_sine_freq = QDoubleSpinBox()
-        self.spin_sine_freq.setRange(0.01, 10.0)
-        self.spin_sine_freq.setDecimals(2)
-        self.spin_sine_freq.setValue(0.5)
-        self.spin_sine_freq.valueChanged.connect(lambda v: setattr(self, '_sine_freq', v))
-        eg.addWidget(self.spin_sine_freq, 2, 2)
-
-        self.chk_step = QCheckBox("Torque step tự động")
-        self.chk_step.setChecked(False)
-        self.chk_step.toggled.connect(lambda v: setattr(self, '_step_enabled', v))
-        eg.addWidget(self.chk_step, 3, 0)
-
-        eg.addWidget(QLabel("Step high (Nm):"), 3, 1)
-        self.spin_step_high = QDoubleSpinBox()
-        self.spin_step_high.setRange(-50.0, 50.0)
-        self.spin_step_high.setValue(8.0)
-        self.spin_step_high.valueChanged.connect(lambda v: setattr(self, '_step_high', v))
-        eg.addWidget(self.spin_step_high, 3, 2)
-
-        eg.addWidget(QLabel("Chu kỳ step (s):"), 4, 1)
-        self.spin_step_period = QDoubleSpinBox()
-        self.spin_step_period.setRange(0.2, 30.0)
-        self.spin_step_period.setDecimals(1)
-        self.spin_step_period.setValue(2.0)
-        self.spin_step_period.valueChanged.connect(lambda v: setattr(self, '_step_period_s', v))
-        eg.addWidget(self.spin_step_period, 4, 2)
-
-        effect_grp.setLayout(eg)
-        layout.addWidget(effect_grp)
-
-        # ── PLC Simulation ──
-        plc_grp = QGroupBox("🤖 PLC Simulator D100..D135")
-        pg = QGridLayout()
-        self.chk_plc_enabled = QCheckBox("Bật mô phỏng PLC cùng slave")
-        self.chk_plc_enabled.setChecked(True)
-        self.chk_plc_enabled.toggled.connect(lambda v: setattr(self, '_plc_enabled', v))
-        pg.addWidget(self.chk_plc_enabled, 0, 0, 1, 2)
-
-        self.btn_plc_clamp = QPushButton("Clamp toggle")
-        self.btn_plc_clamp.clicked.connect(self._toggle_plc_clamp)
-        pg.addWidget(self.btn_plc_clamp, 1, 0)
-
-        self.btn_plc_done = QPushButton("Clear Done")
-        self.btn_plc_done.clicked.connect(self._clear_plc_done)
-        pg.addWidget(self.btn_plc_done, 1, 1)
-
-        self.lbl_plc = QLabel("PLC: Ready")
-        self.lbl_plc.setStyleSheet("color: #455a64; font-weight: 600;")
-        pg.addWidget(self.lbl_plc, 2, 0, 1, 2)
-        plc_grp.setLayout(pg)
-        layout.addWidget(plc_grp)
-
-        # ── Status / Log ──
-        log_grp = QGroupBox("📋 Log")
-        lg = QVBoxLayout()
+        log_grp = QGroupBox("Log")
+        lg = QVBoxLayout(log_grp)
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setMaximumHeight(120)
+        self.log_box.setMaximumHeight(160)
         lg.addWidget(self.log_box)
-        log_grp.setLayout(lg)
         layout.addWidget(log_grp)
 
-        # Status bar
-        self.lbl_status = QLabel("⚪ Chưa khởi động")
-        self.lbl_status.setStyleSheet("color: #757575; font-weight: bold; padding: 4px;")
-        layout.addWidget(self.lbl_status)
-
-    # ── Port scanning ──
     def _scan_ports(self):
         self.combo_port.clear()
-        ports = serial.tools.list_ports.comports()
-        for p in sorted(ports, key=lambda x: x.device):
-            self.combo_port.addItem(f"{p.device} – {p.description}", p.device)
+        for port in sorted(serial.tools.list_ports.comports(), key=lambda p: p.device):
+            self.combo_port.addItem(f"{port.device} – {port.description}", port.device)
         if self.combo_port.count() == 0:
             self.combo_port.addItem("Không tìm thấy COM port", "")
 
-    # ── Slider / Spin sync ──
-    def _on_slider_changed(self, val):
-        self._torque_value = val / 100.0
-        self.spin_torque.blockSignals(True)
-        self.spin_torque.setValue(self._torque_value)
-        self.spin_torque.blockSignals(False)
-        self._update_display()
+    def _create_context(self) -> ModbusServerContext:
+        torque = sim_context(256)
+        plc = sim_context(256)
+        context = ModbusServerContext(devices={TORQUE_ID: torque, PLC_ID: plc}, single=False)
 
-    def _on_spin_changed(self, val):
-        self._torque_value = val
-        self.slider_torque.blockSignals(True)
-        self.slider_torque.setValue(int(val * 100))
-        self.slider_torque.blockSignals(False)
-        self._update_display()
+        def setv(slave: int, reg: int, vals: list[int]):
+            asyncio.run(context.async_setValues(slave, 3, reg, vals))
 
-    def _reset_torque(self):
-        self._torque_value = 0.0
-        self.slider_torque.setValue(0)
-        self.spin_torque.setValue(0.0)
-        self._update_display()
+        setv(TORQUE_ID, REG_MACHINE_ID, [0x5A53])
+        setv(TORQUE_ID, REG_FIRMWARE_REV, [0x0100])
+        setv(TORQUE_ID, REG_MEASURE_UNIT, [8])
+        setv(TORQUE_ID, REG_MEASURE_TYPE, [0])
+        setv(TORQUE_ID, REG_CALIB_MODE, [0])
+        setv(TORQUE_ID, REG_ADDRESS, [TORQUE_ID])
+        setv(TORQUE_ID, REG_BAUD, [7])
+        setv(TORQUE_ID, REG_PARITY, [0])
+        setv(TORQUE_ID, REG_FILTER_LEVEL, [3])
+        setv(TORQUE_ID, REG_RESOLUTION_MODE, [0])
+        setv(TORQUE_ID, REG_ADC_SPS, [3])
+        setv(TORQUE_ID, REG_DELTA_TIME, [10])
+        setv(TORQUE_ID, REG_CELL_SENS_HI, float_regs(1.9880))
+        setv(TORQUE_ID, REG_CELL_FS_HI, float_regs(49.70))
+        setv(TORQUE_ID, REG_STATUS, [STATUS_BIT_STABLE])
 
-    def _toggle_plc_clamp(self):
-        self._plc_clamped = not self._plc_clamped
-        self._log("🔩 PLC Clamp ON" if self._plc_clamped else "🔓 PLC Clamp OFF")
-
-    def _clear_plc_done(self):
-        self._plc_done = False
-        self._plc_sample_index = 0
-        self._log("✅ PLC Done đã clear")
-
-    def _update_display(self):
-        v = self._torque_value
-        color = "#4CAF50" if abs(v) < 10 else ("#FF9800" if abs(v) < 40 else "#f44336")
-        self.lbl_torque.setText(f"{v:.2f} Nm")
-        self.lbl_torque.setStyleSheet(f"color: {color};")
-
-    def _context_set_values(self, address: int, values):
-        """Write holding registers through the server context across pymodbus versions."""
-        if self._loop and self._loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                self._context.async_setValues(self._slave_id, 3, address, values),
-                self._loop,
-            )
-            future.result(timeout=1)
-        else:
-            asyncio.run(self._context.async_setValues(self._slave_id, 3, address, values))
-
-    def _context_get_values(self, address: int, count: int = 1):
-        """Read holding registers through the server context across pymodbus versions."""
-        if self._loop and self._loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                self._context.async_getValues(self._slave_id, 3, address, count),
-                self._loop,
-            )
-            return future.result(timeout=1)
-        return asyncio.run(self._context.async_getValues(self._slave_id, 3, address, count))
-
-    def _create_datastore(self):
-        """Tạo Modbus datastore với register map tương thích ZE-SG3."""
-        # pymodbus 3.13 deprecates direct DataBlock read/write methods.
-        # Use ModbusSimulatorContext so server requests and GUI updates share
-        # the same register array via async_getValues/async_setValues.
-        config = {
-            "setup": {
-                "co size": 0,
-                "di size": 0,
-                "ir size": 255,
-                "hr size": 255,
-                "shared blocks": True,
-                "type exception": False,
-                "defaults": {
-                    "value": {
-                        "bits": 0,
-                        "uint16": 0,
-                        "uint32": 0,
-                        "float32": 0,
-                        "string": "",
-                    },
-                    "action": {
-                        "bits": None,
-                        "uint16": None,
-                        "uint32": None,
-                        "float32": None,
-                        "string": None,
-                    },
-                },
-            },
-            "invalid": [],
-            "write": [[0, 254]],
-            "bits": [],
-            "uint16": [{"addr": [0, 254], "value": 0}],
-            "uint32": [],
-            "float32": [],
-            "string": [],
-            "repeat": [],
-        }
-        simulator = ModbusSimulatorContext(config, custom_actions=None)
-        context = ModbusServerContext(devices={self._slave_id: simulator}, single=False)
-
-        def _set_init(reg, vals):
-            asyncio.run(context.async_setValues(self._slave_id, 3, reg + 1, vals))
-
-        _set_init(REG_MACHINE_ID, [0x5A53])
-        _set_init(REG_FIRMWARE_REV, [0x0100])
-        _set_init(REG_MEASURE_UNIT, [8])
-        _set_init(REG_MEASURE_TYPE, [0])
-        _set_init(REG_CALIB_MODE, [0])
-        _set_init(REG_ADDRESS, [self._slave_id])
-        _set_init(REG_BAUD, [7])
-        _set_init(REG_PARITY, [0])
-        _set_init(REG_FILTER_LEVEL, [3])
-        _set_init(REG_RESOLUTION_MODE, [0])
-        _set_init(REG_ADC_SPS, [3])
-        _set_init(REG_DELTA_TIME, [10])
-
-        # Float32 defaults
-        sens_hi, sens_lo = float_to_regs(1.9880)
-        _set_init(REG_CELL_SENS_HI, [sens_hi, sens_lo])
-        fs_hi, fs_lo = float_to_regs(49.70)
-        _set_init(REG_CELL_FS_HI, [fs_hi, fs_lo])
-
-        # Status: stable
-        _set_init(REG_STATUS, [STATUS_BIT_STABLE])
-
+        setv(PLC_ID, PLC_D101_MODE, [MODE_BREAKAWAY])
+        setv(PLC_ID, PLC_D102_POS_ANGLE_X100, [3600])
+        setv(PLC_ID, PLC_D103_NEG_ANGLE_X100, [u16(-3600)])
+        setv(PLC_ID, PLC_D104_SPEED_X100, [1000])
+        setv(PLC_ID, PLC_D105_CYCLE_SET, [3])
+        setv(PLC_ID, PLC_D106_WINDOW_PERCENT, [80])
+        setv(PLC_ID, PLC_D107_PART_SELECT, [1])
+        setv(PLC_ID, PLC_D108_TORQUE_TYPE, [1])
         return context
+
+    def _ctx_set(self, slave: int, reg: int, vals: list[int]):
+        if not self._context:
+            return
+        if self._loop and self._loop.is_running():
+            fut = asyncio.run_coroutine_threadsafe(self._context.async_setValues(slave, 3, reg, vals), self._loop)
+            fut.result(timeout=1)
+        else:
+            asyncio.run(self._context.async_setValues(slave, 3, reg, vals))
+
+    def _ctx_get(self, slave: int, reg: int, count: int = 1) -> list[int]:
+        if not self._context:
+            return [0] * count
+        if self._loop and self._loop.is_running():
+            fut = asyncio.run_coroutine_threadsafe(self._context.async_getValues(slave, 3, reg, count), self._loop)
+            return fut.result(timeout=1)
+        return asyncio.run(self._context.async_getValues(slave, 3, reg, count))
 
     def _start_server(self):
         port = self.combo_port.currentData()
         if not port:
-            self._log("❌ Chưa chọn COM port"); return
-
-        self._slave_id = self.spin_slave.value()
-        baudrate = self.combo_baud.currentData()
-        self._tare_offset = 0.0
-        self._max_net = 0.0
-        self._min_net = 0.0
-
-        self._context = self._create_datastore()
-
-        self._server_running = True
-        self._server_thread = threading.Thread(
-            target=self._run_server,
-            args=(port, baudrate),
-            daemon=True,
-            name="ModbusServer"
-        )
-        self._server_thread.start()
-
-        self._update_timer.start()
+            self._log("❌ Chưa chọn COM port")
+            return
+        baud = self.combo_baud.currentData()
+        self._state = PlantState()
+        self._context = self._create_context()
+        self._thread = threading.Thread(target=self._run_server, args=(port, baud), daemon=True, name="IntegratedModbusServer")
+        self._thread.start()
+        self._timer.start()
         self._cmd_timer.start()
-
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.combo_port.setEnabled(False)
         self.combo_baud.setEnabled(False)
-        self.spin_slave.setEnabled(False)
+        self._log(f"✅ Simulator chạy {port} @ {baud}, Torque ID=1, PLC ID=2")
 
-        self.lbl_status.setText(f"🟢 Đang mô phỏng trên {port} @ {baudrate} bps (Slave {self._slave_id})")
-        self.lbl_status.setStyleSheet("color: #388E3C; font-weight: bold; padding: 4px;")
-        self._log(f"✅ Server Modbus RTU đã khởi động trên {port} @ {baudrate} bps, Slave ID = {self._slave_id}")
-        self._log(f"💡 Trong phần mềm chính, kết nối tới COM port kia trong cặp ảo")
-
-    def _run_server(self, port, baudrate):
-        """Chạy Modbus serial server trong event loop riêng (daemon thread).
-
-        ModbusSerialServer phải được khởi tạo bên trong một coroutine
-        vì nó gọi `asyncio.get_running_loop()` trong __init__.
-        """
+    def _run_server(self, port: str, baud: int):
         try:
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
 
-            async def _server_coro():
-                try:
-                    # Tạo server bên trong event loop đang chạy
-                    self._server = ModbusSerialServer(
-                        self._context,
-                        framer=FramerType.RTU,
-                        port=port,
-                        baudrate=baudrate,
-                        parity='N',
-                        stopbits=1,
-                        bytesize=8,
-                        timeout=1,
-                    )
-                    self.sig_log.emit(f"🔗 Modbus server đã tạo, đang lắng nghe trên {port}...")
-                    await self._server.serve_forever()
-                except asyncio.CancelledError:
-                    # graceful cancellation
-                    pass
+            async def server_coro():
+                self._server = ModbusSerialServer(
+                    self._context,
+                    framer=FramerType.RTU,
+                    port=port,
+                    baudrate=baud,
+                    parity="N",
+                    stopbits=1,
+                    bytesize=8,
+                    timeout=1,
+                )
+                self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên {port}: slave 1 torque, slave 2 PLC")
+                await self._server.serve_forever()
 
-            self._loop.run_until_complete(_server_coro())
-        except Exception as e:
-            self.sig_log.emit(f"❌ Lỗi server: {e}")
-            import traceback
-            self.sig_log.emit(traceback.format_exc())
+            self._loop.run_until_complete(server_coro())
+        except Exception as exc:
+            self.sig_log.emit(f"❌ Lỗi server: {exc}")
         finally:
             try:
                 if self._loop and not self._loop.is_closed():
@@ -692,279 +448,390 @@ class TorqueSimulatorWindow(QMainWindow):
             self._server = None
 
     def _stop_server(self):
-        self._server_running = False
-        self._update_timer.stop()
+        self._timer.stop()
         self._cmd_timer.stop()
-
-        # Gracefully stop the Modbus server
         if self._loop:
             try:
-                # ServerStop is a synchronous helper that schedules async stop
                 ServerStop()
-            except Exception as e:
-                logger.warning(f"Stop server error: {e}")
-
+            except Exception as exc:
+                logger.warning("Stop server error: %s", exc)
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.combo_port.setEnabled(True)
         self.combo_baud.setEnabled(True)
-        self.spin_slave.setEnabled(True)
+        self._log("⏹ Simulator đã dừng")
 
-        self.lbl_status.setText("⚪ Đã dừng mô phỏng")
-        self.lbl_status.setStyleSheet("color: #757575; font-weight: bold; padding: 4px;")
-        self._log("⏹ Server đã dừng")
-
-    def _update_registers(self):
-        """Cập nhật giá trị torque vào Modbus registers (gọi mỗi 50ms)."""
+    def _scan_commands(self):
         if not self._context:
             return
+        cmd = self._ctx_get(PLC_ID, PLC_D100_CMD_WORD)[0]
+        if cmd:
+            self._handle_plc_cmd(cmd)
+            self._ctx_set(PLC_ID, PLC_D100_CMD_WORD, [0])
+        reset, jog_p, jog_m, home = self._ctx_get(PLC_ID, PLC_D109_RESET_FAULT, 4)
+        if reset:
+            self._reset_fault_done()
+            self._ctx_set(PLC_ID, PLC_D109_RESET_FAULT, [0])
+        if home:
+            self._home()
+            self._ctx_set(PLC_ID, PLC_D112_HOME_CMD, [0])
+        self._handle_torque_command()
 
-        # Tính giá trị torque hiện tại
-        base = self._torque_value
-
-        # Sine wave
-        if self._sine_enabled:
-            t = time.time()
-            base = self._sine_amplitude * math.sin(2 * math.pi * self._sine_freq * t)
-            # Cập nhật slider/display
-            self.slider_torque.blockSignals(True)
-            self.slider_torque.setValue(int(base * 100))
-            self.slider_torque.blockSignals(False)
-            self.spin_torque.blockSignals(True)
-            self.spin_torque.setValue(base)
-            self.spin_torque.blockSignals(False)
-            self._torque_value = base
-            self._update_display()
-
-        if self._step_enabled:
-            phase = (time.time() % self._step_period_s) / self._step_period_s
-            base = self._step_high if phase >= 0.5 else self._step_low
-            self.slider_torque.blockSignals(True)
-            self.slider_torque.setValue(int(base * 100))
-            self.slider_torque.blockSignals(False)
-            self.spin_torque.blockSignals(True)
-            self.spin_torque.setValue(base)
-            self.spin_torque.blockSignals(False)
-            self._torque_value = base
-            self._update_display()
-
-        # Noise
-        noise = 0.0
-        if self._noise_enabled:
-            import random
-            noise = random.gauss(0, self._noise_amplitude)
-
-        gross = base + noise
-        net = gross - self._tare_offset
-
-        # Track min/max
-        if net > self._max_net:
-            self._max_net = net
-        if net < self._min_net:
-            self._min_net = net
-
-        tare = self._tare_offset
-
-        # Int32 versions (x1000 for milli-Nm precision)
-        int_net = int(net * 1000)
-        int_gross = int(gross * 1000)
-        int_tare = int(tare * 1000)
-
-        # Encode all
-        def _set_float(reg, value):
-            hi, lo = float_to_regs(value)
-            self._context_set_values(reg + 1, [hi, lo])
-
-        def _set_int32(reg, value):
-            hi, lo = int32_to_regs(value)
-            self._context_set_values(reg + 1, [hi, lo])
-
-        _set_float(REG_NET_WEIGHT_HI, net)
-        _set_float(REG_GROSS_WEIGHT_HI, gross)
-        _set_float(REG_TARE_WEIGHT_HI, tare)
-        _set_int32(REG_INT_NET_HI, int_net)
-        _set_int32(REG_INT_GROSS_HI, int_gross)
-        _set_int32(REG_INT_TARE_HI, int_tare)
-        _set_float(REG_MAX_NET_HI, self._max_net)
-        _set_float(REG_MIN_NET_HI, self._min_net)
-
-        self._context_set_values(REG_STATUS + 1, [STATUS_BIT_STABLE])
-        self._update_plc_registers()
-
-    def _update_plc_registers(self):
-        if not self._context or not self._plc_enabled:
+    def _handle_torque_command(self):
+        cmd = self._ctx_get(TORQUE_ID, REG_COMMAND)[0]
+        if not cmd:
             return
-
-        now = time.monotonic()
-        dt = max(0.001, now - self._plc_last_update)
-        self._plc_last_update = now
-
-        try:
-            mode, pos_x100, neg_x100, speed_x100, cycle_set = self._context_get_values(PLC_D101_MODE + 1, 5)
-        except Exception:
-            mode, pos_x100, neg_x100, speed_x100, cycle_set = 0, 3600, 0xF1F0, 1000, 1
-
-        target_x100 = pos_x100 if mode != 2 else neg_x100
-        if target_x100 & 0x8000:
-            target_x100 -= 0x10000
-        self._plc_target_deg = target_x100 / 100.0
-        speed_deg_s = max(1.0, speed_x100 / 100.0)
-
-        if self._plc_run and not self._plc_done and not self._plc_fault_code:
-            delta = self._plc_target_deg - self._plc_angle_deg
-            step = speed_deg_s * dt
-            if abs(delta) <= step:
-                self._plc_angle_deg = self._plc_target_deg
-                self._plc_cycle += 1
-                if self._plc_cycle >= max(1, cycle_set):
-                    self._plc_done = True
-                    self._plc_run = False
-                    self._plc_recording = False
-            else:
-                self._plc_angle_deg += step if delta > 0 else -step
-
-        if self._plc_recording and self._plc_run:
-            self._plc_sample_index = (self._plc_sample_index + 1) & 0xFFFF
-
-        status = 0
-        if self._plc_run:
-            status |= PLC_STATUS_RUN | PLC_STATUS_TEST_RUNNING
-        if self._plc_servo_on:
-            status |= PLC_STATUS_SERVO_ON
-        if self._plc_clamped:
-            status |= PLC_STATUS_CYLINDER_CLAMPED
-        if self._plc_recording:
-            status |= PLC_STATUS_RECORDING | PLC_STATUS_DATA_VALID
-        if self._plc_done:
-            status |= PLC_STATUS_DONE
-        if self._plc_fault_code:
-            status |= PLC_STATUS_FAULT
-
-        angle_x100 = int(round(self._plc_angle_deg * 100)) & 0xFFFF
-        target_u16 = int(round(self._plc_target_deg * 100)) & 0xFFFF
-        speed_u16 = int(round(speed_deg_s * 100)) & 0xFFFF
-        pulse = int(round(self._plc_angle_deg * 1000)) & 0xFFFFFFFF
-        regs = [
-            status, mode, 1 if self._plc_run else 0, self._plc_cycle & 0xFFFF,
-            angle_x100, target_u16, speed_u16, pulse & 0xFFFF, (pulse >> 16) & 0xFFFF,
-            self._plc_fault_code & 0xFFFF, 1 if self._plc_recording else 0,
-            1 if self._plc_recording else 0, 1 if self._plc_clamped else 0,
-            1 if self._plc_servo_on else 0, 1 if self._plc_done else 0, self._plc_sample_index,
-        ]
-        self._context_set_values(PLC_D120_STATUS_WORD + 1, regs)
-        self.lbl_plc.setText(
-            f"PLC: run={int(self._plc_run)} rec={int(self._plc_recording)} "
-            f"angle={self._plc_angle_deg:.1f}° cycle={self._plc_cycle} done={int(self._plc_done)}"
-        )
-
-    def _check_commands(self):
-        """Kiểm tra Command Register để phản hồi lệnh từ phần mềm chính."""
-        if not self._context:
-            return
-
-        if self._plc_enabled:
-            plc_cmd_vals = self._context_get_values(PLC_D100_CMD_WORD + 1, count=1)
-            if plc_cmd_vals and plc_cmd_vals[0]:
-                self._handle_plc_command(plc_cmd_vals[0])
-                self._context_set_values(PLC_D100_CMD_WORD + 1, [0])
-
-        reset_vals = self._context_get_values(PLC_D109_RESET_FAULT + 1, count=4)
-        if reset_vals:
-            if reset_vals[0]:
-                self._plc_fault_code = 0
-                self._plc_done = False
-                self._log("🧹 PLC Reset fault")
-                self._context_set_values(PLC_D109_RESET_FAULT + 1, [0])
-            if reset_vals[3]:
-                self._plc_angle_deg = 0.0
-                self._plc_cycle = 0
-                self._log("🏠 PLC Home command")
-                self._context_set_values(PLC_D112_HOME_CMD + 1, [0])
-
-        cmd_vals = self._context_get_values(REG_COMMAND + 1, count=1)
-        if not cmd_vals or cmd_vals[0] == 0:
-            return
-        
-        cmd_val = cmd_vals[0]
-
-        # Xử lý lệnh
-        if cmd_val == CMD_TARE or cmd_val == CMD_TARE_RAM:
-            self._tare_offset = self._torque_value
-            self._log(f"⚖️ Tare thực hiện: offset = {self._tare_offset:.3f} Nm")
-        elif cmd_val == CMD_RESTART:
-            self._tare_offset = 0.0
-            self._max_net = 0.0
-            self._min_net = 0.0
-            self._log("🔄 Restart: Reset tất cả offset")
-        elif cmd_val == CMD_RESET_MAX:
-            self._max_net = self._torque_value - self._tare_offset
-            self._log("📊 Reset Max Net Weight")
-        elif cmd_val == CMD_RESET_MIN:
-            self._min_net = self._torque_value - self._tare_offset
-            self._log("📊 Reset Min Net Weight")
+        s = self._state
+        if cmd in (CMD_TARE, CMD_TARE_RAM):
+            s.tare_offset = s.torque_nm
+            self._log(f"⚖️ Torque tare offset={s.tare_offset:.3f} Nm")
+        elif cmd == CMD_RESTART:
+            s.tare_offset = 0.0
+            s.max_net = 0.0
+            s.min_net = 0.0
+            self._log("🔄 Torque restart/reset")
+        elif cmd == CMD_RESET_MAX:
+            s.max_net = s.torque_nm - s.tare_offset
+        elif cmd == CMD_RESET_MIN:
+            s.min_net = s.torque_nm - s.tare_offset
         else:
-            self._log(f"📩 Nhận lệnh: {cmd_val}")
+            self._log(f"📩 Torque command {cmd}")
+        self._ctx_set(TORQUE_ID, REG_COMMAND, [0])
 
-        self._context_set_values(REG_COMMAND + 1, [0])
+    def _handle_plc_cmd(self, cmd: int):
+        s = self._state
+        if cmd & CMD_START_RUN:
+            s.run = True
+            s.servo_on = True
+            s.done = False
+            s.fault_code = 0
+            self._log("▶ PLC D100.b0 RUN -> đèn RUN/SERVO ON")
+        if cmd & CMD_STOP_RUN:
+            s.run = False
+            s.test_running = False
+            s.record_enable = False
+            s.data_valid = False
+            self._log("⏹ PLC D100.b1 STOP")
+        if cmd & CMD_CYLINDER_TOGGLE:
+            s.clamped = not s.clamped
+            self._log("🔩 Xi lanh KẸP" if s.clamped else "🔓 Xi lanh NHẢ")
+        if cmd & CMD_SERVO_ON:
+            s.servo_on = True
+            self._log("🔌 Servo ON")
+        if cmd & CMD_ABORT:
+            s.test_running = False
+            s.record_enable = False
+            s.data_valid = False
+            s.fault_code = 9
+            s.phase = 999
+            self._log("🛑 Abort -> FAULT 9")
+        if cmd & CMD_CLEAR_DONE:
+            s.done = False
+            s.sample_index = 0
+            self._log("✅ Clear done")
+        if cmd & CMD_STOP_RECORD:
+            s.test_running = False
+            s.record_enable = False
+            s.data_valid = False
+            s.phase = 0
+            self._log("⏺ Stop record/test")
+        if cmd & CMD_START_RECORD:
+            self._start_test()
 
-    def _handle_plc_command(self, cmd_word: int):
-        if cmd_word & PLC_CMD_CYLINDER_TOGGLE:
-            self._plc_clamped = not self._plc_clamped
-            self._log("🔩 PLC command: Clamp toggle")
-        if cmd_word & PLC_CMD_CLEAR_DONE:
-            self._plc_done = False
-            self._plc_sample_index = 0
-            self._log("✅ PLC command: Clear Done")
-        if cmd_word & PLC_CMD_ABORT:
-            self._plc_run = False
-            self._plc_recording = False
-            self._plc_fault_code = 1
-            self._log("🛑 PLC command: Abort")
-        if cmd_word & PLC_CMD_START_RUN:
-            self._plc_run = True
-            self._plc_done = False
-            self._plc_fault_code = 0
-            self._log("▶️ PLC command: RUN")
-        if cmd_word & PLC_CMD_STOP_RUN:
-            self._plc_run = False
-            self._plc_recording = False
-            self._log("⏹ PLC command: STOP")
-        if cmd_word & PLC_CMD_START_RECORD:
-            self._plc_run = True
-            self._plc_recording = True
-            self._plc_done = False
-            self._plc_sample_index = 0
-            self._log("⏺ PLC command: START_RECORD")
-        if cmd_word & PLC_CMD_STOP_RECORD:
-            self._plc_recording = False
-            self._log("⏹ PLC command: STOP_RECORD")
-        if cmd_word & PLC_CMD_SERVO_ON:
-            self._plc_servo_on = True
-            self._log("🔌 PLC command: Servo ON")
+    def _start_test(self):
+        s = self._state
+        mode, pos, neg, speed, cycles, window = self._read_plc_config()
+        s.mode = mode
+        if not s.run:
+            self._fault(2, "Start test khi PLC chưa RUN")
+            return
+        if not s.servo_on:
+            self._fault(1, "Start test khi servo chưa ON")
+            return
+        if speed <= 0:
+            self._fault(4, "Speed không hợp lệ")
+            return
+        if not s.clamped:
+            self._fault(8, "Xi lanh chưa kẹp")
+            return
+        s.test_running = True
+        s.record_enable = True
+        s.data_valid = False
+        s.done = False
+        s.fault_code = 0
+        s.sample_index = 0
+        s.cycle = 1
+        s.op_target_positive = True
+        if mode == MODE_BREAKAWAY:
+            s.target_deg = pos
+            s.phase = 20
+        elif mode == MODE_OPERATING:
+            s.target_deg = pos
+            s.phase = 210
+        elif mode == MODE_MANUAL:
+            s.phase = 100
+        else:
+            self._fault(3, "Mode không hợp lệ")
+            return
+        self._log(f"⏺ Start test mode={mode}, target={s.target_deg:.2f}°, speed={speed:.2f}°/s")
+
+    def _fault(self, code: int, msg: str):
+        s = self._state
+        s.fault_code = code
+        s.test_running = False
+        s.record_enable = False
+        s.data_valid = False
+        s.phase = 999
+        self._log(f"❌ FAULT {code}: {msg}")
+
+    def _read_plc_config(self):
+        vals = self._ctx_get(PLC_ID, PLC_D101_MODE, 6)
+        mode = vals[0]
+        pos = i16(vals[1]) / 100.0
+        neg = i16(vals[2]) / 100.0
+        speed = vals[3] / 100.0
+        cycles = max(1, vals[4])
+        window = min(100, max(1, vals[5] or 80))
+        return mode, pos, neg, speed, cycles, window
+
+    def _tick(self):
+        if not self._context:
+            return
+        s = self._state
+        now = time.monotonic()
+        dt = min(0.1, max(0.001, now - s.last_update))
+        s.last_update = now
+        mode, pos, neg, speed, cycles, window = self._read_plc_config()
+        jog_p, jog_m = self._ctx_get(PLC_ID, PLC_D110_JOG_PLUS, 2)
+
+        prev_angle = s.angle_deg
+        if s.fault_code:
+            s.velocity_deg_s = 0.0
+        elif jog_p and s.run and s.servo_on:
+            s.phase = 110
+            s.target_deg = s.angle_deg
+            s.angle_deg += speed * dt
+        elif jog_m and s.run and s.servo_on:
+            s.phase = 120
+            s.target_deg = s.angle_deg
+            s.angle_deg -= speed * dt
+        elif s.test_running and s.run and s.servo_on:
+            self._advance_test(pos, neg, speed, cycles, window, dt)
+        else:
+            s.velocity_deg_s *= 0.80
+            if not s.test_running and s.run and not s.done:
+                s.phase = 100 if mode == MODE_MANUAL else 0
+
+        if not (jog_p or jog_m):
+            s.velocity_deg_s = (s.angle_deg - prev_angle) / dt
+        self._update_torque(dt)
+        if s.record_enable and s.test_running:
+            s.sample_index = (s.sample_index + 1) & UINT16
+        self._write_torque_registers()
+        self._write_plc_registers(speed)
+        self._update_ui()
+
+    def _advance_test(self, pos: float, neg: float, speed: float, cycles: int, window: int, dt: float):
+        s = self._state
+        delta = s.target_deg - s.angle_deg
+        step = max(0.1, speed) * dt
+        if abs(delta) <= step:
+            s.angle_deg = s.target_deg
+            s.velocity_deg_s = 0.0
+            if s.mode == MODE_BREAKAWAY:
+                s.phase = 900
+                s.done = True
+                s.test_running = False
+                s.record_enable = False
+                s.data_valid = False
+                self._log("✅ Breakaway done")
+            elif s.mode == MODE_OPERATING:
+                if s.op_target_positive:
+                    s.op_target_positive = False
+                    s.target_deg = neg
+                    s.phase = 220
+                    self._log(f"↩ Operating: đổi target âm {neg:.2f}°")
+                else:
+                    if s.cycle >= cycles:
+                        s.phase = 900
+                        s.done = True
+                        s.test_running = False
+                        s.record_enable = False
+                        s.data_valid = False
+                        self._log("✅ Operating done đủ cycle")
+                    else:
+                        s.cycle += 1
+                        s.op_target_positive = True
+                        s.target_deg = pos
+                        s.phase = 210
+                        self._log(f"↪ Operating cycle {s.cycle}: target dương {pos:.2f}°")
+        else:
+            s.angle_deg += step if delta > 0 else -step
+            s.phase = 20 if s.mode == MODE_BREAKAWAY else (210 if s.target_deg >= 0 else 220)
+        s.data_valid = self._is_data_valid(pos, neg, window)
+
+    def _is_data_valid(self, pos: float, neg: float, window: int) -> bool:
+        s = self._state
+        if s.mode == MODE_BREAKAWAY:
+            return s.test_running and s.record_enable
+        stroke = abs(pos - neg)
+        if stroke <= 0:
+            return False
+        margin = stroke * (100 - window) / 200.0
+        lo = min(pos, neg) + margin
+        hi = max(pos, neg) - margin
+        return s.test_running and s.record_enable and lo <= s.angle_deg <= hi
+
+    def _update_torque(self, dt: float):
+        s = self._state
+        if not self._auto_torque:
+            target = self._manual_torque
+        elif not s.clamped or not s.servo_on or abs(s.angle_deg) < 0.03 and abs(s.velocity_deg_s) < 0.05:
+            target = 0.0
+        else:
+            direction = 1.0 if s.velocity_deg_s > 0.05 else (-1.0 if s.velocity_deg_s < -0.05 else (1.0 if s.angle_deg >= 0 else -1.0))
+            elastic = 0.18 * s.angle_deg
+            friction = 0.55 * direction
+            damping = 0.035 * s.velocity_deg_s
+            target = elastic + friction + damping
+        target = max(-50.0, min(50.0, target))
+        alpha = min(1.0, dt / 0.12)
+        s.torque_nm += (target - s.torque_nm) * alpha
+        s.torque_nm += random.gauss(0, self._noise_nm)
+        s.torque_nm = max(-50.0, min(50.0, s.torque_nm))
+
+    def _write_torque_registers(self):
+        s = self._state
+        gross = s.torque_nm
+        net = gross - s.tare_offset
+        s.max_net = max(s.max_net, net)
+        s.min_net = min(s.min_net, net)
+        self._ctx_set(TORQUE_ID, REG_NET_WEIGHT_HI, float_regs(net))
+        self._ctx_set(TORQUE_ID, REG_GROSS_WEIGHT_HI, float_regs(gross))
+        self._ctx_set(TORQUE_ID, REG_TARE_WEIGHT_HI, float_regs(s.tare_offset))
+        self._ctx_set(TORQUE_ID, REG_INT_NET_HI, int32_regs(round(net * 1000)))
+        self._ctx_set(TORQUE_ID, REG_INT_GROSS_HI, int32_regs(round(gross * 1000)))
+        self._ctx_set(TORQUE_ID, REG_INT_TARE_HI, int32_regs(round(s.tare_offset * 1000)))
+        self._ctx_set(TORQUE_ID, REG_MAX_NET_HI, float_regs(s.max_net))
+        self._ctx_set(TORQUE_ID, REG_MIN_NET_HI, float_regs(s.min_net))
+        self._ctx_set(TORQUE_ID, REG_STATUS, [STATUS_BIT_STABLE])
+
+    def _write_plc_registers(self, speed: float):
+        s = self._state
+        status = 0
+        if s.run:
+            status |= ST_RUN
+        if s.servo_on:
+            status |= ST_SERVO
+        if s.clamped:
+            status |= ST_CLAMP
+        if s.test_running:
+            status |= ST_TEST
+        if s.record_enable:
+            status |= ST_RECORD
+        if s.data_valid:
+            status |= ST_VALID
+        if s.done:
+            status |= ST_DONE
+        if s.fault_code:
+            status |= ST_FAULT
+        pulse = int(round(s.angle_deg * 200000 / 360.0)) & 0xFFFFFFFF
+        regs = [
+            status,
+            s.mode & UINT16,
+            s.phase & UINT16,
+            s.cycle & UINT16,
+            u16(round(s.angle_deg * 100)),
+            u16(round(s.target_deg * 100)),
+            u16(round(abs(speed) * 100)),
+            pulse & UINT16,
+            (pulse >> 16) & UINT16,
+            s.fault_code & UINT16,
+            1 if s.data_valid else 0,
+            1 if s.record_enable else 0,
+            1 if s.clamped else 0,
+            1 if s.servo_on else 0,
+            1 if s.done else 0,
+            s.sample_index & UINT16,
+        ]
+        self._ctx_set(PLC_ID, PLC_D120_STATUS_WORD, regs)
+        self.lbl_regs.setText("D120..D135 = " + ", ".join(str(v) for v in regs))
+
+    def _update_ui(self):
+        s = self._state
+        lamp_state = {
+            "RUN": s.run,
+            "SERVO": s.servo_on,
+            "CLAMP": s.clamped,
+            "RECORD": s.record_enable,
+            "VALID": s.data_valid,
+            "DONE": s.done,
+            "FAULT": bool(s.fault_code),
+        }
+        for name, on in lamp_state.items():
+            self.lamps[name].setText(f"{name}: {'ON' if on else 'OFF'}")
+            self.lamps[name].setStyleSheet("")
+        direction = "DUONG/CW" if s.velocity_deg_s > 0.05 else ("AM/CCW" if s.velocity_deg_s < -0.05 else "STOP")
+        self.lbl_motion.setText(f"Servo: {direction} | Angle {s.angle_deg:.2f} deg | Target {s.target_deg:.2f} deg | Speed {s.velocity_deg_s:.2f} deg/s")
+        self.lbl_cylinder.setText("Xi lanh: KEP | Kep phoi: YES" if s.clamped else "Xi lanh: NHA | Kep phoi: NO")
+        self.lbl_phase.setText(f"PLC: phase={s.phase} mode={s.mode} cycle={s.cycle} D129={s.fault_code}")
+        net = s.torque_nm - s.tare_offset
+        self.lbl_torque.setText(f"{net:+.3f} Nm")
+        self.lbl_torque.setStyleSheet("")
+
+    def _manual_run(self):
+        self._state.run = True
+        self._state.servo_on = True
+        self._state.done = False
+        self._state.fault_code = 0
+        self._log("🔘 Nút vật lý RUN")
+
+    def _manual_stop(self):
+        s = self._state
+        s.run = False
+        s.test_running = False
+        s.record_enable = False
+        s.data_valid = False
+        self._log("🔘 Nút vật lý STOP")
+
+    def _toggle_clamp(self):
+        self._state.clamped = not self._state.clamped
+        self._log("🔘 Nút xi lanh: KẸP" if self._state.clamped else "🔘 Nút xi lanh: NHẢ")
+
+    def _home(self):
+        s = self._state
+        s.angle_deg = 0.0
+        s.target_deg = 0.0
+        s.velocity_deg_s = 0.0
+        s.torque_nm = 0.0
+        s.cycle = 0
+        s.phase = 130 if s.run else 0
+        self._log("🏠 Home: angle=0, torque=0")
+
+    def _reset_fault_done(self):
+        s = self._state
+        s.fault_code = 0
+        s.done = False
+        s.sample_index = 0
+        if s.phase in (900, 999):
+            s.phase = 0
+        self._log("🧹 Reset fault/done")
 
     def _log(self, msg: str):
-        from datetime import datetime
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.log_box.append(f"[{ts}] {msg}")
+        self.log_box.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
     def closeEvent(self, event):
         self._stop_server()
         super().closeEvent(event)
 
 
-# =====================================================================
-# MAIN
-# =====================================================================
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("ZE-SG3 Torque Simulator")
-
-    window = TorqueSimulatorWindow()
+    app.setApplicationName("ZE-SG3 + PLC Integrated Simulator")
+    window = IntegratedSimulatorWindow()
     window.show()
-
-    logger.info("Torque Simulator đã khởi động")
-    result = app.exec_()
-    sys.exit(result)
+    logger.info("Integrated simulator started")
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

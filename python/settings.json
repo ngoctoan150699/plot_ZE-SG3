@@ -1,7 +1,7 @@
 {
   "connection": {
     "mode": "RTU",
-    "port": "COM1",
+    "port": "COM5",
     "baudrate": 115200,
     "parity": "N",
     "stopbits": 1,
@@ -38,6 +38,6 @@
     "part_name": "Outer Tie Rod",
     "test_item": "Breakaway Torque",
     "dark_theme": false,
-    "language": "en"
+    "language": "vi"
   }
 }

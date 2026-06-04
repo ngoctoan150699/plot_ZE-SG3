@@ -106,6 +106,7 @@ class ConnectionConfig:
     tcp_port: int      = 502
     # Common
     slave_id: int      = 1
+    plc_slave_id: int  = 2
 
 
 @dataclass

@@ -65,8 +65,8 @@ class AppSettings(ISettingsRepository):
             bytesize=int(c.get('bytesize', 8)),
             timeout=float(c.get('timeout', 0.5)),
             ip=c.get('ip', DEFAULT_TCP_IP),
-            tcp_port=int(c.get('tcp_port', DEFAULT_TCP_PORT)),
             slave_id=int(c.get('slave_id', DEFAULT_SLAVE_ID)),
+            plc_slave_id=int(c.get('plc_slave_id', 2)),
         )
 
     def save_connection_config(self, config: ConnectionConfig) -> None:
@@ -81,6 +81,7 @@ class AppSettings(ISettingsRepository):
             'ip': config.ip,
             'tcp_port': config.tcp_port,
             'slave_id': config.slave_id,
+            'plc_slave_id': config.plc_slave_id,
         }
         self._save_raw()
 
