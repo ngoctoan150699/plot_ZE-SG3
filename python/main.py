@@ -44,10 +44,10 @@ def main():
         def connect(self) -> bool: return False
         def disconnect(self) -> None: pass
         def is_connected(self) -> bool: return False
-        def read_register(self, a, s=1): return None
-        def read_registers(self, a, c, s=1): return None
-        def write_register(self, a, v, s=1): return False
-        def write_registers(self, a, vs, s=1): return False
+        def read_register(self, address: int, slave_id: int = 1): return None
+        def read_registers(self, address: int, count: int, slave_id: int = 1): return None
+        def write_register(self, address: int, value: int, slave_id: int = 1): return False
+        def write_registers(self, address: int, values: list, slave_id: int = 1): return False
 
     null_client = _NullModbusClient()
 
@@ -75,10 +75,11 @@ def main():
     # -------------------------------------------------------
     # 4. EXPORTERS – OCP: thêm exporter mới ở đây
     # -------------------------------------------------------
+    from application.interfaces import IDataExporter
     from exporters.csv_simple_exporter import CsvSimpleExporter
     from exporters.csv_ctr_exporter    import CsvCtrExporter
 
-    exporters = [
+    exporters: list[IDataExporter] = [
         CsvSimpleExporter(),
         CsvCtrExporter(),
     ]
@@ -95,7 +96,7 @@ def main():
     
     # Path resolution for PyInstaller
     if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
+        base_path = getattr(sys, '_MEIPASS')
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
     icon_path = os.path.join(base_path, 'app_icon.ico')

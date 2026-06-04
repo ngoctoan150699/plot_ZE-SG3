@@ -9,7 +9,8 @@
     "timeout": 0.5,
     "ip": "192.168.90.101",
     "tcp_port": 502,
-    "slave_id": 1
+    "slave_id": 1,
+    "plc_slave_id": 2
   },
   "device": {
     "measure_unit": 8,
@@ -36,8 +37,6 @@
     "y_max": 5.0,
     "fixed_y": true,
     "part_name": "Outer Tie Rod",
-    "test_item": "Breakaway Torque",
-    "dark_theme": false,
-    "language": "vi"
+    "test_item": "Breakaway Torque"
   }
 }

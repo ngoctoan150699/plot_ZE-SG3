@@ -234,54 +234,54 @@ class IntegratedSimulatorWindow(QMainWindow):
         self.sig_log.connect(self._log)
 
     def _build_ui(self):
-        self.setWindowTitle("ZE-SG3 + PLC Simulator (Torque ID 1, PLC ID 2)")
+        self.setWindowTitle("Bộ mô phỏng ZE-SG3 + PLC (Torque ID 1, PLC ID 2)")
         self.setGeometry(80, 60, 860, 760)
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        conn = QGroupBox("Ket noi Modbus RTU")
+        conn = QGroupBox("Kết nối Modbus RTU")
         grid = QGridLayout(conn)
-        grid.addWidget(QLabel("COM simulator:"), 0, 0)
+        grid.addWidget(QLabel("Cổng COM mô phỏng:"), 0, 0)
         self.combo_port = QComboBox()
         grid.addWidget(self.combo_port, 0, 1)
-        btn_scan = QPushButton("Quet COM")
+        btn_scan = QPushButton("Quét cổng COM")
         btn_scan.clicked.connect(self._scan_ports)
         grid.addWidget(btn_scan, 0, 2)
-        grid.addWidget(QLabel("Baud:"), 1, 0)
+        grid.addWidget(QLabel("Baudrate:"), 1, 0)
         self.combo_baud = QComboBox()
         for baud in [9600, 19200, 38400, 57600, 115200]:
             self.combo_baud.addItem(str(baud), baud)
         self.combo_baud.setCurrentText("115200")
         grid.addWidget(self.combo_baud, 1, 1)
-        self.lbl_ids = QLabel("Torque slave ID = 1 | PLC slave ID = 2 | 8N1")
+        self.lbl_ids = QLabel("Torque Slave ID = 1 | PLC Slave ID = 2 | 8N1")
         grid.addWidget(self.lbl_ids, 2, 0, 1, 3)
         layout.addWidget(conn)
 
         row = QHBoxLayout()
-        self.btn_start = QPushButton("Bat dau mo phong")
+        self.btn_start = QPushButton("Bắt đầu mô phỏng")
         self.btn_start.setObjectName("start")
         self.btn_start.clicked.connect(self._start_server)
         row.addWidget(self.btn_start)
-        self.btn_stop = QPushButton("Dung")
+        self.btn_stop = QPushButton("Dừng mô phỏng")
         self.btn_stop.setObjectName("stop")
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self._stop_server)
         row.addWidget(self.btn_stop)
         layout.addLayout(row)
 
-        machine = QGroupBox("Trang thai may")
+        machine = QGroupBox("Trạng thái máy")
         mg = QGridLayout(machine)
         self.lamps = {}
         for idx, name in enumerate(["RUN", "SERVO", "CLAMP", "RECORD", "VALID", "DONE", "FAULT"]):
             lbl = QLabel(f"{name}: OFF")
             self.lamps[name] = lbl
             mg.addWidget(lbl, idx // 4, idx % 4)
-        self.lbl_motion = QLabel("Servo: STOP | Angle 0.00 deg | Target 0.00 deg | Speed 0.00 deg/s")
+        self.lbl_motion = QLabel("Servo: DỪNG | Góc 0.00° | Đích 0.00° | Tốc độ 0.00°/s")
         mg.addWidget(self.lbl_motion, 2, 0, 1, 4)
-        self.lbl_cylinder = QLabel("Xi lanh: NHA | Kep phoi: NO")
+        self.lbl_cylinder = QLabel("Xi lanh: NHẢ | Kẹp phôi: KHÔNG")
         mg.addWidget(self.lbl_cylinder, 3, 0, 1, 2)
-        self.lbl_phase = QLabel("PLC: phase=0 mode=0 cycle=0 D129=0")
+        self.lbl_phase = QLabel("PLC: Bước=0, Chế độ=0, Chu kỳ=0, Lỗi D129=0")
         mg.addWidget(self.lbl_phase, 3, 2, 1, 2)
         layout.addWidget(machine)
 
@@ -291,18 +291,18 @@ class IntegratedSimulatorWindow(QMainWindow):
         self.lbl_torque.setAlignment(Qt.AlignCenter)
         self.lbl_torque.setFont(QFont("Segoe UI", 20, QFont.Bold))
         tg.addWidget(self.lbl_torque, 0, 0, 1, 3)
-        self.chk_auto_torque = QCheckBox("Auto torque theo servo/PLC")
+        self.chk_auto_torque = QCheckBox("Mô-men tự động theo servo/PLC")
         self.chk_auto_torque.setChecked(True)
         self.chk_auto_torque.toggled.connect(lambda v: setattr(self, "_auto_torque", v))
         tg.addWidget(self.chk_auto_torque, 1, 0)
-        tg.addWidget(QLabel("Manual torque:"), 1, 1)
+        tg.addWidget(QLabel("Mô-men thủ công:"), 1, 1)
         self.spin_manual_torque = QDoubleSpinBox()
         self.spin_manual_torque.setRange(-50, 50)
         self.spin_manual_torque.setDecimals(3)
         self.spin_manual_torque.setSuffix(" Nm")
         self.spin_manual_torque.valueChanged.connect(lambda v: setattr(self, "_manual_torque", v))
         tg.addWidget(self.spin_manual_torque, 1, 2)
-        tg.addWidget(QLabel("Noise Nm:"), 2, 1)
+        tg.addWidget(QLabel("Độ nhiễu (Nm):"), 2, 1)
         self.spin_noise = QDoubleSpinBox()
         self.spin_noise.setRange(0, 1)
         self.spin_noise.setDecimals(3)
@@ -311,14 +311,14 @@ class IntegratedSimulatorWindow(QMainWindow):
         tg.addWidget(self.spin_noise, 2, 2)
         layout.addWidget(torque)
 
-        manual = QGroupBox("Nut mo phong vat ly")
+        manual = QGroupBox("Nút mô phỏng vật lý")
         mr = QHBoxLayout(manual)
         for text, func in [
-            ("RUN", self._manual_run),
-            ("STOP", self._manual_stop),
-            ("Kep/Nha xi lanh", self._toggle_clamp),
-            ("Home 0 deg", self._home),
-            ("Reset Fault/Done", self._reset_fault_done),
+            ("Chạy (RUN)", self._manual_run),
+            ("Dừng (STOP)", self._manual_stop),
+            ("Kẹp/Nhả xi lanh", self._toggle_clamp),
+            ("Về Home 0°", self._home),
+            ("Xóa Lỗi/Hoàn thành", self._reset_fault_done),
         ]:
             btn = QPushButton(text)
             btn.clicked.connect(func)
@@ -345,7 +345,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         for port in sorted(serial.tools.list_ports.comports(), key=lambda p: p.device):
             self.combo_port.addItem(f"{port.device} – {port.description}", port.device)
         if self.combo_port.count() == 0:
-            self.combo_port.addItem("Không tìm thấy COM port", "")
+            self.combo_port.addItem("Không tìm thấy cổng COM", "")
 
     def _create_context(self) -> ModbusServerContext:
         torque = sim_context(256)
@@ -401,7 +401,7 @@ class IntegratedSimulatorWindow(QMainWindow):
     def _start_server(self):
         port = self.combo_port.currentData()
         if not port:
-            self._log("❌ Chưa chọn COM port")
+            self._log("❌ Chưa chọn cổng COM")
             return
         baud = self.combo_baud.currentData()
         self._state = PlantState()
@@ -414,7 +414,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         self.btn_stop.setEnabled(True)
         self.combo_port.setEnabled(False)
         self.combo_baud.setEnabled(False)
-        self._log(f"✅ Simulator chạy {port} @ {baud}, Torque ID=1, PLC ID=2")
+        self._log(f"✅ Bộ mô phỏng đang chạy trên {port} @ {baud}, Torque ID=1, PLC ID=2")
 
     def _run_server(self, port: str, baud: int):
         try:
@@ -432,7 +432,7 @@ class IntegratedSimulatorWindow(QMainWindow):
                     bytesize=8,
                     timeout=1,
                 )
-                self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên {port}: slave 1 torque, slave 2 PLC")
+                self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên cổng {port}: slave 1 torque, slave 2 PLC")
                 await self._server.serve_forever()
 
             self._loop.run_until_complete(server_coro())
@@ -459,7 +459,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self.combo_port.setEnabled(True)
         self.combo_baud.setEnabled(True)
-        self._log("⏹ Simulator đã dừng")
+        self._log("⏹ Bộ mô phỏng đã dừng")
 
     def _scan_commands(self):
         if not self._context:
@@ -505,36 +505,36 @@ class IntegratedSimulatorWindow(QMainWindow):
             s.servo_on = True
             s.done = False
             s.fault_code = 0
-            self._log("▶ PLC D100.b0 RUN -> đèn RUN/SERVO ON")
+            self._log("▶ Lệnh PLC D100.b0 RUN -> Bật đèn RUN và Servo ON")
         if cmd & CMD_STOP_RUN:
             s.run = False
             s.test_running = False
             s.record_enable = False
             s.data_valid = False
-            self._log("⏹ PLC D100.b1 STOP")
+            self._log("⏹ Lệnh PLC D100.b1 STOP -> Dừng hệ thống")
         if cmd & CMD_CYLINDER_TOGGLE:
             s.clamped = not s.clamped
             self._log("🔩 Xi lanh KẸP" if s.clamped else "🔓 Xi lanh NHẢ")
         if cmd & CMD_SERVO_ON:
             s.servo_on = True
-            self._log("🔌 Servo ON")
+            self._log("🔌 Servo ON (Sẵn sàng)")
         if cmd & CMD_ABORT:
             s.test_running = False
             s.record_enable = False
             s.data_valid = False
             s.fault_code = 9
             s.phase = 999
-            self._log("🛑 Abort -> FAULT 9")
+            self._log("🛑 Lệnh Abort -> Dừng khẩn cấp, báo lỗi FAULT 9")
         if cmd & CMD_CLEAR_DONE:
             s.done = False
             s.sample_index = 0
-            self._log("✅ Clear done")
+            self._log("✅ Xóa trạng thái hoàn thành (Clear done)")
         if cmd & CMD_STOP_RECORD:
             s.test_running = False
             s.record_enable = False
             s.data_valid = False
             s.phase = 0
-            self._log("⏺ Stop record/test")
+            self._log("⏺ Dừng ghi/đo (Stop record)")
         if cmd & CMD_START_RECORD:
             self._start_test()
 
@@ -543,16 +543,16 @@ class IntegratedSimulatorWindow(QMainWindow):
         mode, pos, neg, speed, cycles, window = self._read_plc_config()
         s.mode = mode
         if not s.run:
-            self._fault(2, "Start test khi PLC chưa RUN")
+            self._fault(2, "Bắt đầu đo khi PLC chưa ở trạng thái RUN")
             return
         if not s.servo_on:
-            self._fault(1, "Start test khi servo chưa ON")
+            self._fault(1, "Bắt đầu đo khi servo chưa bật (Servo ON)")
             return
         if speed <= 0:
-            self._fault(4, "Speed không hợp lệ")
+            self._fault(4, "Tốc độ đo không hợp lệ (nhỏ hơn hoặc bằng 0)")
             return
         if not s.clamped:
-            self._fault(8, "Xi lanh chưa kẹp")
+            self._fault(8, "Phôi chưa được kẹp (xi lanh chưa kẹp)")
             return
         s.test_running = True
         s.record_enable = True
@@ -571,9 +571,9 @@ class IntegratedSimulatorWindow(QMainWindow):
         elif mode == MODE_MANUAL:
             s.phase = 100
         else:
-            self._fault(3, "Mode không hợp lệ")
+            self._fault(3, "Chế độ đo không hợp lệ")
             return
-        self._log(f"⏺ Start test mode={mode}, target={s.target_deg:.2f}°, speed={speed:.2f}°/s")
+        self._log(f"⏺ Bắt đầu đo: chế độ={mode}, đích={s.target_deg:.2f}°, tốc độ={speed:.2f}°/s")
 
     def _fault(self, code: int, msg: str):
         s = self._state
@@ -582,7 +582,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         s.record_enable = False
         s.data_valid = False
         s.phase = 999
-        self._log(f"❌ FAULT {code}: {msg}")
+        self._log(f"❌ BÁO LỖI (FAULT) {code}: {msg}")
 
     def _read_plc_config(self):
         vals = self._ctx_get(PLC_ID, PLC_D101_MODE, 6)
@@ -644,13 +644,13 @@ class IntegratedSimulatorWindow(QMainWindow):
                 s.test_running = False
                 s.record_enable = False
                 s.data_valid = False
-                self._log("✅ Breakaway done")
+                self._log("✅ Đo lực Breakaway hoàn thành")
             elif s.mode == MODE_OPERATING:
                 if s.op_target_positive:
                     s.op_target_positive = False
                     s.target_deg = neg
                     s.phase = 220
-                    self._log(f"↩ Operating: đổi target âm {neg:.2f}°")
+                    self._log(f"↩ Operating: đổi chiều sang đích âm {neg:.2f}°")
                 else:
                     if s.cycle >= cycles:
                         s.phase = 900
@@ -658,13 +658,13 @@ class IntegratedSimulatorWindow(QMainWindow):
                         s.test_running = False
                         s.record_enable = False
                         s.data_valid = False
-                        self._log("✅ Operating done đủ cycle")
+                        self._log("✅ Đo Operating hoàn thành đủ chu kỳ")
                     else:
                         s.cycle += 1
                         s.op_target_positive = True
                         s.target_deg = pos
                         s.phase = 210
-                        self._log(f"↪ Operating cycle {s.cycle}: target dương {pos:.2f}°")
+                        self._log(f"↪ Operating chu kỳ {s.cycle}: đích dương {pos:.2f}°")
         else:
             s.angle_deg += step if delta > 0 else -step
             s.phase = 20 if s.mode == MODE_BREAKAWAY else (210 if s.target_deg >= 0 else 220)
@@ -771,10 +771,10 @@ class IntegratedSimulatorWindow(QMainWindow):
         for name, on in lamp_state.items():
             self.lamps[name].setText(f"{name}: {'ON' if on else 'OFF'}")
             self.lamps[name].setStyleSheet("")
-        direction = "DUONG/CW" if s.velocity_deg_s > 0.05 else ("AM/CCW" if s.velocity_deg_s < -0.05 else "STOP")
-        self.lbl_motion.setText(f"Servo: {direction} | Angle {s.angle_deg:.2f} deg | Target {s.target_deg:.2f} deg | Speed {s.velocity_deg_s:.2f} deg/s")
-        self.lbl_cylinder.setText("Xi lanh: KEP | Kep phoi: YES" if s.clamped else "Xi lanh: NHA | Kep phoi: NO")
-        self.lbl_phase.setText(f"PLC: phase={s.phase} mode={s.mode} cycle={s.cycle} D129={s.fault_code}")
+        direction = "DƯƠNG/CW" if s.velocity_deg_s > 0.05 else ("ÂM/CCW" if s.velocity_deg_s < -0.05 else "DỪNG")
+        self.lbl_motion.setText(f"Servo: {direction} | Góc {s.angle_deg:.2f}° | Đích {s.target_deg:.2f}° | Tốc độ {s.velocity_deg_s:.2f}°/s")
+        self.lbl_cylinder.setText("Xi lanh: KẸP | Kẹp phôi: CÓ" if s.clamped else "Xi lanh: NHẢ | Kẹp phôi: KHÔNG")
+        self.lbl_phase.setText(f"PLC: Bước={s.phase}, Chế độ={s.mode}, Chu kỳ={s.cycle}, Lỗi D129={s.fault_code}")
         net = s.torque_nm - s.tare_offset
         self.lbl_torque.setText(f"{net:+.3f} Nm")
         self.lbl_torque.setStyleSheet("")
@@ -784,7 +784,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         self._state.servo_on = True
         self._state.done = False
         self._state.fault_code = 0
-        self._log("🔘 Nút vật lý RUN")
+        self._log("🔘 Nút bấm vật lý: RUN (Chạy)")
 
     def _manual_stop(self):
         s = self._state
@@ -792,11 +792,11 @@ class IntegratedSimulatorWindow(QMainWindow):
         s.test_running = False
         s.record_enable = False
         s.data_valid = False
-        self._log("🔘 Nút vật lý STOP")
+        self._log("🔘 Nút bấm vật lý: STOP (Dừng)")
 
     def _toggle_clamp(self):
         self._state.clamped = not self._state.clamped
-        self._log("🔘 Nút xi lanh: KẸP" if self._state.clamped else "🔘 Nút xi lanh: NHẢ")
+        self._log("🔘 Nút bấm xi lanh: KẸP" if self._state.clamped else "🔘 Nút bấm xi lanh: NHẢ")
 
     def _home(self):
         s = self._state
@@ -806,7 +806,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         s.torque_nm = 0.0
         s.cycle = 0
         s.phase = 130 if s.run else 0
-        self._log("🏠 Home: angle=0, torque=0")
+        self._log("🏠 Home: Đã đưa góc quay và mô-men về 0")
 
     def _reset_fault_done(self):
         s = self._state
@@ -815,7 +815,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         s.sample_index = 0
         if s.phase in (900, 999):
             s.phase = 0
-        self._log("🧹 Reset fault/done")
+        self._log("🧹 Xóa Lỗi / Trạng thái hoàn thành")
 
     def _log(self, msg: str):
         self.log_box.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
