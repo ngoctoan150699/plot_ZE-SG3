@@ -313,7 +313,7 @@ class ServoSetupDialog(QDialog):
         
     def _build_ui(self):
         self.setWindowTitle(self.i18n.t('btn_servo_setup'))
-        self.resize(320, 220)
+        self.resize(320, 240)
         
         # Style sheet matching parent theme
         parent = cast(Any, self.parent())
@@ -325,7 +325,7 @@ class ServoSetupDialog(QDialog):
         layout.setSpacing(10)
         
         # Header info
-        self.lbl_info = QLabel(f"Profile: {self._part_name}\n📊 Mode: {self._test_item}")
+        self.lbl_info = QLabel(f"Profile: {self._part_name}\n?? Mode: {self._test_item}")
         self.lbl_info.setStyleSheet("font-weight: bold; color: #89b4fa;" if is_dark else "font-weight: bold; color: #1976d2;")
         layout.addWidget(self.lbl_info)
         
@@ -349,42 +349,111 @@ class ServoSetupDialog(QDialog):
             profile = ServoProfile(
                 negative_angle=0.0 if is_breakaway else -36.0,
                 positive_angle=36.0,
-                speed=10.0
+                speed=100.0  # 100 rpm = 30 deg/s
             )
             
-        # Speed
+        # Speed unit selection
+        self.combo_speed_unit = QComboBox()
+        deg_symbol = chr(176)
+        self.combo_speed_unit.addItems(["rpm", f"{deg_symbol}/s"])
+        
+        # Speed input
         self.spin_speed = QDoubleSpinBox()
-        self.spin_speed.setRange(0.1, 120.0)
         self.spin_speed.setDecimals(1)
-        self.spin_speed.setValue(profile.speed)
-        self.spin_speed.setSuffix(" rpm")
+        
+        # Label for dynamic converted speed value (grayed out)
+        self.lbl_converted_speed = QLabel()
+        self.lbl_converted_speed.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 9pt;")
+        
+        def update_converted_label():
+            val = self.spin_speed.value()
+            unit_idx = self.combo_speed_unit.currentIndex()
+            if unit_idx == 0:  # rpm input
+                converted_degs = val / 3.3333
+                pulses_s = (val / 60.0) * 10000.0
+                self.lbl_converted_speed.setText(f"~ {converted_degs:.1f} °/s ({pulses_s:,.0f} pul/s)")
+            else:  # deg/s input
+                converted_rpm = val * 3.3333
+                pulses_s = (converted_rpm / 60.0) * 10000.0
+                self.lbl_converted_speed.setText(f"~ {converted_rpm:.1f} rpm ({pulses_s:,.0f} pul/s)")
+
+        # Helper conversions (Ratio 1/20 -> 1 deg/s = 20 * (60/360) = 3.3333 rpm)
+        def on_unit_changed(unit_idx):
+            current_val = self.spin_speed.value()
+            if unit_idx == 0:  # Changed to rpm
+                self.spin_speed.setRange(0.1, 200.0)
+                self.spin_speed.setSuffix(" rpm")
+                self.spin_speed.setValue(current_val * 3.3333)
+            else:  # Changed to deg/s
+                self.spin_speed.setRange(0.1, 60.0)
+                self.spin_speed.setSuffix(f" {deg_symbol}/s")
+                self.spin_speed.setValue(current_val / 3.3333)
+            update_converted_label()
+
+        self.combo_speed_unit.currentIndexChanged.connect(on_unit_changed)
+        self.spin_speed.valueChanged.connect(lambda _: update_converted_label())
+        
+        # Set default values: default to deg/s (index 1)
+        self.combo_speed_unit.blockSignals(True)
+        self.spin_speed.setRange(0.1, 60.0)
+        self.spin_speed.setSuffix(f" {deg_symbol}/s")
+        self.spin_speed.setValue(profile.speed / 3.3333)
+        self.combo_speed_unit.setCurrentIndex(1)
+        self.combo_speed_unit.blockSignals(False)
+        update_converted_label()
         
         # Positive Angle
         self.spin_pos = QDoubleSpinBox()
         self.spin_pos.setRange(0.0, 360.0)
         self.spin_pos.setDecimals(1)
         self.spin_pos.setValue(profile.positive_angle)
-        self.spin_pos.setSuffix(" °")
+        self.spin_pos.setSuffix(f" {deg_symbol}")
+        
+        # Label hi?n th? s? xung t??ng ?ng g?c d??ng
+        self.lbl_pos_pulses = QLabel()
+        self.lbl_pos_pulses.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 9pt;")
         
         # Negative Angle
         self.spin_neg = QDoubleSpinBox()
         self.spin_neg.setRange(-360.0, 0.0)
         self.spin_neg.setDecimals(1)
         self.spin_neg.setValue(profile.negative_angle)
-        self.spin_neg.setSuffix(" °")
-        # In Breakaway mode, negative angle is usually not used/fixed to 0
+        self.spin_neg.setSuffix(f" {deg_symbol}")
         if is_breakaway:
             self.spin_neg.setEnabled(False)
             self.spin_neg.setValue(0.0)
             
+        # Label hi?n th? s? xung t??ng ?ng g?c ?m
+        self.lbl_neg_pulses = QLabel()
+        self.lbl_neg_pulses.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 9pt;")
+        
+        # H?m c?p nh?t s? xung hi?n th?
+        # 360 ?? ?ng v?i 200000 xung (555.5556 pulse / ??)
+        def update_pulses_labels():
+            pos_pulses = int(round(self.spin_pos.value() * 200000 / 360.0))
+            neg_pulses = int(round(self.spin_neg.value() * 200000 / 360.0))
+            self.lbl_pos_pulses.setText(f"~ {pos_pulses} pulses")
+            if is_breakaway:
+                self.lbl_neg_pulses.setText("")
+            else:
+                self.lbl_neg_pulses.setText(f"~ {neg_pulses} pulses")
+                
+        self.spin_pos.valueChanged.connect(lambda _: update_pulses_labels())
+        self.spin_neg.valueChanged.connect(lambda _: update_pulses_labels())
+        update_pulses_labels()
+            
         # Labels
-        self.lbl_speed = QLabel("Vận tốc (speed):" if self.i18n.current_language == 'vi' else "Speed:")
-        self.lbl_pos = QLabel("Góc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
-        self.lbl_neg = QLabel("Góc nghịch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
+        self.lbl_speed = QLabel("V?n t?c (speed):" if self.i18n.current_language == 'vi' else "Speed:")
+        self.lbl_pos = QLabel("G?c thu?n (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
+        self.lbl_neg = QLabel("G?c ngh?ch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
         
         form.addRow(self.lbl_speed, self.spin_speed)
+        form.addRow("", self.lbl_converted_speed)
+        form.addRow("??n v? t?c ??:" if self.i18n.current_language == "vi" else "Speed Unit:", self.combo_speed_unit)
         form.addRow(self.lbl_pos, self.spin_pos)
+        form.addRow("", self.lbl_pos_pulses)
         form.addRow(self.lbl_neg, self.spin_neg)
+        form.addRow("", self.lbl_neg_pulses)
         layout.addLayout(form)
         
         # Buttons
@@ -394,8 +463,11 @@ class ServoSetupDialog(QDialog):
         layout.addWidget(self.buttons)
         
     def get_values(self):
+        val = self.spin_speed.value()
+        # If input unit is deg/s (index 1), convert to rpm before saving
+        rpm_val = val * 3.3333 if self.combo_speed_unit.currentIndex() == 1 else val
         return {
-            'speed': self.spin_speed.value(),
+            'speed': round(rpm_val, 2),
             'positive_angle': self.spin_pos.value(),
             'negative_angle': self.spin_neg.value()
         }
@@ -2254,7 +2326,7 @@ class MainWindow(QMainWindow):
             profile = ServoProfile(
                 negative_angle=0.0 if is_breakaway else -36.0,
                 positive_angle=36.0,
-                speed=10.0
+                speed=100.0
             )
 
         if not self._prepare_plc_recording(profile, is_breakaway):

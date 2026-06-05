@@ -1,7 +1,7 @@
 {
   "connection": {
     "mode": "RTU",
-    "port": "COM5",
+    "port": "COM1",
     "baudrate": 115200,
     "parity": "N",
     "stopbits": 1,
@@ -40,5 +40,47 @@
     "test_item": "Breakaway Torque",
     "dark_theme": false,
     "language": "en"
+  },
+  "servo_profiles": {
+    "ITR_B": {
+      "negative_angle": 0.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    },
+    "ITR_O": {
+      "negative_angle": -36.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    },
+    "B/Joint_B": {
+      "negative_angle": 0.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    },
+    "B/Joint_O": {
+      "negative_angle": -36.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    },
+    "OTR_B": {
+      "negative_angle": 0.0,
+      "positive_angle": 36.0,
+      "speed": 100.0
+    },
+    "OTR_O": {
+      "negative_angle": -36.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    },
+    "S/Link_B": {
+      "negative_angle": 0.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    },
+    "S/Link_O": {
+      "negative_angle": -36.0,
+      "positive_angle": 36.0,
+      "speed": 10.0
+    }
   }
 }
