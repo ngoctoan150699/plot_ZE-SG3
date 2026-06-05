@@ -16,7 +16,7 @@ Cải thiện UX so với file gốc:
 import logging
 import time
 from datetime import datetime
-from typing import List, Optional, Any
+from typing import List, Optional, Any, cast
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
@@ -250,7 +250,10 @@ class CustomToolbar(NavigationToolbar):
         # 2. Thêm nút 'Zoom Out'
         self.zoom_out_act = QAction("Zoom Out", self)
         # Sử dụng icon chuẩn SP_TitleBarMinButton (dấu trừ) làm biểu tượng Zoom Out
-        self.zoom_out_act.setIcon(QApplication.style().standardIcon(QStyle.SP_TitleBarMinButton))
+        style = QApplication.style()
+        if style is not None:
+            minus_icon = getattr(QStyle, 'SP_TitleBarMinButton', getattr(QStyle, 'SP_TitleBarShadeButton', 20))
+            self.zoom_out_act.setIcon(style.standardIcon(minus_icon))
         self.zoom_out_act.setToolTip("Zoom Out (1.25x)")
         self.zoom_out_act.triggered.connect(self.zoom_out)
         
@@ -291,8 +294,8 @@ class CustomToolbar(NavigationToolbar):
         new_w = (xlim[1] - xlim[0]) * factor
         new_h = (ylim[1] - ylim[0]) * factor
         
-        ax.set_xlim([x_center - new_w/2, x_center + new_w/2])
-        ax.set_ylim([y_center - new_h/2, y_center + new_h/2])
+        ax.set_xlim((x_center - new_w/2, x_center + new_w/2))
+        ax.set_ylim((y_center - new_h/2, y_center + new_h/2))
         
         self.canvas.draw()
 
@@ -313,7 +316,8 @@ class ServoSetupDialog(QDialog):
         self.resize(320, 220)
         
         # Style sheet matching parent theme
-        is_dark = self.parent()._is_dark if self.parent() else False
+        parent = cast(Any, self.parent())
+        is_dark = bool(getattr(parent, '_is_dark', False)) if parent else False
         self.setStyleSheet(DARK_STYLE if is_dark else LIGHT_STYLE)
         
         layout = QVBoxLayout(self)
@@ -397,6 +401,154 @@ class ServoSetupDialog(QDialog):
         }
 
 
+class ModbusStatusDialog(QDialog):
+    def __init__(self, parent, client, slave_id, i18n):
+        super().__init__(parent)
+        self._client = client
+        self._slave_id = slave_id
+        self.i18n = i18n
+        self._build_ui()
+        self._refresh_data()
+
+    def _build_ui(self):
+        self.setWindowTitle(self.i18n.t('modbus_status_title'))
+        self.resize(520, 500)
+        
+        parent = cast(Any, self.parent())
+        is_dark = bool(getattr(parent, '_is_dark', False)) if parent else False
+        self.setStyleSheet(parent.styleSheet() if parent else '')
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(12)
+
+        header = QLabel("📊 Modbus RTU Communication Status (D200..D242)")
+        header.setStyleSheet("font-weight: bold; font-size: 11pt; color: #1976d2;")
+        if is_dark:
+            header.setStyleSheet("font-weight: bold; font-size: 11pt; color: #89b4fa;")
+        layout.addWidget(header)
+
+        grp_counters = QGroupBox("Bộ đếm lỗi & Sự kiện (D200..D210)")
+        form = QFormLayout(grp_counters)
+        form.setSpacing(6)
+
+        self.lbl_d200 = QLabel("-")
+        self.lbl_d201 = QLabel("-")
+        self.lbl_d202 = QLabel("-")
+        self.lbl_d207 = QLabel("-")
+        self.lbl_d208 = QLabel("-")
+        self.lbl_d210 = QLabel("-")
+
+        form.addRow("D200 (Số lượng tin nhắn trên Bus):", self.lbl_d200)
+        form.addRow("D201 (Số lượng lỗi truyền thông):", self.lbl_d201)
+        form.addRow("D202 (Số lỗi ngoại lệ Exception):", self.lbl_d202)
+        form.addRow("D207 (Số lần tràn ký tự Overrun):", self.lbl_d207)
+        form.addRow("D208 (Số lần giao tiếp thành công):", self.lbl_d208)
+        form.addRow("D210 (Độ dài nhật ký sự kiện):", self.lbl_d210)
+        layout.addWidget(grp_counters)
+
+        grp_log = QGroupBox("Nhật ký sự kiện (Event Log D211..D242)")
+        log_lay = QVBoxLayout(grp_log)
+        self.txt_log = QTextEdit()
+        self.txt_log.setReadOnly(True)
+        self.txt_log.setFont(QFont("Consolas", 9))
+        log_lay.addWidget(self.txt_log)
+        layout.addWidget(grp_log)
+
+        btn_layout = QHBoxLayout()
+        self.chk_auto = QCheckBox("Tự động làm mới (1s)")
+        btn_layout.addWidget(self.chk_auto)
+        
+        btn_layout.addStretch()
+        
+        self.btn_refresh = QPushButton("Làm mới")
+        self.btn_refresh.clicked.connect(self._refresh_data)
+        btn_layout.addWidget(self.btn_refresh)
+        
+        self.btn_close = QPushButton("Đóng")
+        self.btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(self.btn_close)
+        
+        layout.addLayout(btn_layout)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._on_timer_tick)
+        self._timer.start()
+
+    def _on_timer_tick(self):
+        if self.chk_auto.isChecked():
+            self._refresh_data()
+
+    def _refresh_data(self):
+        if not self._client or not self._client.is_connected():
+            self.lbl_d200.setText("Chưa kết nối Modbus")
+            self.txt_log.setText("Vui lòng kết nối Modbus trước khi đọc trạng thái.")
+            return
+
+        try:
+            regs = self._client.read_registers(200, 43, self._slave_id)
+            if regs is None or len(regs) < 43:
+                self.lbl_d200.setText("Lỗi đọc thanh ghi (No Response)")
+                return
+
+            self.lbl_d200.setText(str(regs[0]))  # D200
+            self.lbl_d201.setText(str(regs[1]))  # D201
+            self.lbl_d202.setText(str(regs[2]))  # D202
+            self.lbl_d207.setText(str(regs[7]))  # D207
+            self.lbl_d208.setText(str(regs[8]))  # D208
+            
+            log_len = regs[10] # D210
+            self.lbl_d210.setText(f"{log_len} bytes")
+
+            log_lines = []
+            event_bytes = []
+            for i in range(11, 43):
+                val = regs[i]
+                high_byte = (val >> 8) & 0xFF
+                low_byte = val & 0xFF
+                event_bytes.append(high_byte)
+                event_bytes.append(low_byte)
+
+            display_count = min(log_len, len(event_bytes))
+            for idx in range(display_count):
+                b = event_bytes[idx]
+                if b == 0:
+                    continue
+                evt_desc = self._decode_event_byte(b)
+                log_lines.append(f"Sự kiện {idx+1:02d}: Code 0x{b:02X} - {evt_desc}")
+
+            if not log_lines:
+                self.txt_log.setText("Không có sự kiện nào được ghi nhận.")
+            else:
+                self.txt_log.setText("\n".join(log_lines))
+
+        except Exception as e:
+            self.txt_log.setText(f"Lỗi khi truy vấn dữ liệu: {e}")
+
+    def _decode_event_byte(self, b: int) -> str:
+        parts = []
+        if b & 0x80:
+            parts.append("Nhận (Rx)")
+        else:
+            parts.append("Gửi (Tx)")
+            
+        if b & 0x40:
+            parts.append("Lỗi ngoại lệ (Exception)")
+        if b & 0x20:
+            parts.append("Tràn ký tự (Overrun)")
+        if b & 0x10:
+            parts.append("Lỗi khung truyền (Framing)")
+        if b & 0x08:
+            parts.append("Lỗi Parity")
+        if b & 0x04:
+            parts.append("Lỗi CRC")
+            
+        if not parts or (b & 0x7F) == 0:
+            return "Truyền thông bình thường (Normal)"
+        return ", ".join(parts)
+
+
 class SamplingSettingsDialog(QDialog):
     def __init__(self, parent, interval_ms: int, window_s: int, y_max: float, fixed_y: bool, i18n):
         super().__init__(parent)
@@ -410,7 +562,8 @@ class SamplingSettingsDialog(QDialog):
     def _build_ui(self):
         self.setWindowTitle("Sampling Setting")
         self.resize(340, 220)
-        is_dark = self.parent()._is_dark if self.parent() else False
+        parent = cast(Any, self.parent())
+        is_dark = bool(getattr(parent, '_is_dark', False)) if parent else False
         self.setStyleSheet(DARK_STYLE if is_dark else LIGHT_STYLE)
 
         layout = QVBoxLayout(self)
@@ -587,7 +740,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(12, 10, 12, 10)
         main_layout.setSpacing(8)
 
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(10)
         self.splitter = splitter
 
@@ -680,7 +833,7 @@ class MainWindow(QMainWindow):
         # -----------------------------------------------
         if _HAS_PLOT_VIEWER:
             # Plot Viewer: tạo TorquePlotViewer, chỉ lấy plot_tab (loại bỏ tab Converter bên trong)
-            self._plot_viewer = TorquePlotViewer()
+            self._plot_viewer: Any = TorquePlotViewer()
             plot_viewer_widget = QWidget()
             pv_lay = QVBoxLayout(plot_viewer_widget)
             pv_lay.setContentsMargins(0, 0, 0, 0)
@@ -689,13 +842,13 @@ class MainWindow(QMainWindow):
             pv_lay.addWidget(pv_tab)
             self.main_tabs.addTab(plot_viewer_widget, "📊 Plot Viewer")
 
-    def showEvent(self, event):
+    def showEvent(self, a0):
         """Set initial splitter sizes as a proportion of the window width on first show.
 
         This ensures the left panel occupies a sensible fraction (e.g. 35%)
         of the window when the app starts, avoiding clipped controls.
         """
-        super().showEvent(event)
+        super().showEvent(a0)
         try:
             total = max(800, self.width())
             left_w = max(420, int(total * 0.35))
@@ -713,8 +866,8 @@ class MainWindow(QMainWindow):
         # Create a scroll area wrapper to prevent clipping/squishing
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(getattr(Qt.ScrollBarPolicy, 'ScrollBarAsNeeded', 0))
+        scroll.setHorizontalScrollBarPolicy(getattr(Qt.ScrollBarPolicy, 'ScrollBarAlwaysOff', 1))
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
 
@@ -754,10 +907,13 @@ class MainWindow(QMainWindow):
         self.btn_scan = QToolButton()
         self.btn_scan.setAutoRaise(True)
         self.btn_scan.setToolTip("Làm mới COM ports")
-        try:
-            icon = QApplication.style().standardIcon(QStyle.SP_BrowserReload)
-        except Exception:
-            icon = QApplication.style().standardIcon(QStyle.SP_DialogResetButton)
+        icon = QIcon()
+        style = QApplication.style()
+        if style is not None:
+            try:
+                icon = style.standardIcon(getattr(QStyle, 'SP_BrowserReload', getattr(QStyle, 'SP_ArrowRight', 54)))
+            except Exception:
+                icon = style.standardIcon(getattr(QStyle, 'SP_DialogResetButton', getattr(QStyle, 'SP_DialogCancelButton', 17)))
         self.btn_scan.setIcon(icon)
         self.btn_scan.setFixedSize(30, 28)
         self.btn_scan.clicked.connect(self._scan_com_ports)
@@ -822,6 +978,11 @@ class MainWindow(QMainWindow):
         sg.setColumnStretch(3, 1)
         self.grp_slave.setLayout(sg); lay.addWidget(self.grp_slave)
 
+        self.btn_modbus_status = QPushButton(self.i18n.t('btn_modbus_status'))
+        self.btn_modbus_status.clicked.connect(self._show_modbus_status_dialog)
+        self.btn_modbus_status.setStyleSheet("background-color: #313244; color: white; font-weight: bold; padding: 6px;")
+        lay.addWidget(self.btn_modbus_status)
+
         lay.addStretch()
         self._scan_com_ports()
         scroll.setWidget(w)
@@ -832,8 +993,8 @@ class MainWindow(QMainWindow):
         # Create a scroll area wrapper to prevent clipping/squishing
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(getattr(Qt.ScrollBarPolicy, 'ScrollBarAsNeeded', 0))
+        scroll.setHorizontalScrollBarPolicy(getattr(Qt.ScrollBarPolicy, 'ScrollBarAlwaysOff', 1))
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
 
@@ -927,8 +1088,8 @@ class MainWindow(QMainWindow):
         # Create a scroll area wrapper to prevent clipping/squishing
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(getattr(Qt.ScrollBarPolicy, 'ScrollBarAsNeeded', 0))
+        scroll.setHorizontalScrollBarPolicy(getattr(Qt.ScrollBarPolicy, 'ScrollBarAlwaysOff', 1))
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
 
@@ -1271,7 +1432,7 @@ class MainWindow(QMainWindow):
         lay.setSpacing(4)
 
         # Splitter to display Time and Angle charts side-by-side
-        self.chart_splitter = QSplitter(Qt.Horizontal)
+        self.chart_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.chart_splitter.setHandleWidth(8)
 
         # 1. Torque-Time Chart Container
@@ -1492,28 +1653,28 @@ class MainWindow(QMainWindow):
         self._log(("✅" if ok else "❌") + f" PLC: {action_name}")
 
     def _plc_start_run(self):
-        self._plc_command("RUN", self._plc_svc.start_run)
+        self._plc_command("RUN", lambda: self._plc_svc.start_run() if self._plc_svc else False)
 
     def _plc_stop_run(self):
-        self._plc_command("STOP", self._plc_svc.stop_run)
+        self._plc_command("STOP", lambda: self._plc_svc.stop_run() if self._plc_svc else False)
 
     def _plc_toggle_clamp(self):
-        self._plc_command("Clamp toggle", self._plc_svc.toggle_cylinder)
+        self._plc_command("Clamp toggle", lambda: self._plc_svc.toggle_cylinder() if self._plc_svc else False)
 
     def _plc_reset_fault(self):
-        self._plc_command("Reset fault", self._plc_svc.reset_fault)
+        self._plc_command("Reset fault", lambda: self._plc_svc.reset_fault() if self._plc_svc else False)
 
     def _plc_abort(self):
-        self._plc_command("Abort", self._plc_svc.abort)
+        self._plc_command("Abort", lambda: self._plc_svc.abort() if self._plc_svc else False)
 
     def _plc_home(self):
-        self._plc_command("Home", self._plc_svc.home)
+        self._plc_command("Home", lambda: self._plc_svc.home() if self._plc_svc else False)
 
     def _plc_jog_plus(self, active: bool):
-        self._plc_command("Jog+ ON" if active else "Jog+ OFF", lambda: self._plc_svc.jog_plus(active))
+        self._plc_command("Jog+ ON" if active else "Jog+ OFF", lambda: self._plc_svc.jog_plus(active) if self._plc_svc else False)
 
     def _plc_jog_minus(self, active: bool):
-        self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active))
+        self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active) if self._plc_svc else False)
 
     def _poll_plc_status(self):
         if not self._plc_svc or not self._plc_svc.is_connected():
@@ -1644,6 +1805,12 @@ class MainWindow(QMainWindow):
         self._on_acquisition_settings_changed()
         self._update_sampling_summary()
 
+    def _show_modbus_status_dialog(self):
+        client = getattr(self._collector, '_client', None)
+        slave_id = self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2
+        dialog = ModbusStatusDialog(self, client, slave_id, self.i18n)
+        dialog.exec_()
+
     def _save_settings_from_ui(self):
         parity_map = {0:'N', 1:'E', 2:'O'}
         conn = ConnectionConfig(
@@ -1684,7 +1851,7 @@ class MainWindow(QMainWindow):
             slave_id=self.spin_slave.value(),
         )
         self._settings.save_device_config(dev)
-        ui_dict = {
+        ui_dict: dict[str, Any] = {
             'interval_ms': self.spin_interval.value(),
             'window_s':    self.spin_window.value(),
             'y_max':       self.spin_ymax.value(),
@@ -2284,7 +2451,7 @@ class MainWindow(QMainWindow):
         self.log_box.append(f"[{ts}] {msg}")
         logger.info(msg)
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
         """Tự động lưu cài đặt và ngắt kết nối khi đóng app."""
         self._save_settings_from_ui()
         # Lưu theme khi thoát
@@ -2297,7 +2464,7 @@ class MainWindow(QMainWindow):
         self._settings.save_ui_settings(ui)
         if self._connected:
             self._disconnect()
-        super().closeEvent(event)
+        super().closeEvent(a0)
 
     # ===========================================================
     # BILINGUAL & SERVO CALLBACKS
@@ -2380,6 +2547,8 @@ class MainWindow(QMainWindow):
             self.lbl_slave_id.setText(self.i18n.t('sensor_slave_lbl'))
         if hasattr(self, 'lbl_plc_slave_id'):
             self.lbl_plc_slave_id.setText(self.i18n.t('plc_slave_lbl'))
+        if hasattr(self, 'btn_modbus_status'):
+            self.btn_modbus_status.setText(self.i18n.t('btn_modbus_status'))
         
         # Connect Button
         self._update_connect_btn_style()

@@ -133,20 +133,20 @@ UINT16 = 0xFFFF
 
 
 def u16(value: int) -> int:
-    return int(value) & UINT16
+    return value & UINT16
 
 
 def i16(value: int) -> int:
-    value = int(value) & UINT16
+    value = value & UINT16
     return value - 0x10000 if value & 0x8000 else value
 
 
 def float_regs(value: float) -> list[int]:
-    return list(struct.unpack(">HH", struct.pack(">f", float(value))))
+    return list(struct.unpack(">HH", struct.pack(">f", value)))
 
 
 def int32_regs(value: int) -> list[int]:
-    return list(struct.unpack(">HH", struct.pack(">i", int(value))))
+    return list(struct.unpack(">HH", struct.pack(">i", value)))
 
 
 def sim_context(hr_size: int = 256) -> ModbusSimulatorContext:
@@ -203,7 +203,7 @@ class PlantState:
 
 
 class IntegratedSimulatorWindow(QMainWindow):
-    sig_log = pyqtSignal(str)
+    sig_log: pyqtSignal = pyqtSignal(str)
 
     STYLESHEET = """
     QGroupBox { margin-top: 10px; padding: 8px; font-weight: normal; }
@@ -288,7 +288,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         torque = QGroupBox("Torque ZE-SG3")
         tg = QGridLayout(torque)
         self.lbl_torque = QLabel("0.000 Nm")
-        self.lbl_torque.setAlignment(Qt.AlignCenter)
+        self.lbl_torque.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_torque.setFont(QFont("Segoe UI", 20, QFont.Bold))
         tg.addWidget(self.lbl_torque, 0, 0, 1, 3)
         self.chk_auto_torque = QCheckBox("Mô-men tự động theo servo/PLC")
@@ -395,8 +395,13 @@ class IntegratedSimulatorWindow(QMainWindow):
             return [0] * count
         if self._loop and self._loop.is_running():
             fut = asyncio.run_coroutine_threadsafe(self._context.async_getValues(slave, 3, reg, count), self._loop)
-            return fut.result(timeout=1)
-        return asyncio.run(self._context.async_getValues(slave, 3, reg, count))
+            val = fut.result(timeout=1)
+        else:
+            val = asyncio.run(self._context.async_getValues(slave, 3, reg, count))
+        from pymodbus.pdu import ExceptionResponse
+        if isinstance(val, ExceptionResponse) or not isinstance(val, list):
+            return [0] * count
+        return [int(x) for x in val]
 
     def _start_server(self):
         port = self.combo_port.currentData()
@@ -423,7 +428,7 @@ class IntegratedSimulatorWindow(QMainWindow):
 
             async def server_coro():
                 self._server = ModbusSerialServer(
-                    self._context,
+                    context=self._context,
                     framer=FramerType.RTU,
                     port=port,
                     baudrate=baud,
@@ -629,6 +634,7 @@ class IntegratedSimulatorWindow(QMainWindow):
             s.sample_index = (s.sample_index + 1) & UINT16
         self._write_torque_registers()
         self._write_plc_registers(speed)
+        self._update_modbus_status_registers(dt)
         self._update_ui()
 
     def _advance_test(self, pos: float, neg: float, speed: float, cycles: int, window: int, dt: float):
@@ -735,7 +741,7 @@ class IntegratedSimulatorWindow(QMainWindow):
             status |= ST_DONE
         if s.fault_code:
             status |= ST_FAULT
-        pulse = int(round(s.angle_deg * 200000 / 360.0)) & 0xFFFFFFFF
+        pulse = int(s.angle_deg * 200000 / 360.0) & 0xFFFFFFFF
         regs = [
             status,
             s.mode & UINT16,
@@ -817,12 +823,41 @@ class IntegratedSimulatorWindow(QMainWindow):
             s.phase = 0
         self._log("🧹 Xóa Lỗi / Trạng thái hoàn thành")
 
+    def _update_modbus_status_registers(self, dt: float):
+        if not hasattr(self, '_msg_timer'):
+            self._msg_timer = 0.0
+            self._msg_count = 120
+            self._err_count = 0
+
+        self._msg_timer += dt
+        if self._msg_timer >= 1.0:
+            self._msg_timer = 0.0
+            self._msg_count += random.randint(4, 8)
+            if random.random() < 0.02:
+                self._err_count += 1
+
+            s_val = [
+                self._msg_count & UINT16,          # D200 (Bus Message Counter)
+                self._err_count & UINT16,          # D201 (Bus Communication Error Counter)
+                0,                                 # D202 (Exception Error Counter)
+                0, 0, 0, 0,                        # D203 - D206
+                0,                                 # D207 (Character Overrun Counter)
+                (self._msg_count - self._err_count) & UINT16, # D208 (Event Counter)
+                0,                                 # D209
+                8,                                 # D210 (Event Log Length)
+                0x0102,                            # D211 (Event Log Data 0-1)
+                0x0304,                            # D212 (Event Log Data 2-3)
+                0x0506,                            # D213 (Event Log Data 4-5)
+                0x0708,                            # D214 (Event Log Data 6-7)
+            ]
+            self._ctx_set(PLC_ID, 200, s_val)
+
     def _log(self, msg: str):
         self.log_box.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
         self._stop_server()
-        super().closeEvent(event)
+        super().closeEvent(a0)
 
 
 def main():

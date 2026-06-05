@@ -4,6 +4,7 @@
 project-includes = ["python/**/*.py"]
 search-path = [
     "python",
+    "draw_plot",
 ]
 site-package-path = [
     "G:/python/Lib/site-packages",

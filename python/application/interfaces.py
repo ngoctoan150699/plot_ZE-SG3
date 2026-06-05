@@ -7,7 +7,7 @@ Application Layer – Interfaces (Abstract Base Classes)
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from domain.entities import DeviceConfig, DeviceStatus, RecordingSession
 
