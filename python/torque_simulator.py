@@ -36,9 +36,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from pymodbus.datastore import ModbusServerContext, ModbusSimulatorContext
-from pymodbus.framer import FramerType
-from pymodbus.server import ModbusSerialServer, ServerStop
+from pymodbus.datastore import ModbusServerContext, ModbusSlaveContext, ModbusSequentialDataBlock
+from pymodbus.server.sync import ModbusSerialServer
+from pymodbus.transaction import ModbusRtuFramer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("IntegratedSimulator")
@@ -149,30 +149,14 @@ def int32_regs(value: int) -> list[int]:
     return list(struct.unpack(">HH", struct.pack(">i", value)))
 
 
-def sim_context(hr_size: int = 256) -> ModbusSimulatorContext:
-    config = {
-        "setup": {
-            "co size": 0,
-            "di size": 0,
-            "ir size": 0,
-            "hr size": hr_size,
-            "shared blocks": True,
-            "type exception": False,
-            "defaults": {
-                "value": {"bits": 0, "uint16": 0, "uint32": 0, "float32": 0, "string": ""},
-                "action": {"bits": None, "uint16": None, "uint32": None, "float32": None, "string": None},
-            },
-        },
-        "invalid": [],
-        "write": [[0, hr_size - 1]],
-        "bits": [],
-        "uint16": [{"addr": [0, hr_size - 1], "value": 0}],
-        "uint32": [],
-        "float32": [],
-        "string": [],
-        "repeat": [],
-    }
-    return ModbusSimulatorContext(config, custom_actions=None)
+def sim_context(hr_size: int = 256) -> ModbusSlaveContext:
+    return ModbusSlaveContext(
+        di=ModbusSequentialDataBlock(0, [0] * hr_size),
+        co=ModbusSequentialDataBlock(0, [0] * hr_size),
+        hr=ModbusSequentialDataBlock(0, [0] * hr_size),
+        ir=ModbusSequentialDataBlock(0, [0] * hr_size),
+        zero_mode=True
+    )
 
 
 @dataclass
@@ -350,10 +334,10 @@ class IntegratedSimulatorWindow(QMainWindow):
     def _create_context(self) -> ModbusServerContext:
         torque = sim_context(256)
         plc = sim_context(256)
-        context = ModbusServerContext(devices={TORQUE_ID: torque, PLC_ID: plc}, single=False)
+        context = ModbusServerContext(slaves={TORQUE_ID: torque, PLC_ID: plc}, single=False)
 
         def setv(slave: int, reg: int, vals: list[int]):
-            asyncio.run(context.async_setValues(slave, 3, reg, vals))
+            context[slave].setValues(3, reg, vals)
 
         setv(TORQUE_ID, REG_MACHINE_ID, [0x5A53])
         setv(TORQUE_ID, REG_FIRMWARE_REV, [0x0100])
@@ -384,20 +368,12 @@ class IntegratedSimulatorWindow(QMainWindow):
     def _ctx_set(self, slave: int, reg: int, vals: list[int]):
         if not self._context:
             return
-        if self._loop and self._loop.is_running():
-            fut = asyncio.run_coroutine_threadsafe(self._context.async_setValues(slave, 3, reg, vals), self._loop)
-            fut.result(timeout=1)
-        else:
-            asyncio.run(self._context.async_setValues(slave, 3, reg, vals))
+        self._context[slave].setValues(3, reg, vals)
 
     def _ctx_get(self, slave: int, reg: int, count: int = 1) -> list[int]:
         if not self._context:
             return [0] * count
-        if self._loop and self._loop.is_running():
-            fut = asyncio.run_coroutine_threadsafe(self._context.async_getValues(slave, 3, reg, count), self._loop)
-            val = fut.result(timeout=1)
-        else:
-            val = asyncio.run(self._context.async_getValues(slave, 3, reg, count))
+        val = self._context[slave].getValues(3, reg, count)
         from pymodbus.pdu import ExceptionResponse
         if isinstance(val, ExceptionResponse) or not isinstance(val, list):
             return [0] * count
@@ -423,41 +399,34 @@ class IntegratedSimulatorWindow(QMainWindow):
 
     def _run_server(self, port: str, baud: int):
         try:
-            self._loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self._loop)
-
-            async def server_coro():
-                self._server = ModbusSerialServer(
-                    context=self._context,
-                    framer=FramerType.RTU,
-                    port=port,
-                    baudrate=baud,
-                    parity="N",
-                    stopbits=1,
-                    bytesize=8,
-                    timeout=1,
-                )
-                self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên cổng {port}: slave 1 torque, slave 2 PLC")
-                await self._server.serve_forever()
-
-            self._loop.run_until_complete(server_coro())
+            self._server = ModbusSerialServer(
+                context=self._context,
+                framer=ModbusRtuFramer,
+                port=port,
+                baudrate=baud,
+                parity="N",
+                stopbits=1,
+                bytesize=8,
+                timeout=1,
+            )
+            self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên cổng {port}: slave 1 torque, slave 2 PLC")
+            self._server.serve_forever()
         except Exception as exc:
             self.sig_log.emit(f"❌ Lỗi server: {exc}")
         finally:
-            try:
-                if self._loop and not self._loop.is_closed():
-                    self._loop.close()
-            except Exception:
-                pass
-            self._loop = None
             self._server = None
 
     def _stop_server(self):
         self._timer.stop()
         self._cmd_timer.stop()
-        if self._loop:
+        if self._server:
             try:
-                ServerStop()
+                self._server.is_running = False
+                if getattr(self._server, "handler", None) is not None:
+                    self._server.server_close()
+                else:
+                    if hasattr(self._server, "socket") and self._server.socket:
+                        self._server.socket.close()
             except Exception as exc:
                 logger.warning("Stop server error: %s", exc)
         self.btn_start.setEnabled(True)

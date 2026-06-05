@@ -46,10 +46,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from pymodbus.datastore import ModbusDeviceContext as ModbusSlaveContext
-from pymodbus.datastore import ModbusServerContext, ModbusSimulatorContext
-from pymodbus.framer import FramerType
-from pymodbus.server import ModbusSerialServer, ServerStop
+from pymodbus.datastore import ModbusServerContext, ModbusSlaveContext, ModbusSequentialDataBlock
+from pymodbus.server.sync import ModbusSerialServer
+from pymodbus.transaction import ModbusRtuFramer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -322,33 +321,17 @@ class PlcSimulatorWindow(QMainWindow):
             self.combo_port.addItem("Không tìm thấy COM port", "")
 
     def _create_datastore(self):
-        config = {
-            "setup": {
-                "co size": 0,
-                "di size": 0,
-                "ir size": 0,
-                "hr size": 256,
-                "shared blocks": True,
-                "type exception": False,
-                "defaults": {
-                    "value": {"bits": 0, "uint16": 0, "uint32": 0, "float32": 0, "string": ""},
-                    "action": {"bits": None, "uint16": None, "uint32": None, "float32": None, "string": None},
-                },
-            },
-            "invalid": [],
-            "write": [[0, 255]],
-            "bits": [],
-            "uint16": [{"addr": [0, 255], "value": 0}],
-            "uint32": [],
-            "float32": [],
-            "string": [],
-            "repeat": [],
-        }
-        simulator = ModbusSimulatorContext(config, custom_actions=None)
-        context = ModbusServerContext(devices={self._slave_id: simulator}, single=False)
+        simulator = ModbusSlaveContext(
+            di=ModbusSequentialDataBlock(0, [0] * 256),
+            co=ModbusSequentialDataBlock(0, [0] * 256),
+            hr=ModbusSequentialDataBlock(0, [0] * 256),
+            ir=ModbusSequentialDataBlock(0, [0] * 256),
+            zero_mode=True
+        )
+        context = ModbusServerContext(slaves={self._slave_id: simulator}, single=False)
 
         def set_init(address: int, values: list[int]):
-            asyncio.run(context.async_setValues(self._slave_id, 3, address + 1, values))
+            context[self._slave_id].setValues(3, address, values)
 
         set_init(PLC_D101_MODE, [PLC_MODE_BREAKAWAY])
         set_init(PLC_D102_POS_ANGLE_X100, [3600])
@@ -361,23 +344,13 @@ class PlcSimulatorWindow(QMainWindow):
         return context
 
     def _context_set_values(self, address: int, values: list[int]):
-        if self._loop and self._loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                self._context.async_setValues(self._slave_id, 3, address, values),
-                self._loop,
-            )
-            future.result(timeout=1)
-        else:
-            asyncio.run(self._context.async_setValues(self._slave_id, 3, address, values))
+        if self._context:
+            self._context[self._slave_id].setValues(3, address, values)
 
     def _context_get_values(self, address: int, count: int = 1):
-        if self._loop and self._loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                self._context.async_getValues(self._slave_id, 3, address, count),
-                self._loop,
-            )
-            return future.result(timeout=1)
-        return asyncio.run(self._context.async_getValues(self._slave_id, 3, address, count))
+        if not self._context:
+            return [0] * count
+        return self._context[self._slave_id].getValues(3, address, count)
 
     def _start_server(self):
         port = self.combo_port.currentData()
@@ -408,44 +381,36 @@ class PlcSimulatorWindow(QMainWindow):
 
     def _run_server(self, port: str, baudrate: int):
         try:
-            self._loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self._loop)
-
-            async def server_coro():
-                self._server = ModbusSerialServer(
-                    self._context,
-                    framer=FramerType.RTU,
-                    port=port,
-                    baudrate=baudrate,
-                    parity="N",
-                    stopbits=1,
-                    bytesize=8,
-                    timeout=1,
-                )
-                self.sig_log.emit(f"🔗 Đang lắng nghe PLC Modbus RTU trên {port}")
-                await self._server.serve_forever()
-
-            self._loop.run_until_complete(server_coro())
+            self._server = ModbusSerialServer(
+                context=self._context,
+                framer=ModbusRtuFramer,
+                port=port,
+                baudrate=baudrate,
+                parity="N",
+                stopbits=1,
+                bytesize=8,
+                timeout=1,
+            )
+            self.sig_log.emit(f"🔗 Đang lắng nghe PLC Modbus RTU trên {port}")
+            self._server.serve_forever()
         except Exception as exc:
             self.sig_log.emit(f"❌ Lỗi server: {exc}")
             import traceback
-
             self.sig_log.emit(traceback.format_exc())
         finally:
-            try:
-                if self._loop and not self._loop.is_closed():
-                    self._loop.close()
-            except Exception:
-                pass
-            self._loop = None
             self._server = None
 
     def _stop_server(self):
         self._update_timer.stop()
         self._command_timer.stop()
-        if self._loop:
+        if self._server:
             try:
-                ServerStop()
+                self._server.is_running = False
+                if getattr(self._server, "handler", None) is not None:
+                    self._server.server_close()
+                else:
+                    if hasattr(self._server, "socket") and self._server.socket:
+                        self._server.socket.close()
             except Exception as exc:
                 logger.warning("Stop server error: %s", exc)
         self.btn_start.setEnabled(True)
@@ -457,7 +422,7 @@ class PlcSimulatorWindow(QMainWindow):
         self._log("⏹ PLC simulator đã dừng")
 
     def _read_config(self):
-        values = self._context_get_values(PLC_D101_MODE + 1, 8)
+        values = self._context_get_values(PLC_D101_MODE, 8)
         mode = values[0]
         pos_deg = decode_i16(values[1]) / 100.0
         neg_deg = decode_i16(values[2]) / 100.0
@@ -476,7 +441,7 @@ class PlcSimulatorWindow(QMainWindow):
         mode, pos_deg, neg_deg, speed_deg_s, cycle_set = self._read_config()
         state.target_deg = neg_deg if mode == PLC_MODE_OPERATING else pos_deg
 
-        jog_plus, jog_minus = self._context_get_values(PLC_D110_JOG_PLUS + 1, 2)
+        jog_plus, jog_minus = self._context_get_values(PLC_D110_JOG_PLUS, 2)
         if jog_plus:
             state.angle_deg += speed_deg_s * dt
             state.phase = 2
@@ -551,7 +516,7 @@ class PlcSimulatorWindow(QMainWindow):
             1 if state.done else 0,
             state.sample_index & UINT16_MASK,
         ]
-        self._context_set_values(PLC_D120_STATUS_WORD + 1, regs)
+        self._context_set_values(PLC_D120_STATUS_WORD, regs)
         self.lbl_status.setText(
             f"PLC: run={int(state.run)} rec={int(state.recording)} clamp={int(state.clamped)} "
             f"angle={state.angle_deg:.2f}° target={state.target_deg:.2f}° "
@@ -562,19 +527,19 @@ class PlcSimulatorWindow(QMainWindow):
     def _check_commands(self):
         if not self._context:
             return
-        cmd_values = self._context_get_values(PLC_D100_CMD_WORD + 1, 1)
+        cmd_values = self._context_get_values(PLC_D100_CMD_WORD, 1)
         if cmd_values and cmd_values[0]:
             self._handle_command(cmd_values[0])
-            self._context_set_values(PLC_D100_CMD_WORD + 1, [0])
+            self._context_set_values(PLC_D100_CMD_WORD, [0])
 
-        aux_values = self._context_get_values(PLC_D109_RESET_FAULT + 1, 4)
+        aux_values = self._context_get_values(PLC_D109_RESET_FAULT, 4)
         if aux_values:
             if aux_values[0]:
                 self._reset_fault_done()
-                self._context_set_values(PLC_D109_RESET_FAULT + 1, [0])
+                self._context_set_values(PLC_D109_RESET_FAULT, [0])
             if aux_values[3]:
                 self._home()
-                self._context_set_values(PLC_D112_HOME_CMD + 1, [0])
+                self._context_set_values(PLC_D112_HOME_CMD, [0])
 
     def _handle_command(self, cmd_word: int):
         if cmd_word & PLC_CMD_START_RUN:
