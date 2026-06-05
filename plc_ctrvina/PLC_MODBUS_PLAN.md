@@ -12,7 +12,7 @@ PLC đang dùng FXCPU FX3U/FX3UC, cấu hình Modbus RTU slave:
 - `D8411 = K5`: delay 5 ms
 - `D8414 = K2`: Slave ID = 2
 - `D8415 = H11`: cho phép lưu/truy cập device D qua Modbus
-- `D8416 = K100`: vùng D bắt đầu từ `D100`
+- `D8416 = K200`: vùng D bắt đầu từ `D200`
 
 ## User Review Required
 
