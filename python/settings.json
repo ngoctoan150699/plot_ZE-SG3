@@ -37,6 +37,8 @@
     "y_max": 5.0,
     "fixed_y": true,
     "part_name": "Outer Tie Rod",
-    "test_item": "Breakaway Torque"
+    "test_item": "Breakaway Torque",
+    "dark_theme": false,
+    "language": "en"
   }
 }
