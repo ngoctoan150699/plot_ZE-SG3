@@ -1,0 +1,667 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Root>
+	<Application name="MELSOFT Series MR Configurator2" version="1.10L">
+		<fileType>USERDATA</fileType>
+		<dataType>PARAMETER</dataType>
+		<lang>en</lang>
+		<connection>USB</connection>
+		<Controller>
+			<connection/>
+			<type/>
+		</Controller>
+	</Application>
+	<Axes>
+		<Axis no="1" nameNo="1">
+			<ampType>MR-J4-A</ampType>
+			<ampBaseType>17</ampBaseType>
+			<ampSoftwareNo>BCD-B46W100 (Factory setting)</ampSoftwareNo>
+			<ampOptionUnitType>NO_UNIT</ampOptionUnitType>
+		</Axis>
+	</Axes>
+	<PARAMETER>
+		<AmpType>MR-J4-A</AmpType>
+		<AmpTypeName>MR-J4-A Standard</AmpTypeName>
+		<Parameters>
+PA01,*STY,Operation mode,1000,,1000-1205
+PA02,*REG,Regenerative option,0000,,0000-000C
+PA03,*ABS,Absolute position detection system,0000,,0000-0001
+PA04,*AOP1,Function selection A-1,2000,,0000-2000
+PA05,*FBP,Number of command input pulses per revolution,10000,,1000-1000000
+PA06,CMX,Elec. gear numerator (Cmd. pls. magnification num.),1,,1-16777215
+PA07,CDV,Elec. gear denominator (Cmd. pls. magnification den.),1,,1-16777215
+PA08,ATU,Auto tuning mode,0002,,0000-0004
+PA09,RSP,Auto tuning response,25,,1-40
+PA10,INP,In-position range,100,pulse,0-65535
+PA11,TLP,Forward rotation torque limit,100.0,%,0.0-100.0
+PA12,TLN,Reverse rotation torque limit,100.0,%,0.0-100.0
+PA13,*PLSS,Command pulse input form,0301,,0000-0212
+PA14,*POL,Rotation direction selection,0,,0-1
+PA15,*ENR,Encoder output pulses,4000,pulse/rev,1-4194304
+PA16,*ENR2,Encoder output pulses 2,1,,1-4194304
+PA17,*MSR,For manufacturer setting,0000,,0000-0000
+PA18,*MTY,For manufacturer setting,0000,,0000-0000
+PA19,*BLK,Parameter writing inhibit,00AA,,0000-FFFF
+PA20,*TDS,Tough drive setting,0000,,0000-1110
+PA21,*AOP3,Function selection A-3,1001,,0000-3001
+PA22,*PCS,For manufacturer setting,0000,,0000-0000
+PA23,DRAT,Drive recorder arbitrary alarm trigger setting,0000,,0000-FFFF
+PA24,AOP4,Function selection A-4,0000,,0000-0002
+PA25,OTHOV,For manufacturer setting,0,%,0-100
+PA26,,For manufacturer setting,0000,,0000-0000
+PA27,,For manufacturer setting,0000,,0000-0000
+PA28,,For manufacturer setting,0000,,0000-0000
+PA29,,For manufacturer setting,0000,,0000-0000
+PA30,,For manufacturer setting,0000,,0000-0000
+PA31,,For manufacturer setting,0000,,0000-0000
+PA32,,For manufacturer setting,0000,,0000-0000
+PB01,FILT,Adaptive tuning mode (adaptive filter II),0000,,0000-0002
+PB02,VRFT,Vib. supp. control tuning mode (adv. vib. supp. ctrl. II),0000,,0000-0022
+PB03,PST,Pos. cmd. accel./decel. time const. (pos. smoothing),0,ms,0-65535
+PB04,FFC,Feed forward gain,0,%,0-100
+PB05,FFCF,For manufacturer setting,500,rad/s,10-4500
+PB06,GD2,Load to motor inertia ratio,7.00,times,0.00-300.00
+PB07,PG1,Model loop gain,58.0,rad/s,1.0-2000.0
+PB08,PG2,Position loop gain,110.0,rad/s,1.0-2000.0
+PB09,VG2,Speed loop gain,2328,rad/s,20-65535
+PB10,VIC,Speed integral compensation,11.3,ms,0.1-1000.0
+PB11,VDC,Speed differential compensation,980,,0-1000
+PB12,OVA,Overshoot amount compensation,0,%,0-100
+PB13,NH1,Machine resonance suppression filter 1,4500,Hz,10-4500
+PB14,NHQ1,Notch shape selection 1,0000,,0000-0330
+PB15,NH2,Machine resonance suppression filter 2,4500,Hz,10-4500
+PB16,NHQ2,Notch shape selection 2,0000,,0000-0331
+PB17,NHF,Shaft resonance suppression filter,0003,,0000-031F
+PB18,LPF,Low-pass filter setting,3141,rad/s,100-18000
+PB19,VRF11,Vibration suppression control 1 - Vibration frequency,100.0,Hz,0.1-300.0
+PB20,VRF12,Vib. suppression control 1 - Resonance frequency,100.0,Hz,0.1-300.0
+PB21,VRF13,Vib. supp. control 1 - Vibration frequency damping,0.00,,0.00-0.30
+PB22,VRF14,Vib. supp. control 1 - Resonance frequency damping,0.00,,0.00-0.30
+PB23,VFBF,Low-pass filter selection,0000,,0000-0022
+PB24,*MVS,Slight vibration suppression control,0000,,0000-0031
+PB25,*BOP1,Function selection B-1,0000,,0000-0810
+PB26,*CDP,Gain switching function,0000,,0000-0014
+PB27,CDL,Gain switching condition,10,,0-9999
+PB28,CDT,Gain switching time constant,1,ms,0-100
+PB29,GD2B,Load to motor inertia ratio after gain switching,7.00,times,0.00-300.00
+PB30,PG2B,Position loop gain after gain switching,0.0,rad/s,0.0-2000.0
+PB31,VG2B,Speed loop gain after gain switching,0,rad/s,0-65535
+PB32,VICB,Speed integral compensation after gain switching,0.0,ms,0.0-5000.0
+PB33,VRF1B,Vib. supp. ctrl. 1 - Vib. frequency after gain switching,0.0,Hz,0.0-300.0
+PB34,VRF2B,Vib. supp. ctrl. 1 - Res. freq. after gain switching,0.0,Hz,0.0-300.0
+PB35,VRF3B,Vib. supp. ctrl. 1 - Vib. frq. damping after gain switch.,0.00,,0.00-0.30
+PB36,VRF4B,Vib. supp. ctrl. 1 - Res. frq. damping after gain switch.,0.00,,0.00-0.30
+PB37,VPI,For manufacturer setting,1600,pulse,0-65535
+PB38,*TGW1,For manufacturer setting,0.00,,0.00-50.00
+PB39,*TGW2,For manufacturer setting,0.00,,0.00-50.00
+PB40,*TGW3,For manufacturer setting,0.00,,0.00-50.00
+PB41,VRFF1,For manufacturer setting,0000,,0000-0000
+PB42,VRFF2,For manufacturer setting,0000,,0000-0000
+PB43,*VRFQ,For manufacturer setting,0000,,0000-0200
+PB44,JM2,For manufacturer setting,0.00,times,0.00-0.00
+PB45,CNHF,Command notch filter,0000,,0000-0F5F
+PB46,NH3,Machine resonance suppression filter 3,4500,Hz,10-4500
+PB47,NHQ3,Notch shape selection 3,0000,,0000-0331
+PB48,NH4,Machine resonance suppression filter 4,4500,Hz,10-4500
+PB49,NHQ4,Notch shape selection 4,0000,,0000-0331
+PB50,NH5,Machine resonance suppression filter 5,4500,Hz,10-4500
+PB51,NHQ5,Notch shape selection 5,0000,,0000-0331
+PB52,VRF21,Vibration suppression control 2 - Vibration frequency,100.0,Hz,0.1-300.0
+PB53,VRF22,Vib. suppression control 2 - Resonance frequency,100.0,Hz,0.1-300.0
+PB54,VRF23,Vib. supp. control 2 - Vibration frequency damping,0.00,,0.00-0.30
+PB55,VRF24,Vib. supp. control 2 - Resonance frequency damping,0.00,,0.00-0.30
+PB56,VRF21B,Vib. supp. ctrl. 2 - Vib. frequency after gain switching,0.0,Hz,0.0-300.0
+PB57,VRF22B,Vib. supp. ctrl. 2 - Res. freq. after gain switching,0.0,Hz,0.0-300.0
+PB58,VRF23B,Vib. supp. ctrl. 2 - Vib. frq. damping after gain switch.,0.00,,0.00-0.30
+PB59,VRF24B,Vib. supp. ctrl. 2 - Res. frq. damping after gain switch.,0.00,,0.00-0.30
+PB60,PG1B,Model loop gain after gain switching,0.0,rad/s,0.0-2000.0
+PB61,TFF,For manufacturer setting,0.0,%,0.0-100.0
+PB62,,For manufacturer setting,0000,,0000-0000
+PB63,,For manufacturer setting,0000,,0000-0000
+PB64,,For manufacturer setting,0000,,0000-0000
+PC01,STA,Acceleration time constant,0,ms,0-50000
+PC02,STB,Deceleration time constant,0,ms,0-50000
+PC03,STC,S-pattern acceleration/deceleration time constant,0,ms,0-5000
+PC04,TQC,Torque command time constant,0,ms,0-50000
+PC05,SC1,Internal speed command 1,100,r/min,0-65535
+PC06,SC2,Internal speed command 2,500,r/min,0-65535
+PC07,SC3,Internal speed command 3,1000,r/min,0-65535
+PC08,SC4,Internal speed command 4,200,r/min,0-65535
+PC09,SC5,Internal speed command 5,300,r/min,0-65535
+PC10,SC6,Internal speed command 6,500,r/min,0-65535
+PC11,SC7,Internal speed command 7,800,r/min,0-65535
+PC12,VCM,Analog speed command - Maximum speed,0,r/min,0-50000
+PC13,TLC,Analog torque command maximum output,100.0,%,0.0-1000.0
+PC14,MOD1,Analog monitor 1 output,0000,,0000-001F
+PC15,MOD2,Analog monitor 2 output,0001,,0000-001F
+PC16,MBR,Electromagnetic brake sequence output,0,ms,0-1000
+PC17,ZSP,Zero speed,50,r/min,0-10000
+PC18,*BPS,Alarm history clear,0000,,0000-0001
+PC19,*ENRS,Encoder output pulse selection,0000,,0000-0031
+PC20,*SNO,Station number setting,0,station,0-31
+PC21,*SOP,For manufacturer setting,0000,,0000-0000
+PC22,*COP1,Function selection C-1,0000,,0000-1240
+PC23,*COP2,Function selection C-2,0000,,0000-1521
+PC24,*COP3,Function selection C-3,0000,,0000-3061
+PC25,*COP4,For manufacturer setting,0000,,0000-0110
+PC26,*COP5,Function selection C-5,0000,,0000-0111
+PC27,*COP6,Function selection C-6,0000,,0000-1102
+PC28,*COP7,For manufacturer setting,0000,,0000-0000
+PC29,*COP8,For manufacturer setting,0000,,0000-0000
+PC30,STA2,Acceleration time constant 2,0,ms,0-50000
+PC31,STB2,Deceleration time constant 2,0,ms,0-50000
+PC32,CMX2,Command input pulse multiplication numerator 2,1,,1-16777215
+PC33,CMX3,Command input pulse multiplication numerator 3,1,,1-16777215
+PC34,CMX4,Command input pulse multiplication numerator 4,1,,1-16777215
+PC35,TL2,Internal torque limit 2,100.0,%,0.0-100.0
+PC36,*DMD,Status display selection,0000,,0000-011F
+PC37,VCO,Analog speed command offset,0,mV,-9999-9999
+PC38,TPO,Analog torque command offset,0,mV,-9999-9999
+PC39,MO1,Analog monitor 1 offset,0,mV,-9999-9999
+PC40,MO2,Analog monitor 2 offset,0,mV,-9999-9999
+PC41,MOSDL,For manufacturer setting,0,pulse,0-0
+PC42,MOSDH,For manufacturer setting,0,pulse,0-0
+PC43,ERZ,Error excessive alarm detection level,0,rev,0-1000
+PC44,*COP9,For manufacturer setting,0000,,0000-0000
+PC45,*COPA,For manufacturer setting,0000,,0000-0000
+PC46,TLFT,For manufacturer setting,0,ms,0-50000
+PC47,MVFB,For manufacturer setting,0,r/min,0-0
+PC48,FAL,For manufacturer setting,0,pulse,0-0
+PC49,FWN,For manufacturer setting,0,pulse,0-0
+PC50,*COPB,For manufacturer setting,0000,,0000-0000
+PC51,RSBR,Forced stop deceleration time constant,100,ms,0-20000
+PC52,RSBS,For manufacturer setting,0,ms,0-1000
+PC53,RBRX,For manufacturer setting,0,ms,0-20000
+PC54,RSUP1,Vertical axis freefall prevention compensation amount,0,0.0001rev,-25000-25000
+PC55,RSUP2,For manufacturer setting,0,r/min,0-0
+PC56,RSUP3,For manufacturer setting,100,ms,100-100
+PC57,*ENRS2,For manufacturer setting,0000,,0000-0000
+PC58,OSL,For manufacturer setting,0,r/min,0-20000
+PC59,COPC,For manufacturer setting,0000,,0000-0000
+PC60,*COPD,Function selection C-D,0000,,0000-0001
+PC61,,For manufacturer setting,0000,,0000-0000
+PC62,,For manufacturer setting,0000,,0000-0000
+PC63,,For manufacturer setting,0000,,0000-0000
+PC64,,For manufacturer setting,0000,,0000-0000
+PC65,,For manufacturer setting,0000,,0000-0000
+PC66,,For manufacturer setting,0000,,0000-0000
+PC67,,For manufacturer setting,0000,,0000-0000
+PC68,,For manufacturer setting,0000,,0000-0000
+PC69,,For manufacturer setting,0000,,0000-0000
+PC70,,For manufacturer setting,0000,,0000-0000
+PC71,,For manufacturer setting,0040,,0000-0000
+PC72,,For manufacturer setting,0000,,0000-0000
+PC73,,For manufacturer setting,0000,,0000-0000
+PC74,,For manufacturer setting,0000,,0000-0000
+PC75,,For manufacturer setting,0000,,0000-0000
+PC76,,For manufacturer setting,0000,,0000-0000
+PC77,,For manufacturer setting,0000,,0000-0000
+PC78,,For manufacturer setting,0000,,0000-0000
+PC79,,For manufacturer setting,0000,,0000-0000
+PC80,,For manufacturer setting,0000,,0000-0000
+PD01,*DIA1,Input signal automatic on selection 1,0000,,0000-0FFF
+PD02,*DIA2,For manufacturer setting,0000,,0000-0000
+PD03,*DI1L,Input device selection 1L,0202,,0000-3F3F
+PD04,*DI1H,Input device selection 1H,0202,,0000-3F3F
+PD05,*DI2L,Input device selection 2L,2100,,0000-3F3F
+PD06,*DI2H,Input device selection 2H,2021,,0000-3F3F
+PD07,*DI3L,Input device selection 3L,0704,,0000-3F3F
+PD08,*DI3H,Input device selection 3H,0707,,0000-3F3F
+PD09,*DI4L,Input device selection 4L,0805,,0000-3F3F
+PD10,*DI4H,Input device selection 4H,0808,,0000-3F3F
+PD11,*DI5L,Input device selection 5L,0303,,0000-3F3F
+PD12,*DI5H,Input device selection 5H,3803,,0000-3F3F
+PD13,*DI6L,Input device selection 6L,2006,,0000-3F3F
+PD14,*DI6H,Input device selection 6H,3920,,0000-3F3F
+PD15,*DI7L,For manufacturer setting,0000,,0000-0000
+PD16,*DI7H,For manufacturer setting,0000,,0000-0000
+PD17,*DI8L,Input device selection 8L,0A0A,,0000-3F3F
+PD18,*DI8H,Input device selection 8H,0A00,,0000-3F3F
+PD19,*DI9L,Input device selection 9L,0B0B,,0000-3F3F
+PD20,*DI9H,Input device selection 9H,0B00,,0000-3F3F
+PD21,*DI10L,Input device selection 10L,2323,,0000-3F3F
+PD22,*DI10H,Input device selection 10H,2B23,,0000-3F3F
+PD23,*DO1,Output device selection 1,0004,,0000-003F
+PD24,*DO2,Output device selection 2,000C,,0000-003F
+PD25,*DO3,Output device selection 3,0004,,0000-003F
+PD26,*DO4,Output device selection 4,0007,,0000-003F
+PD27,*DO5,For manufacturer setting,0003,,0003-003F
+PD28,*DO6,Output device selection 6,0002,,0000-003F
+PD29,*DIF,Input filter setting,0004,,0000-0114
+PD30,*DOP1,Function selection D-1,0000,,0000-0011
+PD31,*DOP2,For manufacturer setting,0000,,0000-0000
+PD32,*DOP3,Function selection D-3,0000,,0000-0001
+PD33,*DOP4,For manufacturer setting,0000,,0000-0000
+PD34,*DOP5,Function selection D-5,0000,,0000-1011
+PD35,*ORV1,For manufacturer setting,0000,,0000-0FFF
+PD36,,For manufacturer setting,0000,,0000-0000
+PD37,*MSMD1,For manufacturer setting,0000,,0000-0000
+PD38,TLS,For manufacturer setting,0,%,0-0
+PD39,VLC,For manufacturer setting,0,%,0-0
+PD40,VLL,For manufacturer setting,0,r/min,0-0
+PD41,,For manufacturer setting,0000,,0000-0000
+PD42,,For manufacturer setting,0000,,0000-0000
+PD43,,For manufacturer setting,0000,,0000-0000
+PD44,,For manufacturer setting,3A00,,0000-0000
+PD45,,For manufacturer setting,0000,,0000-0000
+PD46,,For manufacturer setting,3B00,,0000-0000
+PD47,,For manufacturer setting,0000,,0000-0000
+PD48,,For manufacturer setting,0000,,0000-0000
+PE01,*FCT1,For manufacturer setting,0000,,0000-0000
+PE02,,For manufacturer setting,0000,,0000-0000
+PE03,*FCT2,For manufacturer setting,0003,,0003-0003
+PE04,*FBN,For manufacturer setting,1,,1-1
+PE05,*FBD,For manufacturer setting,1,,1-1
+PE06,BC1,For manufacturer setting,400,r/min,400-400
+PE07,BC2,For manufacturer setting,100,kpulse,100-100
+PE08,DUF,For manufacturer setting,10,rad/s,10-10
+PE09,,For manufacturer setting,0000,,0000-0000
+PE10,FCT3,For manufacturer setting,0000,,0000-0000
+PE11,,For manufacturer setting,0000,,0000-0000
+PE12,,For manufacturer setting,0000,,0000-0000
+PE13,,For manufacturer setting,0000,,0000-0000
+PE14,MV1,For manufacturer setting,0111,,0000-3333
+PE15,MV2,For manufacturer setting,20,ms,0-1000
+PE16,*EOP1,For manufacturer setting,0000,,0000-0000
+PE17,*EOP2,For manufacturer setting,0000,,0000-0011
+PE18,IIRC11,For manufacturer setting,0000,,0000-FFFF
+PE19,IIRC12,For manufacturer setting,0000,,0000-FFFF
+PE20,IIRC13,For manufacturer setting,0000,,0000-FFFF
+PE21,IIRC14,For manufacturer setting,0000,,0000-FFFF
+PE22,IIRC15,For manufacturer setting,0000,,0000-FFFF
+PE23,IIRC16,For manufacturer setting,0000,,0000-FFFF
+PE24,IIRC17,For manufacturer setting,0000,,0000-FFFF
+PE25,IIRC18,For manufacturer setting,0000,,0000-FFFF
+PE26,IIRC21,For manufacturer setting,0000,,0000-FFFF
+PE27,IIRC22,For manufacturer setting,0000,,0000-FFFF
+PE28,IIRC23,For manufacturer setting,0000,,0000-FFFF
+PE29,IIRC24,For manufacturer setting,0000,,0000-FFFF
+PE30,IIRC25,For manufacturer setting,0000,,0000-FFFF
+PE31,IIRC26,For manufacturer setting,0000,,0000-FFFF
+PE32,IIRC27,For manufacturer setting,0000,,0000-FFFF
+PE33,IIRC28,For manufacturer setting,0000,,0000-FFFF
+PE34,*FBN2,For manufacturer setting,1,,1-1
+PE35,*FBD2,For manufacturer setting,1,,1-1
+PE36,AWZN,For manufacturer setting,0.0,Hz,0.0-0.0
+PE37,AKZ,For manufacturer setting,0.00,,0.00-0.00
+PE38,ADZ,For manufacturer setting,0.00,,0.00-0.00
+PE39,BT1,For manufacturer setting,20,ms,20-20
+PE40,TRCG,For manufacturer setting,0000,,0000-0000
+PE41,EOP3,Function selection E-3,0000,,0000-0001
+PE42,RBF1,For manufacturer setting,0,rad/s,0-10000
+PE43,RBF2,For manufacturer setting,0.0,times,0.0-10.0
+PE44,,For manufacturer setting,0000,,0000-0000
+PE45,,For manufacturer setting,0000,,0000-0000
+PE46,,For manufacturer setting,0000,,0000-0000
+PE47,,For manufacturer setting,0000,,0000-0000
+PE48,,For manufacturer setting,0000,,0000-0000
+PE49,,For manufacturer setting,0000,,0000-0000
+PE50,,For manufacturer setting,0000,,0000-0000
+PE51,,For manufacturer setting,0000,,0000-0000
+PE52,,For manufacturer setting,0000,,0000-0000
+PE53,,For manufacturer setting,0000,,0000-0000
+PE54,,For manufacturer setting,0000,,0000-0000
+PE55,,For manufacturer setting,0000,,0000-0000
+PE56,,For manufacturer setting,0000,,0000-0000
+PE57,,For manufacturer setting,0000,,0000-0000
+PE58,,For manufacturer setting,0000,,0000-0000
+PE59,,For manufacturer setting,0000,,0000-0000
+PE60,,For manufacturer setting,0000,,0000-0000
+PE61,*TGW4,For manufacturer setting,0.00,,0.00-50.00
+PE62,*TGW5,For manufacturer setting,0.00,,0.00-50.00
+PE63,*TGW6,For manufacturer setting,0.00,,0.00-50.00
+PE64,*TGW7,For manufacturer setting,0.00,,0.00-50.00
+PF01,*FOP1,For manufacturer setting,0000,,0000-0000
+PF02,*FOP2,For manufacturer setting,0000,,0000-0000
+PF03,*FOP3,For manufacturer setting,0000,,0000-0010
+PF04,SIC,For manufacturer setting,0,s,0-0
+PF05,UIC,For manufacturer setting,0,s,0-60
+PF06,*FOP4,For manufacturer setting,0000,,0000-0000
+PF07,ABCMX,For manufacturer setting,1,,1-1
+PF08,ABCDV,For manufacturer setting,1,,1-1
+PF09,*FOP5,For manufacturer setting,0000,,0000-0002
+PF10,*FOP6,For manufacturer setting,0000,,0000-0002
+PF11,*FOP7,For manufacturer setting,0000,,0000-0100
+PF12,VLI,For manufacturer setting,10000,r/min,10000-10000
+PF13,SRT,For manufacturer setting,100,r/min,100-100
+PF14,TRT,For manufacturer setting,100,ms,100-100
+PF15,DBT,For manufacturer setting,2000,ms,0-10000
+PF16,*FOP8,For manufacturer setting,0000,,0000-10A0
+PF17,ZAT,For manufacturer setting,10,100ms,1-100
+PF18,,For manufacturer setting,0000,,0000-0000
+PF19,,For manufacturer setting,0000,,0000-0000
+PF20,*ORV2,For manufacturer setting,0000,,0000-FFFF
+PF21,DRT,Drive recorder switching time setting,0,s,-1-32767
+PF22,ALDT,For manufacturer setting,200,10ms,200-200
+PF23,OSCL1,Vibration tough drive - Oscillation detection level,50,%,0-100
+PF24,*OSCL2,Vibration tough drive function selection,0000,,0000-0002
+PF25,CVAT,Instant. power failure tough drive - Detection time,200,ms,30-200
+PF26,OLLV,For manufacturer setting,0,,0-0
+PF27,THWL,For manufacturer setting,0,°C,0-0
+PF28,*OVAL,For manufacturer setting,0,V,-100-0
+PF29,*FOP9,For manufacturer setting,0000,,0000-0001
+PF30,RTL,For manufacturer setting,0,V,0-0
+PF31,FRIC,Machine diagnosis function - Friction judgement speed,0,r/min,0-65535
+PF32,*VIBT,For manufacturer setting,50,100ms,1-50
+PF33,*FOP10,For manufacturer setting,0000,,0000-0001
+PF34,,For manufacturer setting,0000,,0000-0000
+PF35,,For manufacturer setting,0000,,0000-0000
+PF36,,For manufacturer setting,0000,,0000-0000
+PF37,,For manufacturer setting,0000,,0000-0000
+PF38,,For manufacturer setting,0000,,0000-0000
+PF39,,For manufacturer setting,0000,,0000-0000
+PF40,,For manufacturer setting,0000,,0000-0000
+PF41,,For manufacturer setting,0000,,0000-0000
+PF42,,For manufacturer setting,0000,,0000-0000
+PF43,,For manufacturer setting,0000,,0000-0000
+PF44,,For manufacturer setting,0000,,0000-0000
+PF45,,For manufacturer setting,0000,,0000-0000
+PF46,,For manufacturer setting,0000,,0000-0000
+PF47,,For manufacturer setting,0000,,0000-0000
+PF48,,For manufacturer setting,0000,,0000-0000
+PG01,*POLE,Number of motor poles,----,pole,0-60
+PG02,*INA,Servo motor inertia,----,PG12*kg*m^2,0-65535
+PG03,*STQ,Servo motor's rated torque,----,PG12*N*m,0-32767
+PG04,*MTQ,Servo motor max. torque (Nominal value),----,%,0-1000
+PG05,*AMR,Servo motor rated current,----,PG12*Arms,0-32767
+PG06,*MAMR,Max. current of servo motor (Internal limit value),----,%,0-1000
+PG07,*LDQ,dq axis inductance,----,mH,0.00-655.35
+PG08,*RDQ,dq axis armature resistance,----,m-ohm,0-65535
+PG09,*VDQ,dq axis induced voltage constant,----,mV*s/rad,0-65535
+PG10,*BAS,Rated servo motor speed,----,r/min,0-20000
+PG11,*TOP,Max. speed of servo motor,----,r/min,0-20000
+PG12,*MAG,Servo motor constant unit selection,----,,0-5
+PG13,*OLN,Overload level,----,,0-117
+PG14,*OCL,Overcurrent level,----,%,0-200
+PG15,*TDG,S/W Td compensation gain,----,rad/s,0-9999
+PG16,*IQGN,q axis current gain,----,,-32768-32767
+PG17,*IDGN,d axis current gain,----,,-32768-32767
+PG18,*IQIC,q axis current compensation,----,,-32768-32767
+PG19,*IDIC,d axis current compensation,----,,-32768-32767
+PG20,*OHL,Servo motor overheat protection level,----,°C,0-65535
+PG21,*MSPT,Output torque at max. speed,----,,0-65535
+PG22,*FBA,Speed feedback average times,----,,0-8
+PG23,*TWPK,Axis torsion resonance frequency,----,Hz,0-65535
+PG24,*KTC1,Cogging torq correct coefficient 1,----,0.05%,0-65535
+PG25,*KTC2,Cogging torq correct coefficient 2,----,,0000-FFFF
+PG26,*KTC3,Cogging torq correct coefficient 3,----,0.05%,0-65535
+PG27,*KTC4,Cogging torq correct coefficient 4,----,,0000-FFFF
+PG28,*KTC5,Cogging torq correct coefficient 5,----,0.05%,0-65535
+PG29,*KTC6,Cogging torq correct coefficient 6,----,,0000-FFFF
+PG30,*VLF,Control mode flag,----,,0000-10F2
+PG31,*VLA,Torq max. control dq ax volt comm limit coeff a,----,%,-100-100
+PG32,*VLB1,Torq max. control dq ax volt vector lead angle b1,----,deg,-90-90
+PG33,*RTC,Regenerative torque limit compensation coefficient,----,%,-500-500
+PG34,*VDQG,Torq max. control dq ax volt satur avoid q ax gain,----,%,-1000-1000
+PG35,*VDDG,Torq max. control dq ax volt satur avoid d ax gain,----,%,-1000-1000
+PG36,*MRO,Servo motor output,----,10W,0-65535
+PG37,*AMO,Servo amplifier capacity,----,,0000-FFFF
+PG38,*CARR,Carrier frequency,----,,0000-0256
+PG39,*ORT,Regenerative time constant,----,,0-32767
+PG40,*ORL,Regenerative level,----,,0-32767
+PG41,*OLT1,Overload time constant 1,----,,0-32767
+PG42,*OLL1,Overload level 1,----,,0-32767
+PG43,*OLT2,Overload time constant 2,----,,0-32767
+PG44,*OLL2,Overload level 2,----,,0-32767
+PG45,*OLT3,Overload time constant 3,----,,0-32767
+PG46,*OLL3,Overload level 3,----,,0-32767
+PG47,*OLT4,Overload time constant 4,----,,0-32767
+PG48,*OLL4,Overload level 4,----,,0-32767
+PG49,*PITCH,Linear servo motor pole pitch,----,0.01mm,0-32767
+PG50,*IMAX,maximum current,----,%,0-65535
+PG51,*MID1,Servo motor ID setting 1,----,,0000-FFFF
+PG52,*MID2,Servo motor ID setting 2,----,,0000-FFFF
+PG53,*MID3,Servo motor option ID setting,----,,0000-FFFF
+PG54,*EID1,Encoder resolution setting 1,----,,0000-FFFF
+PG55,*EID2,Encoder resolution setting 2,----,,0000-FFFF
+PG56,*KTC7,Cogging torq. correct coefficient 7,----,,0000-FFFF
+PG57,*KTC8,Cogging torq. correct coefficient 8,----,,0000-FFFF
+PG58,*KTC9,Cogging torq. correct coefficient 9,----,,0000-FFFF
+PG59,*PMLDIFF,Power consumption mon. - Inductance,----,0.01mH,-32768-32767
+PG60,*PMH1,Power consumption mon. - Magn. temperature coef.,----,1/°C/2^15,-32768-32767
+PG61,*PMC1,Power consumption mon. - Compensation coef. C1,----,°C/2^7,-32768-32767
+PG62,*PMC2,Power consumption mon. - Compensation coef. C2,----,1/2^15,-32768-32767
+PG63,*PMC3,Power consumption mon. - Compensation coef. C3,----,1/2^15,-32768-32767
+PG64,*PMK1,Power consumption mon. - Temperature est. gain K1,----,°C/2^7,-32768-32767
+PG65,*PMT1,Power consumption mon. - Temp. est. time const. T1,----,°C/2^7,-32768-32767
+PG66,*IRSP,current range measured values,----,rad/s,0-65535
+PG67,*CGN1,Var. current ctrl. gain - cur. range set. of gain change,----,,0000-FFFF
+PG68,*CGN2,Variable current control gain - gain lower limit setting,----,,0000-FFFF
+PG69,,For manufacturer setting,----,,0000-FFFF
+PG70,,For manufacturer setting,----,,0000-FFFF
+PG71,,For manufacturer setting,----,,0000-FFFF
+PG72,,For manufacturer setting,----,,0000-FFFF
+PG73,,For manufacturer setting,----,,0000-FFFF
+PG74,,For manufacturer setting,----,,0000-FFFF
+PG75,,For manufacturer setting,----,,0000-FFFF
+PG76,,For manufacturer setting,----,,0000-FFFF
+PG77,,For manufacturer setting,----,,0000-FFFF
+PG78,,For manufacturer setting,----,,0000-FFFF
+PG79,,For manufacturer setting,----,,0000-FFFF
+PG80,,For manufacturer setting,----,,0000-FFFF
+PH01,PN1,Bus volt. calibration data 1,----,,0-1000
+PH02,PN2,Bus volt. calibration data 2,----,,0-1000
+PH03,UIO1,U phase current calibration data 1,----,,0000-FFFF
+PH04,VIO1,V phase current calibration data 1,----,,0000-FFFF
+PH05,UIO2,U phase current calibration data 2,----,,0000-FFFF
+PH06,VIO2,V phase current calibration data 2,----,,0000-FFFF
+PH07,VCO1,VC volt. calibration data 1,----,,0000-FFFF
+PH08,VCO2,VC volt. calibration data 2,----,,0000-FFFF
+PH09,*HOP1,Function selection H-1,----,,0000-0004
+PH10,P5V,Control circuit board volt proof data,----,,0-0
+PH11,TINF1,Tester information 1,----,,0000-FFFF
+PH12,TINF2,Tester information 2,----,,0000-FFFF
+PH13,TINF3,Tester information 3,----,,0000-FFFF
+PH14,TINF4,Tester information 4,----,,0000-FFFF
+PH15,*AMP,Servo amplifier capacity,----,,0000-FFFF
+PH16,*ATP,Input power type,----,,0-1
+PH17,*DEF,Parameter default,----,,0000-FFFF
+PH18,*TST,Design evaluation test mode,----,,0000-0001
+PH19,HIS,Servo amplifier maintenance history,----,,0000-FFFF
+PH20,*MSR2,Servo motor series setting 2,----,,0000-FFFF
+PH21,*MTY2,Servo motor type setting 2,----,,0000-FFFF
+PH22,*DRS,Drive recorder operation selection,----,,9000-9000
+PH23,*DRA1,Drive recorder Analog data 1 and 2 selection,----,,0000-0000
+PH24,*DRA2,Drive recorder Analog data 3 and 4 selection,----,,0000-0000
+PH25,*DRA3,Drive recorder Analog data 5 and 6 selection,----,,0000-0000
+PH26,*DRA4,Drive recorder Analog data 7 and 8 selection,----,,0000-0000
+PH27,*DRD1,Drive recorder Digital data 1 and 2 selection,----,,0000-0000
+PH28,*DRD2,Drive recorder Digital data 3 and 4 selection,----,,0000-0000
+PH29,*DRD3,Drive recorder Digital data 5 and 6 selection,----,,0000-0000
+PH30,*DRD4,Drive recorder Digital data 7 and 8 selection,----,,0000-0000
+PH31,,For manufacturer setting,----,,0000-0000
+PH32,,For manufacturer setting,----,,0000-0000
+PJ01,NAMEL,Servo amplifier axis name Low,----,,0000-FFFF
+PJ02,NAMEH,Servo amplifier axis name High,----,,0000-FFFF
+PJ03,PONL,Power supply ON time Low,----,,0000-FFFF
+PJ04,PONH,Power supply ON time High,----,,0000-FFFF
+PJ05,CONL,Contactor ON times Low,----,,0000-FFFF
+PJ06,CONH,Contactor ON times High,----,,0000-FFFF
+PJ07,OLR,Overload and excessive regen. power OFF data,----,,0000-003F
+PJ08,ALME,Alarm information save,----,,0000-FFFF
+PJ09,*JTIM,Peak/effective load ratio retention time,----,s,10-100
+PJ10,*JOP1,Function selection J-1,----,,0000-0021
+PJ11,*JOP2,Function selection J-2,----,,0000-0001
+PJ12,*PNAL,Insufficient bus voltage alarm level,----,%,50-100
+PJ13,*CVAT1,Power control instant. power failure alarm detn. time,----,ms,0-2000
+PJ14,,For manufacturer setting,----,,0000-0000
+PJ15,*JOP3,Function selection J-3,----,,0000-000F
+PJ16,*LSFH,Linear motor magnetic pole position High,----,,0000-0000
+PJ17,*LSFL,Linear motor magnetic pole position Low,----,,0000-0000
+PJ18,*ENAL,Encoder failure alarm level,----,times,-8-8
+PJ19,*ENWT,Encoder initial communication wait time,----,ms,100-9999
+PJ20,ZRT,Home position setting information,----,,0000-0000
+PJ21,CYC0L,Position inside home one revolution Low,----,,0000-FFFF
+PJ22,CYC0H,Position inside home one revolution High,----,,0000-FFFF
+PJ23,LSM0,Home position multi rev. pos.,----,,0000-FFFF
+PJ24,PCOLL,Power cycle overload warning counter history Low,----,,0000-FFFF
+PJ25,PCOLH,Power cycle overload warning counter history High,----,,0000-00FF
+PJ26,ALEC,the number of tough drive,----,,0-65535
+PJ27,,For manufacturer setting,----,,0000-0000
+PJ28,,For manufacturer setting,----,,0000-0000
+PJ29,,For manufacturer setting,----,,0000-0000
+PJ30,,For manufacturer setting,----,,0000-0000
+PJ31,,For manufacturer setting,----,,0000-0000
+PJ32,,For manufacturer setting,----,,0000-0000
+PO01,OCD,For manufacturer setting,----,,0000-0000
+PO02,,For manufacturer setting,----,,0000-0000
+PO03,,For manufacturer setting,----,,0000-0000
+PO04,,For manufacturer setting,----,,0000-0000
+PO05,,For manufacturer setting,----,,0000-0000
+PO06,,For manufacturer setting,----,,0000-0000
+PO07,,For manufacturer setting,----,,0000-0000
+PO08,,For manufacturer setting,----,,0000-0000
+PO09,,For manufacturer setting,----,,0000-0000
+PO10,,For manufacturer setting,----,,0000-0000
+PO11,,For manufacturer setting,----,,0000-0000
+PO12,,For manufacturer setting,----,,0000-0000
+PO13,,For manufacturer setting,----,,0000-0000
+PO14,,For manufacturer setting,----,,0000-0000
+PO15,,For manufacturer setting,----,,0000-0000
+PO16,,For manufacturer setting,----,,0000-0000
+PO17,,For manufacturer setting,----,,0000-0000
+PO18,,For manufacturer setting,----,,0000-0000
+PO19,,For manufacturer setting,----,,0000-0000
+PO20,,For manufacturer setting,----,,0000-0000
+PO21,,For manufacturer setting,----,,0000-0000
+PO22,,For manufacturer setting,----,,0000-0000
+PO23,,For manufacturer setting,----,,0000-0000
+PO24,,For manufacturer setting,----,,0000-0000
+PO25,,For manufacturer setting,----,,0000-0000
+PO26,,For manufacturer setting,----,,0000-0000
+PO27,,For manufacturer setting,----,,0000-0000
+PO28,,For manufacturer setting,----,,0000-0000
+PO29,,For manufacturer setting,----,,0000-0000
+PO30,,For manufacturer setting,----,,0000-0000
+PO31,,For manufacturer setting,----,,0000-0000
+PO32,,For manufacturer setting,----,,0000-0000
+PS01,,For manufacturer setting,----,,0000-0000
+PS02,,For manufacturer setting,----,,0000-0000
+PS03,,For manufacturer setting,----,,0000-0000
+PS04,,For manufacturer setting,----,,0000-0000
+PS05,,For manufacturer setting,----,,0000-0000
+PS06,,For manufacturer setting,----,,0000-0000
+PS07,,For manufacturer setting,----,,0000-0000
+PS08,,For manufacturer setting,----,,0000-0000
+PS09,,For manufacturer setting,----,,0000-0000
+PS10,,For manufacturer setting,----,,0000-0000
+PS11,,For manufacturer setting,----,,0000-0000
+PS12,,For manufacturer setting,----,,0000-0000
+PS13,,For manufacturer setting,----,,0000-0000
+PS14,,For manufacturer setting,----,,0000-0000
+PS15,,For manufacturer setting,----,,0000-0000
+PS16,,For manufacturer setting,----,,0000-0000
+PS17,,For manufacturer setting,----,,0000-0000
+PS18,,For manufacturer setting,----,,0000-0000
+PS19,,For manufacturer setting,----,,0000-0000
+PS20,,For manufacturer setting,----,,0000-0000
+PS21,,For manufacturer setting,----,,0000-0000
+PS22,,For manufacturer setting,----,,0000-0000
+PS23,,For manufacturer setting,----,,0000-0000
+PS24,,For manufacturer setting,----,,0000-0000
+PS25,,For manufacturer setting,----,,0000-0000
+PS26,,For manufacturer setting,----,,0000-0000
+PS27,,For manufacturer setting,----,,0000-0000
+PS28,,For manufacturer setting,----,,0000-0000
+PS29,,For manufacturer setting,----,,0000-0000
+PS30,,For manufacturer setting,----,,0000-0000
+PS31,,For manufacturer setting,----,,0000-0000
+PS32,,For manufacturer setting,----,,0000-0000
+PL01,*LIT1,For manufacturer setting,----,,0301-0301
+PL02,*LIM,For manufacturer setting,----,μm,1000-1000
+PL03,*LID,For manufacturer setting,----,μm,1000-1000
+PL04,*LIT2,For manufacturer setting,----,,0003-0003
+PL05,LB1,For manufacturer setting,----,0.01rev,0-0
+PL06,LB2,For manufacturer setting,----,r/min,0-0
+PL07,LB3,For manufacturer setting,----,%,100-100
+PL08,*LIT3,For manufacturer setting,----,,0010-0010
+PL09,LPWM,For manufacturer setting,----,%,30-30
+PL10,LFH,For manufacturer setting,----,Hz,5-5
+PL11,LIDH,For manufacturer setting,----,%,100-100
+PL12,LKDTH,For manufacturer setting,----,ms,500-500
+PL13,*LIT4,For manufacturer setting,----,,0000-0000
+PL14,,For manufacturer setting,----,,0000-0000
+PL15,P1ERR,For manufacturer setting,----,mm,20-20
+PL16,P2ERR,For manufacturer setting,----,0.01rev,0-0
+PL17,LTSTS,For manufacturer setting,----,,0000-0000
+PL18,IDLV,For manufacturer setting,----,%,0-0
+PL19,LTPG,For manufacturer setting,----,rad/s,0-0
+PL20,LTVG,For manufacturer setting,----,rad/s,0-0
+PL21,LTVIC,For manufacturer setting,----,0.1ms,0-0
+PL22,LTLPF,For manufacturer setting,----,rad/s,0-0
+PL23,*LIT,For manufacturer setting,----,,0000-0000
+PL24,LPF2,For manufacturer setting,----,rad/s,0-0
+PL25,*EDVL,For manufacturer setting,----,,0000-0000
+PL26,*EDVH,For manufacturer setting,----,,0000-0000
+PL27,,For manufacturer setting,----,,0000-0000
+PL28,,For manufacturer setting,----,,0000-0000
+PL29,,For manufacturer setting,----,,0000-0000
+PL30,,For manufacturer setting,----,,0000-0000
+PL31,,For manufacturer setting,----,,0000-0000
+PL32,,For manufacturer setting,----,,0000-0000
+PL33,,For manufacturer setting,----,,0000-0000
+PL34,,For manufacturer setting,----,,0000-0000
+PL35,,For manufacturer setting,----,,0000-0000
+PL36,,For manufacturer setting,----,,0000-0000
+PL37,,For manufacturer setting,----,,0000-0000
+PL38,,For manufacturer setting,----,,0000-0000
+PL39,,For manufacturer setting,----,,0000-0000
+PL40,,For manufacturer setting,----,,0000-0000
+PL41,,For manufacturer setting,----,,0000-0000
+PL42,,For manufacturer setting,----,,0000-0000
+PL43,,For manufacturer setting,----,,0000-0000
+PL44,,For manufacturer setting,----,,0000-0000
+PL45,,For manufacturer setting,----,,0000-0000
+PL46,,For manufacturer setting,----,,0000-0000
+PL47,,For manufacturer setting,----,,0000-0000
+PL48,,For manufacturer setting,----,,0000-0000
+PT01,*CTY,For manufacturer setting,----,,0000-0000
+PT02,*FTY,For manufacturer setting,----,,0000-0000
+PT03,*ZTY,For manufacturer setting,----,,0010-0010
+PT04,ZRF,For manufacturer setting,----,r/min,500-500
+PT05,CRF,For manufacturer setting,----,r/min,10-10
+PT06,ZST,For manufacturer setting,----,μm,0-0
+PT07,FTS,For manufacturer setting,----,ms,100-100
+PT08,*ZPS,For manufacturer setting,----,10^STMμm,0-0
+PT09,DCT,For manufacturer setting,----,10^STMμm,1000-1000
+PT10,ZTM,For manufacturer setting,----,ms,100-100
+PT11,ZTT,For manufacturer setting,----,%,15-15
+PT12,CRP,For manufacturer setting,----,10^STMμm,0-0
+PT13,JOG,For manufacturer setting,----,r/min,100-100
+PT14,OUT1,For manufacturer setting,----,ms,0-0
+PT15,*BKC,For manufacturer setting,----,pulse,0-0
+PT16,*LMPL,For manufacturer setting,----,10^STMμm,0-0
+PT17,*LMPH,For manufacturer setting,----,10^STMμm,0-0
+PT18,*LMNL,For manufacturer setting,----,10^STMμm,0-0
+PT19,*LMNH,For manufacturer setting,----,10^STMμm,0-0
+PT20,*LPPL,For manufacturer setting,----,10^STMμm,0-0
+PT21,*LPPH,For manufacturer setting,----,10^STMμm,0-0
+PT22,*LNPL,For manufacturer setting,----,10^STMμm,0-0
+PT23,*LNPH,For manufacturer setting,----,10^STMμm,0-0
+PT24,*TOP1,For manufacturer setting,----,,0000-0000
+PT25,PCRF,For manufacturer setting,----,r/min,10-10
+PT26,PJTM,For manufacturer setting,----,ms,100-100
+PT27,,For manufacturer setting,----,,0000-0000
+PT28,,For manufacturer setting,----,,0000-0000
+PT29,,For manufacturer setting,----,,0000-0000
+PT30,,For manufacturer setting,----,,0000-0000
+PT31,,For manufacturer setting,----,,0000-0000
+PT32,,For manufacturer setting,----,,0000-0000
+PT33,,For manufacturer setting,----,,0000-0000
+PT34,,For manufacturer setting,----,,0000-0000
+PT35,,For manufacturer setting,----,,0000-0000
+PT36,,For manufacturer setting,----,,0000-0000
+PT37,,For manufacturer setting,----,,0000-0000
+PT38,,For manufacturer setting,----,,0000-0000
+PT39,,For manufacturer setting,----,,0000-0000
+PT40,,For manufacturer setting,----,,0000-0000
+PT41,,For manufacturer setting,----,,0000-0000
+PT42,,For manufacturer setting,----,,0000-0000
+PT43,,For manufacturer setting,----,,0000-0000
+PT44,,For manufacturer setting,----,,0000-0000
+PT45,,For manufacturer setting,----,,0000-0000
+PT46,,For manufacturer setting,----,,0000-0000
+PT47,,For manufacturer setting,----,,0000-0000
+PT48,,For manufacturer setting,----,,0000-0000
+</Parameters>
+	</PARAMETER>
+</Root>

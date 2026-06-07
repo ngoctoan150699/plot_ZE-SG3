@@ -1,7 +1,7 @@
 {
   "connection": {
     "mode": "RTU",
-    "port": "COM1",
+    "port": "COM15",
     "baudrate": 115200,
     "parity": "N",
     "stopbits": 1,
@@ -23,7 +23,7 @@
     "std_weight": 0.0,
     "delta_weight": 0.01,
     "delta_time": 10,
-    "filter_level": 3,
+    "filter_level": 7,
     "resolution_mode": 0,
     "factory_tare": 0.0,
     "target_address": 1,
@@ -36,10 +36,8 @@
     "window_s": 60,
     "y_max": 5.0,
     "fixed_y": true,
-    "part_name": "Outer Tie Rod",
-    "test_item": "Breakaway Torque",
-    "dark_theme": false,
-    "language": "en"
+    "part_name": "Stabilizer Link",
+    "test_item": "Oscillating Torque"
   },
   "servo_profiles": {
     "ITR_B": {
@@ -75,7 +73,7 @@
     "S/Link_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 100.0
     },
     "S/Link_O": {
       "negative_angle": -36.0,

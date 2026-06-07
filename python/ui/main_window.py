@@ -361,6 +361,13 @@ class ServoSetupDialog(QDialog):
         self.spin_speed = QDoubleSpinBox()
         self.spin_speed.setDecimals(1)
         
+        # Jog Speed input
+        self.spin_jog_speed = QDoubleSpinBox()
+        self.spin_jog_speed.setRange(0.1, 200.0)
+        self.spin_jog_speed.setDecimals(1)
+        self.spin_jog_speed.setValue(getattr(profile, 'jog_speed', 10.0))
+        self.spin_jog_speed.setSuffix(" rpm")
+        
         # Label for dynamic converted speed value (grayed out)
         self.lbl_converted_speed = QLabel()
         self.lbl_converted_speed.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 9pt;")
@@ -443,13 +450,15 @@ class ServoSetupDialog(QDialog):
         update_pulses_labels()
             
         # Labels
-        self.lbl_speed = QLabel("V?n t?c (speed):" if self.i18n.current_language == 'vi' else "Speed:")
-        self.lbl_pos = QLabel("G?c thu?n (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
-        self.lbl_neg = QLabel("G?c ngh?ch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
+        self.lbl_speed = QLabel("Vận tốc (speed):" if self.i18n.current_language == 'vi' else "Speed:")
+        self.lbl_jog_speed = QLabel("Tốc độ JOG:" if self.i18n.current_language == 'vi' else "JOG Speed:")
+        self.lbl_pos = QLabel("Gốc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
+        self.lbl_neg = QLabel("Gốc nghịch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
         
         form.addRow(self.lbl_speed, self.spin_speed)
         form.addRow("", self.lbl_converted_speed)
-        form.addRow("??n v? t?c ??:" if self.i18n.current_language == "vi" else "Speed Unit:", self.combo_speed_unit)
+        form.addRow("Đơn vị tốc độ:" if self.i18n.current_language == "vi" else "Speed Unit:", self.combo_speed_unit)
+        form.addRow(self.lbl_jog_speed, self.spin_jog_speed)
         form.addRow(self.lbl_pos, self.spin_pos)
         form.addRow("", self.lbl_pos_pulses)
         form.addRow(self.lbl_neg, self.spin_neg)
@@ -468,6 +477,7 @@ class ServoSetupDialog(QDialog):
         rpm_val = val * 3.3333 if self.combo_speed_unit.currentIndex() == 1 else val
         return {
             'speed': round(rpm_val, 2),
+            'jog_speed': round(self.spin_jog_speed.value(), 2),
             'positive_angle': self.spin_pos.value(),
             'negative_angle': self.spin_neg.value()
         }
@@ -779,6 +789,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'combo_test_item') and _HAS_PLOT_VIEWER:
             self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
             self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
+
+        if hasattr(self, 'combo_part_name'):
+            self.combo_part_name.currentTextChanged.connect(self._update_jog_speed_from_profile)
+        if hasattr(self, 'combo_test_item'):
+            self.combo_test_item.currentTextChanged.connect(self._update_jog_speed_from_profile)
+        self._update_jog_speed_from_profile()
 
         self._plc_timer = QTimer(self)
         self._plc_timer.setInterval(200)
@@ -1279,6 +1295,18 @@ class MainWindow(QMainWindow):
         row_cmd.addWidget(self.btn_plc_home)
         pc_lay.addLayout(row_cmd)
 
+        row_jog_speed = QHBoxLayout()
+        row_jog_speed.setSpacing(6)
+        self.lbl_plc_jog_speed = QLabel(self.i18n.t('lbl_plc_jog_speed'))
+        self.spin_plc_jog_speed = QDoubleSpinBox()
+        self.spin_plc_jog_speed.setRange(0.1, 200.0)
+        self.spin_plc_jog_speed.setValue(10.0)
+        self.spin_plc_jog_speed.setSuffix(" rpm")
+        self.spin_plc_jog_speed.valueChanged.connect(self._on_plc_jog_speed_changed)
+        row_jog_speed.addWidget(self.lbl_plc_jog_speed)
+        row_jog_speed.addWidget(self.spin_plc_jog_speed)
+        pc_lay.addLayout(row_jog_speed)
+
         row_jog = QHBoxLayout()
         row_jog.setSpacing(6)
         self.btn_plc_jog_minus = QPushButton("◀ Jog-")
@@ -1489,6 +1517,13 @@ class MainWindow(QMainWindow):
         self.lbl_min.setStyleSheet(f"color: #D32F2F; {info_style}")
         g.addWidget(self.lbl_min, 4, 1)
 
+        # Row 4: PLC angle returned from D124
+        self.lbl_display_plc_angle_title = QLabel("Góc PLC:")
+        g.addWidget(self.lbl_display_plc_angle_title, 4, 2)
+        self.lbl_plc_angle = QLabel("0.00°")
+        self.lbl_plc_angle.setStyleSheet(f"color: #6A1B9A; {info_style}")
+        g.addWidget(self.lbl_plc_angle, 4, 3)
+
         g.setColumnStretch(1, 1)
         g.setColumnStretch(3, 1)
         self.display_panel_grp.setLayout(g)
@@ -1604,6 +1639,9 @@ class MainWindow(QMainWindow):
             self.lbl_torque.setStyleSheet(f"color: {torque_color};")
             self.lbl_max.setStyleSheet(f"color: {max_color}; font-weight: bold; font-size: 12px;")
             self.lbl_min.setStyleSheet(f"color: {min_color}; font-weight: bold; font-size: 12px;")
+            if hasattr(self, 'lbl_plc_angle'):
+                plc_angle_color = "#cba6f7" if dark else "#6A1B9A"
+                self.lbl_plc_angle.setStyleSheet(f"color: {plc_angle_color}; font-weight: bold; font-size: 12px;")
 
         if hasattr(self, 'lbl_conn_status'):
             status_color = "#a6adc8" if dark else "#757575"
@@ -1742,11 +1780,74 @@ class MainWindow(QMainWindow):
     def _plc_home(self):
         self._plc_command("Home", lambda: self._plc_svc.home() if self._plc_svc else False)
 
+    def _update_jog_speed_from_profile(self):
+        if not hasattr(self, 'spin_plc_jog_speed'):
+            return
+        part_name = self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else 'ITR'
+        test_item = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else 'Operating'
+        part_map = {
+            'Inner Tie Rod': 'ITR', 'Ball Joint': 'B/Joint', 'Outer Tie Rod': 'OTR', 'Stabilizer Link': 'S/Link',
+            'ITR': 'ITR', 'B/Joint': 'B/Joint', 'OTR': 'OTR', 'S/Link': 'S/Link'
+        }
+        part_short = part_map.get(part_name, 'ITR')
+        is_breakaway = "Breakaway" in test_item
+        test_char = 'B' if is_breakaway else 'O'
+        profile_key = f"{part_short}_{test_char}"
+
+        profiles = self._settings.load_servo_profiles()
+        profile = profiles.get(profile_key)
+        if profile:
+            self.spin_plc_jog_speed.blockSignals(True)
+            self.spin_plc_jog_speed.setValue(getattr(profile, 'jog_speed', 10.0))
+            self.spin_plc_jog_speed.blockSignals(False)
+
+    def _on_plc_jog_speed_changed(self, val: float):
+        if self._plc_svc and self._plc_svc.is_connected():
+            if self._plc_svc.write_speed(val):
+                self._log(f"⚡ Đã ghi tốc độ JOG {val * 100:.0f} Hz xuống PLC (D104)")
+
+    def _selected_plc_mode(self) -> int:
+        """Return PLC mode matching the selected measurement mode in the app."""
+        text = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else ''
+        if 'Breakaway' in text:
+            return 1
+        if 'Operating' in text or 'Oscillating' in text:
+            return 2
+        return 0
+
+    def _begin_plc_jog(self) -> None:
+        """Temporarily switch PLC to Manual mode so D110/D111 JOG can run."""
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            return
+        self._plc_svc.write_speed(self.spin_plc_jog_speed.value())
+        if not hasattr(self, '_plc_mode_before_jog'):
+            self._plc_mode_before_jog = self._selected_plc_mode()
+        if self._plc_svc.write_mode(0):
+            self._log("⚙️ PLC mode -> Manual (D101=0) để JOG")
+
+    def _end_plc_jog(self) -> None:
+        """Restore PLC mode from the app selection after releasing JOG."""
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            return
+        restore_mode = self._selected_plc_mode()
+        if self._plc_svc.write_mode(restore_mode):
+            self._log(f"⚙️ PLC mode khôi phục D101={restore_mode}")
+        if hasattr(self, '_plc_mode_before_jog'):
+            delattr(self, '_plc_mode_before_jog')
+
     def _plc_jog_plus(self, active: bool):
+        if active:
+            self._begin_plc_jog()
         self._plc_command("Jog+ ON" if active else "Jog+ OFF", lambda: self._plc_svc.jog_plus(active) if self._plc_svc else False)
+        if not active:
+            self._end_plc_jog()
 
     def _plc_jog_minus(self, active: bool):
+        if active:
+            self._begin_plc_jog()
         self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active) if self._plc_svc else False)
+        if not active:
+            self._end_plc_jog()
 
     def _poll_plc_status(self):
         if not self._plc_svc or not self._plc_svc.is_connected():
@@ -1761,6 +1862,8 @@ class MainWindow(QMainWindow):
         self._plc_status_error_logged = False
         self._current_angle = status.current_angle_deg
         self._current_cycle = status.current_cycle
+        if hasattr(self, 'lbl_plc_angle'):
+            self.lbl_plc_angle.setText(f"{self._current_angle:.2f}°")
 
         if status.has_fault:
             self._log(f"⚠️ PLC fault D129={status.error_code}")
@@ -2449,11 +2552,25 @@ class MainWindow(QMainWindow):
             profiles[profile_key] = ServoProfile(
                 negative_angle=vals['negative_angle'],
                 positive_angle=vals['positive_angle'],
-                speed=vals['speed']
+                speed=vals['speed'],
+                jog_speed=vals['jog_speed']
             )
             self._settings.save_servo_profiles(profiles)
             
-            self._log(f"✅ Đã cập nhật cấu hình cho {profile_key}: Speed={vals['speed']} rpm, Pos={vals['positive_angle']}°, Neg={vals['negative_angle']}°")
+            self._log(f"✅ Đã cập nhật cấu hình cho {profile_key}: Speed={vals['speed']} rpm, JOG Speed={vals['jog_speed']} rpm, Pos={vals['positive_angle']}°, Neg={vals['negative_angle']}°")
+            
+            # Cập nhật ô JOG speed trên UI chính
+            if hasattr(self, 'spin_plc_jog_speed'):
+                self.spin_plc_jog_speed.blockSignals(True)
+                self.spin_plc_jog_speed.setValue(vals['jog_speed'])
+                self.spin_plc_jog_speed.blockSignals(False)
+            
+            # Ghi tốc độ JOG mới xuống PLC qua D104 nếu đang kết nối
+            if self._plc_svc and self._plc_svc.is_connected():
+                if self._plc_svc.write_speed(vals['jog_speed']):
+                    self._log(f"⚡ Đã ghi tốc độ JOG {vals['jog_speed'] * 100:.0f} Hz xuống PLC (D104)")
+                else:
+                    self._log(f"⚠️ Ghi tốc độ JOG xuống PLC (D104) thất bại")
 
     def _import_to_plot_viewer(self):
         """Export session CSV -> load vào Plot Viewer -> nhảy sang tab."""
@@ -2585,6 +2702,8 @@ class MainWindow(QMainWindow):
             self.lbl_display_max_title.setText(self.i18n.t('lbl_max'))
         if hasattr(self, 'lbl_display_min_title'):
             self.lbl_display_min_title.setText(self.i18n.t('lbl_min'))
+        if hasattr(self, 'lbl_display_plc_angle_title'):
+            self.lbl_display_plc_angle_title.setText(self.i18n.t('lbl_plc_angle'))
 
         # Retranslate connection status live text
         if not self._connected:
@@ -2671,6 +2790,8 @@ class MainWindow(QMainWindow):
             self.lbl_test_item.setText(self.i18n.t('test_item_lbl'))
         if hasattr(self, 'btn_servo_setup'):
             self.btn_servo_setup.setText(self.i18n.t('btn_servo_setup'))
+        if hasattr(self, 'lbl_plc_jog_speed'):
+            self.lbl_plc_jog_speed.setText(self.i18n.t('lbl_plc_jog_speed'))
 
         if hasattr(self, 'grp_recording'):
             self.grp_recording.setTitle(self.i18n.t('recording_grp'))

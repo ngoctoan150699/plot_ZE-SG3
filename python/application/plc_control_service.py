@@ -21,6 +21,8 @@ from domain.constants import (
     PLC_CMD_STOP_RUN,
     PLC_CONFIG_START_ADDRESS,
     PLC_D100_CMD_WORD,
+    PLC_D101_MODE,
+    PLC_D104_SPEED_X100,
     PLC_D109_RESET_FAULT,
     PLC_D110_JOG_PLUS,
     PLC_D111_JOG_MINUS,
@@ -149,6 +151,23 @@ class PlcControlService:
     def home(self, pulse_ms: int = 150) -> bool:
         """Pulse Home command through D112 = 1 -> 0."""
         return self._write_pulse_register(PLC_D112_HOME_CMD, pulse_ms=pulse_ms)
+
+    def write_speed(self, speed_rpm: float) -> bool:
+        """Write speed (as speed_x100) directly to D104."""
+        try:
+            val_x100 = int(round(float(speed_rpm) * 100.0))
+            return bool(self._client.write_register(PLC_D104_SPEED_X100, val_x100, self._slave_id))
+        except Exception as exc:
+            logger.debug("PLC write_speed failed: %s", exc)
+            return False
+
+    def write_mode(self, mode: int) -> bool:
+        """Write PLC mode directly to D101 (0=Manual, 1=Breakaway, 2=Operating)."""
+        try:
+            return bool(self._client.write_register(PLC_D101_MODE, clamp_u16(mode), self._slave_id))
+        except Exception as exc:
+            logger.debug("PLC write_mode failed: %s", exc)
+            return False
 
     def _write_bool_register(self, address: int, active: bool) -> bool:
         try:

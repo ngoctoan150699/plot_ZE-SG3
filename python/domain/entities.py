@@ -115,6 +115,7 @@ class ServoProfile:
     negative_angle: float = -36.0
     positive_angle: float = 36.0
     speed: float          = 10.0  # Tốc độ (rpm)
+    jog_speed: float      = 10.0  # Tốc độ JOG (rpm)
 
 
 @dataclass

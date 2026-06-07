@@ -63,6 +63,7 @@ TRANSLATIONS = {
         'part_name_lbl': 'Sản phẩm:',
         'test_item_lbl': 'Chế độ đo:',
         'btn_servo_setup': '⚙️ Thiết lập Servo',
+        'lbl_plc_jog_speed': 'Tốc độ JOG (rpm):',
         
         'recording_grp': '🔴 Ghi dữ liệu',
         'btn_start_record': '▶️ Bắt đầu ghi',
@@ -84,6 +85,7 @@ TRANSLATIONS = {
         'lbl_time': 'Time:',
         'lbl_max': 'Maximum:',
         'lbl_min': 'Minimum:',
+        'lbl_plc_angle': 'Góc PLC:',
         
         # Charts
         'chart_torque_time': '📈 Torque – Time',
@@ -176,6 +178,7 @@ TRANSLATIONS = {
         'part_name_lbl': 'Part Name:',
         'test_item_lbl': 'Test Item:',
         'btn_servo_setup': '⚙️ Servo Setup',
+        'lbl_plc_jog_speed': 'JOG Speed (rpm):',
         
         'recording_grp': '🔴 Data Recording',
         'btn_start_record': '▶️ Start Record',
@@ -197,6 +200,7 @@ TRANSLATIONS = {
         'lbl_time': 'Time:',
         'lbl_max': 'Maximum:',
         'lbl_min': 'Minimum:',
+        'lbl_plc_angle': 'PLC Angle:',
         
         # Charts
         'chart_torque_time': '📈 Torque – Time',
