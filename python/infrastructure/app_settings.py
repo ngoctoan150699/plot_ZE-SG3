@@ -143,14 +143,14 @@ class AppSettings(ISettingsRepository):
         profiles = {}
         # Cấu hình mặc định cho các tổ hợp Part_TestItem
         default_profiles = {
-            'ITR_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'B/Joint_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'OTR_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'OTR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'S/Link_B': {'negative_angle': 0.0, 'positive_angle': 36.0, 'speed': 10.0},
-            'S/Link_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 10.0},
+            'ITR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'B/Joint_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'OTR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'OTR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'S/Link_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
+            'S/Link_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0},
         }
         for key, default in default_profiles.items():
             raw = profiles_raw.get(key, default)

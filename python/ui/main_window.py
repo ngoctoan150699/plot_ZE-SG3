@@ -347,7 +347,7 @@ class ServoSetupDialog(QDialog):
         if not profile:
             from domain.entities import ServoProfile
             profile = ServoProfile(
-                negative_angle=0.0 if is_breakaway else -36.0,
+                negative_angle=-36.0,
                 positive_angle=36.0,
                 speed=100.0  # 100 rpm = 30 deg/s
             )
@@ -376,25 +376,25 @@ class ServoSetupDialog(QDialog):
             val = self.spin_speed.value()
             unit_idx = self.combo_speed_unit.currentIndex()
             if unit_idx == 0:  # rpm input
-                converted_degs = val / 3.3333
+                converted_degs = val * 0.3
                 pulses_s = (val / 60.0) * 10000.0
                 self.lbl_converted_speed.setText(f"~ {converted_degs:.1f} °/s ({pulses_s:,.0f} pul/s)")
             else:  # deg/s input
-                converted_rpm = val * 3.3333
+                converted_rpm = val / 0.3
                 pulses_s = (converted_rpm / 60.0) * 10000.0
                 self.lbl_converted_speed.setText(f"~ {converted_rpm:.1f} rpm ({pulses_s:,.0f} pul/s)")
 
-        # Helper conversions (Ratio 1/20 -> 1 deg/s = 20 * (60/360) = 3.3333 rpm)
+        # Helper conversions (Ratio 1/20 -> output deg/s = motor rpm * 0.3)
         def on_unit_changed(unit_idx):
             current_val = self.spin_speed.value()
             if unit_idx == 0:  # Changed to rpm
                 self.spin_speed.setRange(0.1, 200.0)
                 self.spin_speed.setSuffix(" rpm")
-                self.spin_speed.setValue(current_val * 3.3333)
+                self.spin_speed.setValue(current_val / 0.3)
             else:  # Changed to deg/s
                 self.spin_speed.setRange(0.1, 60.0)
                 self.spin_speed.setSuffix(f" {deg_symbol}/s")
-                self.spin_speed.setValue(current_val / 3.3333)
+                self.spin_speed.setValue(current_val * 0.3)
             update_converted_label()
 
         self.combo_speed_unit.currentIndexChanged.connect(on_unit_changed)
@@ -404,7 +404,7 @@ class ServoSetupDialog(QDialog):
         self.combo_speed_unit.blockSignals(True)
         self.spin_speed.setRange(0.1, 60.0)
         self.spin_speed.setSuffix(f" {deg_symbol}/s")
-        self.spin_speed.setValue(profile.speed / 3.3333)
+        self.spin_speed.setValue(profile.speed * 0.3)
         self.combo_speed_unit.setCurrentIndex(1)
         self.combo_speed_unit.blockSignals(False)
         update_converted_label()
@@ -426,9 +426,8 @@ class ServoSetupDialog(QDialog):
         self.spin_neg.setDecimals(1)
         self.spin_neg.setValue(profile.negative_angle)
         self.spin_neg.setSuffix(f" {deg_symbol}")
-        if is_breakaway:
-            self.spin_neg.setEnabled(False)
-            self.spin_neg.setValue(0.0)
+        # Góc nghịch nhập dạng âm; mặc định -36° (hiển thị là 36° nghịch).
+        self.spin_neg.setToolTip("Góc nghịch nhập giá trị âm, ví dụ -36°")
             
         # Label hi?n th? s? xung t??ng ?ng g?c ?m
         self.lbl_neg_pulses = QLabel()
@@ -440,10 +439,7 @@ class ServoSetupDialog(QDialog):
             pos_pulses = int(round(self.spin_pos.value() * 200000 / 360.0))
             neg_pulses = int(round(self.spin_neg.value() * 200000 / 360.0))
             self.lbl_pos_pulses.setText(f"~ {pos_pulses} pulses")
-            if is_breakaway:
-                self.lbl_neg_pulses.setText("")
-            else:
-                self.lbl_neg_pulses.setText(f"~ {neg_pulses} pulses")
+            self.lbl_neg_pulses.setText(f"~ {neg_pulses} pulses")
                 
         self.spin_pos.valueChanged.connect(lambda _: update_pulses_labels())
         self.spin_neg.valueChanged.connect(lambda _: update_pulses_labels())
@@ -474,7 +470,7 @@ class ServoSetupDialog(QDialog):
     def get_values(self):
         val = self.spin_speed.value()
         # If input unit is deg/s (index 1), convert to rpm before saving
-        rpm_val = val * 3.3333 if self.combo_speed_unit.currentIndex() == 1 else val
+        rpm_val = val / 0.3 if self.combo_speed_unit.currentIndex() == 1 else val
         return {
             'speed': round(rpm_val, 2),
             'jog_speed': round(self.spin_jog_speed.value(), 2),
@@ -749,6 +745,10 @@ class MainWindow(QMainWindow):
         self._current_cycle = 0
         self._last_plc_status = None
         self._plc_status_error_logged = False
+        self._jog_active = False
+        self._jog_direction = 0
+        self._jog_started_at = 0.0
+        self._jog_start_angle = 0.0
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
@@ -1755,12 +1755,13 @@ class MainWindow(QMainWindow):
     # PLC / SERVO CONTROL PANEL
     # ===========================================================
 
-    def _plc_command(self, action_name: str, callback) -> None:
+    def _plc_command(self, action_name: str, callback) -> bool:
         if not self._plc_svc or not self._plc_svc.is_connected():
             self._log("⚠️ PLC chưa kết nối")
-            return
+            return False
         ok = callback()
         self._log(("✅" if ok else "❌") + f" PLC: {action_name}")
+        return bool(ok)
 
     def _plc_start_run(self):
         self._plc_command("RUN", lambda: self._plc_svc.start_run() if self._plc_svc else False)
@@ -1778,7 +1779,15 @@ class MainWindow(QMainWindow):
         self._plc_command("Abort", lambda: self._plc_svc.abort() if self._plc_svc else False)
 
     def _plc_home(self):
-        self._plc_command("Home", lambda: self._plc_svc.home() if self._plc_svc else False)
+        ok = self._plc_command("Home", lambda: self._plc_svc.home() if self._plc_svc else False)
+        if ok and self._plc_svc:
+            self._current_angle = 0.0
+            self._jog_active = False
+            self._jog_direction = 0
+            self._plc_svc.write_current_angle(0.0)
+            if hasattr(self, 'lbl_plc_angle'):
+                self.lbl_plc_angle.setText("0.00°")
+            self._log("🏠 Home: đã reset góc PLC D124=0.00°")
 
     def _update_jog_speed_from_profile(self):
         if not hasattr(self, 'spin_plc_jog_speed'):
@@ -1815,11 +1824,15 @@ class MainWindow(QMainWindow):
             return 2
         return 0
 
-    def _begin_plc_jog(self) -> None:
+    def _begin_plc_jog(self, direction: int) -> None:
         """Temporarily switch PLC to Manual mode so D110/D111 JOG can run."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             return
         self._plc_svc.write_speed(self.spin_plc_jog_speed.value())
+        self._jog_active = True
+        self._jog_direction = 1 if direction >= 0 else -1
+        self._jog_started_at = time.monotonic()
+        self._jog_start_angle = self._current_angle
         if not hasattr(self, '_plc_mode_before_jog'):
             self._plc_mode_before_jog = self._selected_plc_mode()
         if self._plc_svc.write_mode(0):
@@ -1829,6 +1842,20 @@ class MainWindow(QMainWindow):
         """Restore PLC mode from the app selection after releasing JOG."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             return
+
+        if self._jog_active:
+            elapsed_s = max(0.0, time.monotonic() - self._jog_started_at)
+            jog_rpm = float(self.spin_plc_jog_speed.value())
+            # Servo output angle: motor rpm / gearbox 20 * 360 / 60 = rpm * 0.3 deg/s
+            delta_deg = self._jog_direction * jog_rpm * 0.3 * elapsed_s
+            self._current_angle = self._jog_start_angle + delta_deg
+            if self._plc_svc.write_current_angle(self._current_angle):
+                self._log(f"📐 Cập nhật góc PLC D124={self._current_angle:.2f}° sau JOG")
+            if hasattr(self, 'lbl_plc_angle'):
+                self.lbl_plc_angle.setText(f"{self._current_angle:.2f}°")
+            self._jog_active = False
+            self._jog_direction = 0
+
         restore_mode = self._selected_plc_mode()
         if self._plc_svc.write_mode(restore_mode):
             self._log(f"⚙️ PLC mode khôi phục D101={restore_mode}")
@@ -1837,14 +1864,14 @@ class MainWindow(QMainWindow):
 
     def _plc_jog_plus(self, active: bool):
         if active:
-            self._begin_plc_jog()
+            self._begin_plc_jog(direction=1)
         self._plc_command("Jog+ ON" if active else "Jog+ OFF", lambda: self._plc_svc.jog_plus(active) if self._plc_svc else False)
         if not active:
             self._end_plc_jog()
 
     def _plc_jog_minus(self, active: bool):
         if active:
-            self._begin_plc_jog()
+            self._begin_plc_jog(direction=-1)
         self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active) if self._plc_svc else False)
         if not active:
             self._end_plc_jog()
@@ -1882,11 +1909,20 @@ class MainWindow(QMainWindow):
             self._log(f"❌ PLC đang lỗi D129={plc_status.error_code}; hãy Reset trước khi ghi")
             return False
 
+        self._current_angle = 0.0
+        self._jog_active = False
+        self._jog_direction = 0
+        if self._plc_svc.write_current_angle(0.0):
+            self._log("📐 Bắt đầu ghi: reset góc PLC D124=0.00°")
+        if hasattr(self, 'lbl_plc_angle'):
+            self.lbl_plc_angle.setText("0.00°")
+
         part_select = max(1, self.combo_part_name.currentIndex() + 1) if hasattr(self, 'combo_part_name') else 1
         config = PlcTestConfig(
             mode=1 if is_breakaway else 2,
             pos_angle_x100=angle_to_x100(profile.positive_angle),
-            neg_angle_x100=angle_to_x100(profile.negative_angle),
+            # D103 gửi xuống PLC là độ lớn góc nghịch dương; PLC tự đổi dấu khi chạy chiều nghịch.
+            neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
             speed_x100=speed_to_x100(profile.speed),
             cycle_set=1 if is_breakaway else 3,
             window_percent=10,
@@ -2427,7 +2463,7 @@ class MainWindow(QMainWindow):
         if not profile:
             from domain.entities import ServoProfile
             profile = ServoProfile(
-                negative_angle=0.0 if is_breakaway else -36.0,
+                negative_angle=-36.0,
                 positive_angle=36.0,
                 speed=100.0
             )

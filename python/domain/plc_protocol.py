@@ -200,8 +200,15 @@ class PlcStatus:
 
     @property
     def current_angle_deg(self) -> float:
-        """Current PLC-reported angle in degrees."""
-        return self.current_angle_x100 / 100.0
+        """Current PLC-reported angle in signed degrees.
+
+        The servo/PLC may report a physical 0..360° angle. For the app,
+        convert it to the signed convention: 324° -> -36°.
+        """
+        angle = self.current_angle_x100 / 100.0
+        if angle > 180.0:
+            angle -= 360.0
+        return angle
 
     @property
     def target_angle_deg(self) -> float:

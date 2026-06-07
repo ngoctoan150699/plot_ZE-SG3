@@ -36,19 +36,19 @@
     "window_s": 60,
     "y_max": 5.0,
     "fixed_y": true,
-    "part_name": "Stabilizer Link",
-    "test_item": "Oscillating Torque"
+    "part_name": "Inner Tie Rod",
+    "test_item": "Operating Torque"
   },
   "servo_profiles": {
     "ITR_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 100.0
     },
     "ITR_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 100.0
     },
     "B/Joint_B": {
       "negative_angle": 0.0,

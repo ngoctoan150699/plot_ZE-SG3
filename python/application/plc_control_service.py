@@ -27,11 +27,12 @@ from domain.constants import (
     PLC_D110_JOG_PLUS,
     PLC_D111_JOG_MINUS,
     PLC_D112_HOME_CMD,
+    PLC_D124_CURRENT_ANGLE_X100,
     PLC_DEFAULT_SLAVE_ID,
     PLC_STATUS_REGISTER_COUNT,
     PLC_STATUS_START_ADDRESS,
 )
-from domain.plc_protocol import PlcStatus, PlcTestConfig, clamp_u16
+from domain.plc_protocol import PlcStatus, PlcTestConfig, angle_to_x100, clamp_u16, encode_signed_16
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,15 @@ class PlcControlService:
             return bool(self._client.write_register(PLC_D101_MODE, clamp_u16(mode), self._slave_id))
         except Exception as exc:
             logger.debug("PLC write_mode failed: %s", exc)
+            return False
+
+    def write_current_angle(self, angle_deg: float) -> bool:
+        """Write current angle to D124 as signed angle x100."""
+        try:
+            value = encode_signed_16(angle_to_x100(angle_deg))
+            return bool(self._client.write_register(PLC_D124_CURRENT_ANGLE_X100, value, self._slave_id))
+        except Exception as exc:
+            logger.debug("PLC write_current_angle failed: %s", exc)
             return False
 
     def _write_bool_register(self, address: int, active: bool) -> bool:
