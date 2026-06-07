@@ -48,8 +48,8 @@
       "cycles": 1
     },
     "ITR_O": {
-      "negative_angle": -36.0,
-      "positive_angle": 36.0,
+      "negative_angle": -45.0,
+      "positive_angle": 45.0,
       "speed": 100.0,
       "jog_speed": 10.0,
       "cycles": 3

@@ -1904,7 +1904,8 @@ class MainWindow(QMainWindow):
         if status.has_fault:
             self._log(f"⚠️ PLC fault D129={status.error_code}")
 
-        if self._recording and status.is_done:
+        elapsed_since_start = time.monotonic() - getattr(self, '_start_time', 0.0)
+        if self._recording and status.is_done and elapsed_since_start > 1.5:
             self._log("✅ PLC báo hoàn tất test")
             self._recording = False
             self._stop_recording()
@@ -1941,6 +1942,7 @@ class MainWindow(QMainWindow):
         if not self._plc_svc.write_test_config(config):
             self._log("❌ Không ghi được PLC config D101..D108")
             return False
+        self._plc_svc.clear_done()
         if not self._plc_svc.start_record():
             self._log("❌ Không pulse được START_RECORD D100.b2")
             return False
