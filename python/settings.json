@@ -43,42 +43,58 @@
     "ITR_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 100.0
+      "speed": 100.0,
+      "jog_speed": 10.0,
+      "cycles": 1
     },
     "ITR_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 100.0
+      "speed": 100.0,
+      "jog_speed": 10.0,
+      "cycles": 3
     },
     "B/Joint_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 10.0,
+      "jog_speed": 10.0,
+      "cycles": 1
     },
     "B/Joint_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 10.0,
+      "jog_speed": 10.0,
+      "cycles": 3
     },
     "OTR_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 100.0
+      "speed": 100.0,
+      "jog_speed": 10.0,
+      "cycles": 1
     },
     "OTR_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 10.0,
+      "jog_speed": 10.0,
+      "cycles": 3
     },
     "S/Link_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 100.0
+      "speed": 100.0,
+      "jog_speed": 10.0,
+      "cycles": 1
     },
     "S/Link_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 10.0
+      "speed": 10.0,
+      "jog_speed": 10.0,
+      "cycles": 3
     }
   }
 }
