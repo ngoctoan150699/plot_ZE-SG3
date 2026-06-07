@@ -313,7 +313,7 @@ class ServoSetupDialog(QDialog):
         
     def _build_ui(self):
         self.setWindowTitle(self.i18n.t('btn_servo_setup'))
-        self.resize(320, 240)
+        self.resize(320, 310)
         
         # Style sheet matching parent theme
         parent = cast(Any, self.parent())
@@ -429,12 +429,18 @@ class ServoSetupDialog(QDialog):
         # Góc nghịch nhập dạng âm; mặc định -36° (hiển thị là 36° nghịch).
         self.spin_neg.setToolTip("Góc nghịch nhập giá trị âm, ví dụ -36°")
             
-        # Label hi?n th? s? xung t??ng ?ng g?c ?m
+        # Label hiển thị số xung tương ứng góc âm
         self.lbl_neg_pulses = QLabel()
         self.lbl_neg_pulses.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 9pt;")
         
-        # H?m c?p nh?t s? xung hi?n th?
-        # 360 ?? ?ng v?i 200000 xung (555.5556 pulse / ??)
+        # Cycles (Số chu kỳ)
+        self.spin_cycles = QSpinBox()
+        self.spin_cycles.setRange(1, 100)
+        self.spin_cycles.setValue(getattr(profile, 'cycles', 3))
+        self.spin_cycles.setSuffix(" chu kỳ" if self.i18n.current_language == 'vi' else " cycles")
+        
+        # Hàm cập nhật số xung hiển thị
+        # 360 độ ứng với 200000 xung (555.5556 pulse / độ)
         def update_pulses_labels():
             pos_pulses = int(round(self.spin_pos.value() * 200000 / 360.0))
             neg_pulses = int(round(self.spin_neg.value() * 200000 / 360.0))
@@ -450,6 +456,7 @@ class ServoSetupDialog(QDialog):
         self.lbl_jog_speed = QLabel("Tốc độ JOG:" if self.i18n.current_language == 'vi' else "JOG Speed:")
         self.lbl_pos = QLabel("Gốc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
         self.lbl_neg = QLabel("Gốc nghịch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
+        self.lbl_cycles = QLabel("Số chu kỳ:" if self.i18n.current_language == 'vi' else "Cycles:")
         
         form.addRow(self.lbl_speed, self.spin_speed)
         form.addRow("", self.lbl_converted_speed)
@@ -459,6 +466,7 @@ class ServoSetupDialog(QDialog):
         form.addRow("", self.lbl_pos_pulses)
         form.addRow(self.lbl_neg, self.spin_neg)
         form.addRow("", self.lbl_neg_pulses)
+        form.addRow(self.lbl_cycles, self.spin_cycles)
         layout.addLayout(form)
         
         # Buttons
@@ -475,7 +483,8 @@ class ServoSetupDialog(QDialog):
             'speed': round(rpm_val, 2),
             'jog_speed': round(self.spin_jog_speed.value(), 2),
             'positive_angle': self.spin_pos.value(),
-            'negative_angle': self.spin_neg.value()
+            'negative_angle': self.spin_neg.value(),
+            'cycles': self.spin_cycles.value()
         }
 
 
@@ -1924,7 +1933,7 @@ class MainWindow(QMainWindow):
             # D103 gửi xuống PLC là độ lớn góc nghịch dương; PLC tự đổi dấu khi chạy chiều nghịch.
             neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
             speed_x100=speed_to_x100(profile.speed),
-            cycle_set=1 if is_breakaway else 3,
+            cycle_set=1 if is_breakaway else getattr(profile, 'cycles', 3),
             window_percent=10,
             part_select=part_select,
             torque_type=1 if is_breakaway else 2,
@@ -2492,7 +2501,7 @@ class MainWindow(QMainWindow):
             if is_breakaway:
                 ok = self._servo_svc.start_breakaway_test(profile)
             else:
-                ok = self._servo_svc.start_operating_test(profile, num_cycles=3)
+                ok = self._servo_svc.start_operating_test(profile, num_cycles=getattr(profile, 'cycles', 3))
             if ok:
                 self._log(f"🚀 Khởi chạy Servo fallback: {profile_key} (tốc độ: {profile.speed} rpm)")
             else:
