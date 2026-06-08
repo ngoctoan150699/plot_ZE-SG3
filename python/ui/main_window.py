@@ -1935,7 +1935,8 @@ class MainWindow(QMainWindow):
             neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
             speed_x100=speed_to_x100(profile.speed),
             cycle_set=1 if is_breakaway else getattr(profile, 'cycles', 3),
-            window_percent=10,
+            # Ghi thô lấy toàn bộ hành trình; vùng 80% giữa hành trình để Plot Draw/tính toán xử lý sau.
+            window_percent=100,
             part_select=part_select,
             torque_type=1 if is_breakaway else 2,
         )
@@ -2270,17 +2271,25 @@ class MainWindow(QMainWindow):
 
             interval_s = self._session.sample_interval_ms / 1000.0
             expected_samples = int(elapsed_time / interval_s)
-            
-            # Tự động sinh thêm các mẫu bị thiếu để đảm bảo đúng tần số yêu cầu
-            # (Ví dụ 2ms -> đúng 500 mẫu/giây) bằng cách dùng giá trị gần nhất
+
+            # Tự động sinh thêm các mẫu bị thiếu để đảm bảo đúng tần số yêu cầu.
+            # Khi polling Modbus chậm hơn sample interval, không được lặp nguyên góc hiện tại
+            # cho toàn bộ mẫu bù; nội suy tuyến tính từ mẫu cuối -> trạng thái hiện tại.
+            last_sample = self._session.samples[-1] if self._session.samples else None
+            prev_time = last_sample.time_s if last_sample else 0.0
+            prev_torque = last_sample.torque_Nm if last_sample else status.net_weight
+            prev_angle = last_sample.angle_deg if last_sample else self._current_angle
+            span = max(interval_s, elapsed_time - prev_time)
+
             while self._session.count <= expected_samples:
                 rec_time = self._session.count * interval_s
+                ratio = max(0.0, min(1.0, (rec_time - prev_time) / span))
                 sample = SampleData(
                     time_s=rec_time,
-                    torque_Nm=status.net_weight, # Lặp lại giá trị mới nhất
+                    torque_Nm=prev_torque + (status.net_weight - prev_torque) * ratio,
                     stable=status.is_stable,
                     timestamp=time.time(),
-                    angle_deg=self._current_angle,
+                    angle_deg=prev_angle + (self._current_angle - prev_angle) * ratio,
                     cycle=self._current_cycle,
                 )
                 self._session.samples.append(sample)

@@ -195,8 +195,12 @@ class PlcStatus:
 
     @property
     def should_record_sample(self) -> bool:
-        """Return True only when PLC explicitly allows sample recording."""
-        return self.is_recording and self.has_valid_data and not self.is_done and not self.has_fault
+        """Return True while PLC is recording.
+
+        D130/data_valid is only a suggested analysis window from PLC/simulator.
+        Acquisition must keep the full raw trace; Plot Draw applies 80% filtering later.
+        """
+        return self.is_recording and not self.is_done and not self.has_fault
 
     @property
     def current_angle_deg(self) -> float:
