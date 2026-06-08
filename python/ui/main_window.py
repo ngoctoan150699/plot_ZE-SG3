@@ -2086,13 +2086,13 @@ class MainWindow(QMainWindow):
         self._settings.save_ui_settings(ui_dict)
 
     def _update_plot_limits(self):
-        """Cập nhật giới hạn trục Y của biểu đồ dựa trên UI."""
-        if self.chk_fixed_y.isChecked():
-            limit = self.spin_ymax.value()
-            # Sử dụng logic mới: giới hạn tối thiểu là [-limit, limit]
+        """Cập nhật giới hạn trục Y của cả biểu đồ Torque-Time và Torque-Angle."""
+        limit = self.spin_ymax.value() if self.chk_fixed_y.isChecked() else None
+
+        if hasattr(self, 'plot'):
             self.plot.set_y_limits(limit)
-        else:
-            self.plot.set_y_limits(None)
+        if hasattr(self, 'angle_plot'):
+            self.angle_plot.set_y_limits(limit)
 
     def _on_acquisition_settings_changed(self):
         """Áp dụng và lưu cài đặt thu thập ngay lập tức khi thay đổi trên UI."""

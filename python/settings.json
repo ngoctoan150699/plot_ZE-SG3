@@ -1,7 +1,7 @@
 {
   "connection": {
     "mode": "RTU",
-    "port": "COM15",
+    "port": "COM1",
     "baudrate": 115200,
     "parity": "N",
     "stopbits": 1,
@@ -21,9 +21,9 @@
     "cell_sensitivity": 1.988,
     "cell_full_scale": 49.7,
     "std_weight": 0.0,
-    "delta_weight": 0.01,
+    "delta_weight": 0.009999999776482582,
     "delta_time": 10,
-    "filter_level": 7,
+    "filter_level": 1,
     "resolution_mode": 0,
     "factory_tare": 0.0,
     "target_address": 1,
@@ -32,7 +32,7 @@
     "slave_id": 1
   },
   "ui": {
-    "interval_ms": 100,
+    "interval_ms": 10,
     "window_s": 60,
     "y_max": 5.0,
     "fixed_y": true,
@@ -48,8 +48,8 @@
       "cycles": 1
     },
     "ITR_O": {
-      "negative_angle": -45.0,
-      "positive_angle": 45.0,
+      "negative_angle": -36.0,
+      "positive_angle": 36.0,
       "speed": 100.0,
       "jog_speed": 10.0,
       "cycles": 3

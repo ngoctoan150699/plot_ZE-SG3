@@ -105,6 +105,7 @@ PLC_D132_CYLINDER_STATUS = 132
 PLC_D133_SERVO_ON_STATUS = 133
 PLC_D134_TEST_DONE = 134
 PLC_D135_SAMPLE_INDEX = 135
+PLC_D150_SPEED_COMMAND = 150  # MAIN.csv dùng D150 làm tốc độ phát xung DPLSV
 
 CMD_START_RUN = 1 << 0
 CMD_STOP_RUN = 1 << 1
@@ -363,6 +364,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         setv(PLC_ID, PLC_D106_WINDOW_PERCENT, [80])
         setv(PLC_ID, PLC_D107_PART_SELECT, [1])
         setv(PLC_ID, PLC_D108_TORQUE_TYPE, [1])
+        setv(PLC_ID, PLC_D150_SPEED_COMMAND, [1000])
         return context
 
     def _ctx_set(self, slave: int, reg: int, vals: list[int]):
@@ -526,8 +528,11 @@ class IntegratedSimulatorWindow(QMainWindow):
             self._fault(4, "Tốc độ đo không hợp lệ (nhỏ hơn hoặc bằng 0)")
             return
         if not s.clamped:
-            self._fault(8, "Phôi chưa được kẹp (xi lanh chưa kẹp)")
-            return
+            # main.py/main_window.py hiện gửi START_RECORD trực tiếp; MAIN.csv latch xi lanh
+            # bằng D100.b4/Y006. Để simulator thuận tiện cho test PC app, tự giả lập đã kẹp
+            # thay vì báo fault liên tục khi người dùng quên nhấn Clamp.
+            s.clamped = True
+            self._log("🔩 Auto clamp khi START_RECORD (mô phỏng MAIN.csv/Y006 đã kẹp phôi)")
         s.test_running = True
         s.record_enable = True
         s.data_valid = False
@@ -562,7 +567,10 @@ class IntegratedSimulatorWindow(QMainWindow):
         vals = self._ctx_get(PLC_ID, PLC_D101_MODE, 6)
         mode = vals[0]
         pos = i16(vals[1]) / 100.0
-        neg = i16(vals[2]) / 100.0
+        # main_window.py ghi D103 là độ lớn góc nghịch dương để PLC tự đổi dấu.
+        # Simulator dùng quy ước signed angle trong Python nên ép về giá trị âm.
+        neg_raw = i16(vals[2]) / 100.0
+        neg = -abs(neg_raw)
         speed = vals[3] / 100.0
         cycles = max(1, vals[4])
         window = min(100, max(1, vals[5] or 80))
@@ -664,11 +672,27 @@ class IntegratedSimulatorWindow(QMainWindow):
         elif not s.clamped or not s.servo_on or abs(s.angle_deg) < 0.03 and abs(s.velocity_deg_s) < 0.05:
             target = 0.0
         else:
+            # Mô phỏng moment theo logic test hiện tại:
+            # - Breakaway: tăng theo góc + có đỉnh tách tải rồi ổn định nhẹ.
+            # - Operating: moment ma sát đổi dấu theo chiều quay, biên độ vừa phải.
             direction = 1.0 if s.velocity_deg_s > 0.05 else (-1.0 if s.velocity_deg_s < -0.05 else (1.0 if s.angle_deg >= 0 else -1.0))
-            elastic = 0.18 * s.angle_deg
-            friction = 0.55 * direction
-            damping = 0.035 * s.velocity_deg_s
-            target = elastic + friction + damping
+            abs_angle = abs(s.angle_deg)
+            speed_term = min(1.5, abs(s.velocity_deg_s) * 0.025)
+            if s.mode == MODE_BREAKAWAY:
+                ramp = min(1.0, abs_angle / max(1.0, abs(s.target_deg) * 0.55))
+                peak = 5.5 + 2.0 * ramp
+                release = 0.85 if abs_angle > abs(s.target_deg) * 0.75 else 1.0
+                target = direction * peak * ramp * release + direction * speed_term
+            elif s.mode == MODE_OPERATING:
+                elastic = 0.045 * s.angle_deg
+                friction = direction * (1.15 + speed_term)
+                ripple = 0.18 * math.sin(math.radians(s.angle_deg * 8.0))
+                target = elastic + friction + ripple
+            else:
+                elastic = 0.10 * s.angle_deg
+                friction = 0.45 * direction
+                damping = 0.020 * s.velocity_deg_s
+                target = elastic + friction + damping
         target = max(-50.0, min(50.0, target))
         alpha = min(1.0, dt / 0.12)
         s.torque_nm += (target - s.torque_nm) * alpha
@@ -730,6 +754,8 @@ class IntegratedSimulatorWindow(QMainWindow):
             s.sample_index & UINT16,
         ]
         self._ctx_set(PLC_ID, PLC_D120_STATUS_WORD, regs)
+        # MAIN.csv mới dùng D150 làm nguồn tốc độ cho DPLSV; mirror từ D104 để watch/debug.
+        self._ctx_set(PLC_ID, PLC_D150_SPEED_COMMAND, [u16(round(abs(speed) * 100))])
         self.lbl_regs.setText("D120..D135 = " + ", ".join(str(v) for v in regs))
 
     def _update_ui(self):

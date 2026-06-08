@@ -30,7 +30,15 @@ class CsvCtrExporter(IDataExporter):
             return False
         try:
             rows = [
-                [1, 3, 1, s.time_s, 0.0, 0.0, s.torque_Nm]
+                [
+                    1,
+                    3,
+                    s.cycle if s.cycle > 0 else 1,
+                    s.time_s,
+                    0.0,
+                    s.angle_deg,
+                    s.torque_Nm,
+                ]
                 for s in session.samples
             ]
             n = len(rows)
