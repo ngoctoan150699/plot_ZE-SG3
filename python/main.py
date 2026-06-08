@@ -115,6 +115,7 @@ def main():
         measurement_svc=measurement_svc,
         report_svc=report_svc,
     )
+    window.set_app_icon(icon_path)
 
     window.show()
 

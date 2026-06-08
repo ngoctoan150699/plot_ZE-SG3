@@ -37,7 +37,9 @@
     "y_max": 5.0,
     "fixed_y": true,
     "part_name": "Inner Tie Rod",
-    "test_item": "Operating Torque"
+    "test_item": "Operating Torque",
+    "dark_theme": false,
+    "language": "vi"
   },
   "servo_profiles": {
     "ITR_B": {

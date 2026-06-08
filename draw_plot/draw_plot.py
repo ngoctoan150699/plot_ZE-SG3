@@ -3384,9 +3384,20 @@ class TorquePlotViewer(QMainWindow):
             )
             return
 
-        # Default suggested filename: report_YYYYMMDD_HHMMSS.xlsx
+        # Default suggested filename: use Report File path directory, not the imported CSV directory.
         timestr = datetime.now().strftime('%Y%m%d_%H%M%S')
-        suggested = (os.path.splitext(self.file_path)[0] + '.xlsx') if self.file_path else f'report_{timestr}.xlsx'
+        if self.file_path:
+            suggested_name = os.path.splitext(os.path.basename(self.file_path))[0] + '.xlsx'
+        else:
+            suggested_name = f'report_{timestr}.xlsx'
+        report_dir = ''
+        try:
+            report_dir = self.report_path_edit.text().strip()
+        except Exception:
+            report_dir = getattr(self, 'report_dir', '') or ''
+        if not report_dir:
+            report_dir = os.path.dirname(self.file_path) if self.file_path else os.getcwd()
+        suggested = os.path.join(report_dir, suggested_name)
         path, _ = QFileDialog.getSaveFileName(self, "Save Excel Report", suggested, "Excel Files (*.xlsx)")
         if not path:
             return
@@ -3594,6 +3605,28 @@ class TorquePlotViewer(QMainWindow):
 
                 if len(plot_time) > 0 and len(plot_torque) > 0:
                     ax2.plot(plot_time, plot_torque, 'b.-', linewidth=0.9, markersize=3, label='1')
+
+        # Fallback: if range/cycle filters removed all lines, export the full active dataset
+        # so the XLSX always contains a visible plot image.
+        try:
+            if len(ax2.get_lines()) == 0:
+                if self.samples:
+                    sel = self.file_select_combo.currentText() if hasattr(self, 'file_select_combo') else 'All'
+                    sample = None
+                    if sel != 'All':
+                        sample = next((x for x in self.samples if x.get('name') == sel), None)
+                    if sample is None:
+                        sample = self.samples[0]
+                    x_vals = sample.get('angle', []) if is_angle else sample.get('time', [])
+                    y_vals = sample.get('torque', [])
+                    if is_angle and (not x_vals or len(x_vals) != len(y_vals)):
+                        x_vals = sample.get('time', [])
+                    if len(x_vals) > 0 and len(y_vals) > 0:
+                        ax2.plot(x_vals, y_vals, 'b.-', linewidth=0.9, markersize=3, label='1')
+                elif len(self.time_data) > 0 and len(self.torque_data) > 0:
+                    ax2.plot(self.time_data, self.torque_data, 'b.-', linewidth=0.9, markersize=3, label='1')
+        except Exception:
+            pass
 
         # Apply Y-axis rules to export plot
         try:

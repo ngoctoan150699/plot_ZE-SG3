@@ -1,42 +1,60 @@
 @echo off
-REM Build single-file Windows EXE for draw_plot.py
-
 setlocal
 
-echo Installing/Updating dependencies...
-"C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m pip install --upgrade pip
-"C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m pip install pyinstaller
-if exist requirements.txt (
-    "C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m pip install -r requirements.txt
-) else (
-    echo requirements.txt not found. Installing default packages...
-    "C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m pip install matplotlib PyQt5 openpyxl pillow
-)
+set "ROOT=%~dp0"
+cd /d "%ROOT%"
 
-echo.
-echo Building EXE with PyInstaller...
-REM --noconfirm: Do not ask to overwrite existing dist/build folders
-REM --onefile: Create a single executable file
-REM --windowed: No console window
-REM --add-data: Include the png file for the internal icon usage
-REM --icon: Set the .exe icon
-"C:\Users\NgocToan\AppData\Local\Programs\Python\Python313\python.exe" -m PyInstaller --noconfirm --onefile --windowed --name "CSV Torque Plot Viewer" --icon "assets\icons\data-analysis.ico" --add-data "assets\icons\data-analysis.png;." draw_plot\draw_plot.py
+set "PY=.\.venv\Scripts\python.exe"
+set "APP_NAME=ZE-SG3 Torque Acquisition"
+set "ICON=python\app_icon.ico"
 
+echo [1/5] Cleaning build cache...
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+if exist "*.spec" del /q "*.spec"
+for /d /r %%D in (__pycache__) do @if exist "%%D" rmdir /s /q "%%D"
+
+echo [2/5] Checking PyInstaller...
+"%PY%" -m PyInstaller --version >nul 2>&1
 if errorlevel 1 (
-    echo.
-    echo ****************************
-    echo *      BUILD FAILED        *
-    echo ****************************
-    goto :end
+    echo PyInstaller is missing. Installing into venv...
+    "%PY%" -m pip install pyinstaller
+    if errorlevel 1 goto :fail
 )
 
+echo [3/5] Syntax check...
+"%PY%" -m py_compile python\main.py python\ui\main_window.py python\domain\plc_protocol.py python\exporters\csv_ctr_exporter.py python\torque_simulator.py
+if errorlevel 1 goto :fail
+
+echo [4/5] Building EXE...
+"%PY%" -m PyInstaller ^
+  --noconfirm ^
+  --clean ^
+  --onefile ^
+  --windowed ^
+  --name "%APP_NAME%" ^
+  --icon "%ICON%" ^
+  --paths "python" ^
+  --paths "draw_plot" ^
+  --add-data "python\app_icon.ico;." ^
+  --add-data "draw_plot;draw_plot" ^
+  --add-data "python\settings.json;." ^
+  python\main.py
+if errorlevel 1 goto :fail
+
+echo [5/5] Cleaning residual build cache...
+if exist build rmdir /s /q build
+for /d /r %%D in (__pycache__) do @if exist "%%D" rmdir /s /q "%%D"
+
 echo.
-echo ****************************
-echo *      BUILD SUCCESS       *
-echo ****************************
-echo The executable is located in the "dist" folder:
-echo dist\"CSV Torque Plot Viewer.exe"
+echo BUILD SUCCESS
+echo Output: dist\%APP_NAME%.exe
+goto :end
+
+:fail
+echo.
+echo BUILD FAILED
+exit /b 1
 
 :end
-pause
-endlocal
+endlocal

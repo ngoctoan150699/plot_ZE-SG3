@@ -18,8 +18,8 @@ import time
 from datetime import datetime
 from typing import List, Optional, Any, cast
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
+from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -808,6 +808,27 @@ class MainWindow(QMainWindow):
         self._plc_timer = QTimer(self)
         self._plc_timer.setInterval(200)
         self._plc_timer.timeout.connect(self._poll_plc_status)
+
+    def set_app_icon(self, icon_path: str):
+        """Set app/window icon and show the same icon on the status bar."""
+        if not icon_path or not os.path.exists(icon_path):
+            return
+        icon = QIcon(icon_path)
+        if icon.isNull():
+            return
+        self.setWindowIcon(icon)
+        QApplication.setWindowIcon(icon)
+        status = self.statusBar()
+        status.setSizeGripEnabled(True)
+        icon_label = QLabel()
+        icon_label.setObjectName("status_app_icon")
+        pixmap = QPixmap(icon_path)
+        if not pixmap.isNull():
+            icon_label.setPixmap(pixmap.scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            icon_label.setPixmap(icon.pixmap(QSize(18, 18)))
+        icon_label.setToolTip("ZE-SG3 Torque Acquisition")
+        status.addPermanentWidget(icon_label)
 
     # ===========================================================
     # BUILD UI
