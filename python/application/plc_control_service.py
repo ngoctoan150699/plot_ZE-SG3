@@ -27,12 +27,22 @@ from domain.constants import (
     PLC_D110_JOG_PLUS,
     PLC_D111_JOG_MINUS,
     PLC_D112_HOME_CMD,
+    PLC_D123_CURRENT_CYCLE,
     PLC_D124_CURRENT_ANGLE_X100,
+    PLC_D134_TEST_DONE,
     PLC_DEFAULT_SLAVE_ID,
     PLC_STATUS_REGISTER_COUNT,
     PLC_STATUS_START_ADDRESS,
 )
-from domain.plc_protocol import PlcStatus, PlcTestConfig, angle_to_x100, clamp_u16, encode_signed_16
+from domain.plc_protocol import (
+    PlcRealtimeState,
+    PlcStatus,
+    PlcTestConfig,
+    angle_to_x100,
+    clamp_u16,
+    decode_signed_16,
+    encode_signed_16,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +70,24 @@ class PlcControlService:
         except Exception as exc:
             logger.debug("PLC is_connected failed: %s", exc)
             return False
+
+    def read_cycle_angle_done(self) -> Optional[PlcRealtimeState]:
+        """Read minimal realtime PLC data: D123 cycle, D124 angle, D134 done."""
+        try:
+            cycle_angle = self._client.read_registers(PLC_D123_CURRENT_CYCLE, 2, self._slave_id)
+            if cycle_angle is None or len(cycle_angle) < 2:
+                return None
+            done = self._client.read_register(PLC_D134_TEST_DONE, self._slave_id)
+            if done is None:
+                done = 0
+            return PlcRealtimeState(
+                current_cycle=clamp_u16(cycle_angle[0]),
+                current_angle_x100=decode_signed_16(cycle_angle[1]),
+                test_done=clamp_u16(done),
+            )
+        except Exception as exc:
+            logger.debug("PLC read_cycle_angle_done failed: %s", exc)
+            return None
 
     def read_status(self) -> Optional[PlcStatus]:
         """Read D120..D135 and decode it into PlcStatus."""
@@ -90,31 +118,34 @@ class PlcControlService:
             logger.debug("PLC write_test_config failed: %s", exc)
             return False
 
-    def pulse_cmd_bit(self, bit_mask: int, pulse_ms: int = 150) -> bool:
-        """
-        Pulse one bit in D100 using read-modify-write.
+    def pulse_cmd_bit(self, bit_mask: int, pulse_ms: int = 50) -> bool:
+        """Pulse one command bit in D100 with minimum operator latency.
 
-        Never write D100 = bit_mask directly because other command bits may be
-        held by jog/abort or future commands.
+        Return immediately after the SET write succeeds. The CLEAR write runs in
+        a short background task so RUN/STOP/Clamp do not wait for a second RTU
+        write response before the UI reports success.
         """
         bit_mask = clamp_u16(bit_mask)
         try:
-            current = self._client.read_register(PLC_D100_CMD_WORD, self._slave_id)
-            if current is None:
+            if not self._client.write_register(PLC_D100_CMD_WORD, bit_mask, self._slave_id):
                 return False
-            current = clamp_u16(current)
-            set_value = current | bit_mask
-            if not self._client.write_register(PLC_D100_CMD_WORD, set_value, self._slave_id):
-                return False
-            time.sleep(max(0, int(pulse_ms)) / 1000.0)
-            latest = self._client.read_register(PLC_D100_CMD_WORD, self._slave_id)
-            if latest is None:
-                latest = set_value
-            clear_value = clamp_u16(latest) & ~bit_mask
-            return bool(self._client.write_register(PLC_D100_CMD_WORD, clear_value, self._slave_id))
+            self._clear_cmd_word_later(pulse_ms)
+            return True
         except Exception as exc:
             logger.debug("PLC pulse_cmd_bit(%s) failed: %s", bit_mask, exc)
             return False
+
+    def _clear_cmd_word_later(self, pulse_ms: int) -> None:
+        import threading
+
+        def _worker() -> None:
+            try:
+                time.sleep(max(0, int(pulse_ms)) / 1000.0)
+                self._client.write_register(PLC_D100_CMD_WORD, 0, self._slave_id)
+            except Exception as exc:
+                logger.debug("PLC clear D100 failed: %s", exc)
+
+        threading.Thread(target=_worker, name="PLC-Clear-D100", daemon=True).start()
 
     def start_run(self) -> bool:
         return self.pulse_cmd_bit(PLC_CMD_START_RUN)

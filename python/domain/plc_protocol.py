@@ -103,6 +103,30 @@ class PlcTestConfig:
 
 
 @dataclass(frozen=True)
+class PlcRealtimeState:
+    """Minimal realtime PLC data read while recording."""
+
+    current_cycle: int
+    current_angle_x100: int
+    test_done: int = 0
+
+    @property
+    def is_done(self) -> bool:
+        return bool(self.test_done)
+
+    @property
+    def has_fault(self) -> bool:
+        return False
+
+    @property
+    def current_angle_deg(self) -> float:
+        angle = self.current_angle_x100 / 100.0
+        if angle > 180.0:
+            angle -= 360.0
+        return angle
+
+
+@dataclass(frozen=True)
 class PlcStatus:
     """Status block read from PLC registers D120..D135."""
 

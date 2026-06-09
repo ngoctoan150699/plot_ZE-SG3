@@ -39,6 +39,7 @@ class DataCollectorService:
         self._slave_id = slave_id
         self._interval_ms: int = DEFAULT_SAMPLE_INTERVAL_MS
         self._running = False
+        self._paused = False
         self._wake_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._data_callbacks: list = []
@@ -58,6 +59,16 @@ class DataCollectorService:
     def on_error(self, callback: Callable[[str], None]) -> None:
         """Đăng ký callback khi có lỗi đọc."""
         self._error_callbacks.append(callback)
+
+    def pause_polling(self) -> None:
+        """Tạm dừng đọc sensor để nhường bus cho lệnh PLC ưu tiên."""
+        self._paused = True
+        self._wake_event.set()
+
+    def resume_polling(self) -> None:
+        """Tiếp tục đọc sensor sau lệnh PLC ưu tiên."""
+        self._paused = False
+        self._wake_event.set()
 
     def start(self) -> None:
         """Bắt đầu polling thread. Idempotent – gọi nhiều lần không vấn đề."""
@@ -90,6 +101,11 @@ class DataCollectorService:
     def _poll_loop(self) -> None:
         """Vòng lặp polling chính – chạy trong daemon thread."""
         while self._running:
+            if self._paused:
+                self._wake_event.clear()
+                self._wake_event.wait(timeout=0.005)
+                continue
+
             start = time.monotonic()
             try:
                 status = self._read_device_status()
@@ -124,38 +140,23 @@ class DataCollectorService:
                 time.sleep(0.0001)
 
     def _read_device_status(self) -> Optional[DeviceStatus]:
-        """Đọc trạng thái (Tối ưu: chỉ đọc block 15 regs nếu cần tốc độ cao)."""
+        """Đọc lực realtime nhanh nhất: chỉ 2 thanh ghi Net Weight Float32."""
         sid = self._slave_id
-        is_fast = self._interval_ms < 50
-        count = 15 if is_fast else 22
-        
-        regs = self._client.read_registers(REG_NET_WEIGHT_HI, count, sid)
-        if regs is None or len(regs) < count:
-            return self._read_device_status_fallback()
+        regs = self._client.read_registers(REG_NET_WEIGHT_HI, 2, sid)
+        if regs is None or len(regs) < 2:
+            return None
 
-        # Net(0:2), Gross(2:4), Tare(4:6), Status(14) luôn có trong cả 2 case
-        net_val    = self._decode_float32(regs[0], regs[1])
-        gross_val  = self._decode_float32(regs[2], regs[3])
-        tare_val   = self._decode_float32(regs[4], regs[5])
-        status_raw = regs[14]
-        
-        # Max(18:20), Min(20:22) chỉ có nếu count=22
-        if count == 22:
-            max_val = self._decode_float32(regs[18], regs[19])
-            min_val = self._decode_float32(regs[20], regs[21])
-        else:
-            max_val, min_val = 0.0, 0.0
-
+        net_val = self._decode_float32(regs[0], regs[1])
         return DeviceStatus(
             connected=True,
-            is_stable=(status_raw & STATUS_BIT_STABLE) != 0,
-            is_fullscale=(status_raw & STATUS_BIT_FULLSCALE) != 0,
+            is_stable=True,
+            is_fullscale=False,
             net_weight=net_val,
-            gross_weight=gross_val,
-            tare_weight=tare_val,
-            max_net_weight=max_val,
-            min_net_weight=min_val,
-            raw_status_reg=status_raw,
+            gross_weight=0.0,
+            tare_weight=0.0,
+            max_net_weight=0.0,
+            min_net_weight=0.0,
+            raw_status_reg=0,
         )
 
     def _read_device_status_fallback(self) -> Optional[DeviceStatus]:

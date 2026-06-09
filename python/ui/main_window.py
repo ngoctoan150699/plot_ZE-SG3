@@ -783,7 +783,6 @@ class MainWindow(QMainWindow):
         if self._bus_scheduler:
             self._bus_scheduler.on_sensor_data(lambda s: self._sig_status.emit(s))
             self._bus_scheduler.on_plc_status(lambda s: self._sig_plc_status.emit(s))
-            self._bus_scheduler.on_command_result(lambda name, ok: self._sig_plc_command_result.emit(name, ok))
             self._bus_scheduler.on_error(lambda e: self._sig_error.emit(e))
         else:
             self._collector.on_data(lambda s: self._sig_status.emit(s))
@@ -1837,29 +1836,37 @@ class MainWindow(QMainWindow):
             self._log("⚠️ PLC chưa kết nối")
             return False
         if self._plc_command_running:
-            self._log(f"⏳ PLC đang xử lý lệnh trước, bỏ qua: {action_name}")
-            return False
+            self._log(f"⚡ PLC ưu tiên: gửi ngay {action_name} dù lệnh trước chưa báo xong")
         self._plc_command_running = True
         self._log(f"⏳ PLC: {action_name}...")
-        if self._bus_scheduler:
-            if not self._bus_scheduler.enqueue_command(action_name, callback):
-                self._plc_command_running = False
-                return False
-        else:
-            threading.Thread(
-                target=self._run_plc_command_worker,
-                args=(action_name, callback),
-                name=f"PLC-Cmd-{action_name}",
-                daemon=True,
-            ).start()
+        threading.Thread(
+            target=self._run_plc_command_worker,
+            args=(action_name, callback),
+            name=f"PLC-Cmd-{action_name}",
+            daemon=True,
+        ).start()
+        # Không khóa nút/lệnh tiếp theo: PLC commands là lệnh ưu tiên tức thời.
+        self._plc_command_running = False
         return True
 
     def _run_plc_command_worker(self, action_name: str, callback):
         ok = False
+        scheduler = self._bus_scheduler
+        collector = self._collector
         try:
+            if scheduler and hasattr(scheduler, 'pause_polling'):
+                scheduler.pause_polling()
+            if collector and hasattr(collector, 'pause_polling'):
+                collector.pause_polling()
+            time.sleep(0.01)
             ok = bool(callback())
         except Exception:
             ok = False
+        finally:
+            if collector and hasattr(collector, 'resume_polling'):
+                collector.resume_polling()
+            if scheduler and hasattr(scheduler, 'resume_polling'):
+                scheduler.resume_polling()
         self._sig_plc_command_result.emit(action_name, ok)
 
     def _on_plc_command_result(self, action_name: str, ok: bool):
@@ -1877,6 +1884,8 @@ class MainWindow(QMainWindow):
 
     def _plc_stop_run(self):
         self._plc_command("STOP", lambda: self._plc_svc.stop_run() if self._plc_svc else False)
+        if self._bus_scheduler:
+            self._bus_scheduler.set_recording_active(False)
 
     def _plc_toggle_clamp(self):
         self._plc_command("Clamp toggle", lambda: self._plc_svc.toggle_cylinder() if self._plc_svc else False)
@@ -1886,6 +1895,8 @@ class MainWindow(QMainWindow):
 
     def _plc_abort(self):
         self._plc_command("Abort", lambda: self._plc_svc.abort() if self._plc_svc else False)
+        if self._bus_scheduler:
+            self._bus_scheduler.set_recording_active(False)
 
     def _plc_home(self):
         def _home_and_reset_angle():
@@ -2066,13 +2077,15 @@ class MainWindow(QMainWindow):
         self._last_plc_status = status
         self._plc_status_fail_count = 0
         self._plc_status_error_logged = False
-        self._current_angle = status.current_angle_deg
-        self._current_cycle = status.current_cycle
+        if hasattr(status, 'current_angle_deg'):
+            self._current_angle = status.current_angle_deg
+        if hasattr(status, 'current_cycle'):
+            self._current_cycle = status.current_cycle
         if hasattr(self, 'lbl_plc_angle'):
             self.lbl_plc_angle.setText(f"{self._current_angle:.2f}°")
 
-        if status.has_fault:
-            self._log(f"⚠️ PLC fault D129={status.error_code}")
+        if getattr(status, 'has_fault', False):
+            self._log(f"⚠️ PLC fault D129={getattr(status, 'error_code', 0)}")
 
         elapsed_since_start = time.monotonic() - getattr(self, '_start_time', 0.0)
         if self._recording and status.is_done and elapsed_since_start > 1.5:
@@ -2362,7 +2375,7 @@ class MainWindow(QMainWindow):
                 self._collector.set_interval(self.spin_interval.value())
                 if self._bus_scheduler:
                     self._bus_scheduler.set_client(new_client, sensor_slave_id=sid, plc_slave_id=plc_sid)
-                    self._bus_scheduler.set_intervals(self.spin_interval.value(), 150)
+                    self._bus_scheduler.set_intervals(self.spin_interval.value(), 1000)
                     self._bus_scheduler.start()
                 else:
                     self._collector.start()
@@ -2671,6 +2684,8 @@ class MainWindow(QMainWindow):
             )
 
         if not self._prepare_plc_recording(profile, is_breakaway):
+            if self._bus_scheduler:
+                self._bus_scheduler.set_recording_active(False)
             return
 
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
@@ -2688,6 +2703,8 @@ class MainWindow(QMainWindow):
         self._current_cycle = 1
         if hasattr(self, 'angle_plot'):
             self.angle_plot.clear()
+        if self._bus_scheduler:
+            self._bus_scheduler.set_recording_active(True)
         self._log("▶️ Bắt đầu ghi dữ liệu")
 
         if self._servo_svc and (not self._plc_svc or not self._plc_svc.is_connected()):
@@ -2704,6 +2721,8 @@ class MainWindow(QMainWindow):
         was_recording = self._recording
         self._session.end_time = time.monotonic()
         self._recording = False
+        if self._bus_scheduler:
+            self._bus_scheduler.set_recording_active(False)
         duration = self._session.end_time - self._session.start_time
         self.btn_rec_start.setEnabled(True)
         self.btn_rec_stop.setEnabled(False)
@@ -2723,6 +2742,8 @@ class MainWindow(QMainWindow):
         self.lbl_count.setText("0")
         self.lbl_rectime.setText("0.0 s")
         self.btn_rec_clear.setEnabled(False)
+        if self._bus_scheduler:
+            self._bus_scheduler.set_recording_active(False)
         self._log("🗑️ Đã xóa dữ liệu mẫu")
 
     # ===========================================================

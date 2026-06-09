@@ -60,17 +60,11 @@ def main():
     from application.measurement_service import MeasurementService
     from application.report_service import ReportService
     from application.plc_control_service import PlcControlService
-    from application.modbus_bus_scheduler import ModbusBusScheduler
     from infrastructure.plc_servo_controller import DummyPLCServoController
 
     collector   = DataCollectorService(null_client, slave_id=conn_cfg.slave_id)
     config_svc  = ConfigService(null_client)
     plc_svc     = PlcControlService(null_client, slave_id=conn_cfg.slave_id)
-    bus_scheduler = ModbusBusScheduler(
-        null_client,
-        sensor_slave_id=conn_cfg.slave_id,
-        plc_slave_id=conn_cfg.plc_slave_id,
-    )
     
     # R2 Upgrades: Servo, Measurement & Report Services
     dummy_plc   = DummyPLCServoController()
@@ -120,7 +114,7 @@ def main():
         plc_svc=plc_svc,
         measurement_svc=measurement_svc,
         report_svc=report_svc,
-        bus_scheduler=bus_scheduler,
+        bus_scheduler=None,
     )
     window.set_app_icon(icon_path)
 
@@ -130,7 +124,6 @@ def main():
     result = app.exec_()
 
     # Cleanup khi thoát
-    bus_scheduler.stop()
     collector.stop()
     logger.info("Ứng dụng đã thoát")
     sys.exit(result)
