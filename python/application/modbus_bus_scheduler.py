@@ -25,6 +25,9 @@ from domain.plc_protocol import PlcRealtimeState, PlcStatus, decode_signed_16
 logger = logging.getLogger(__name__)
 
 
+import queue
+import threading
+
 class ModbusBusScheduler:
     """Coordinate optimized realtime Modbus reads through one worker thread."""
 
@@ -36,8 +39,6 @@ class ModbusBusScheduler:
         sensor_interval_ms: int = 20,
         plc_interval_ms: int = 1000,
     ):
-        import threading
-
         self._client = client
         self._sensor_slave_id = sensor_slave_id
         self._plc_slave_id = plc_slave_id
@@ -54,12 +55,28 @@ class ModbusBusScheduler:
         self._command_callbacks: list[Callable[[str, bool], None]] = []
         self._error_callbacks: list[Callable[[str], None]] = []
         self._force_timings_ms: list[float] = []
+        
+        # Hàng đợi command và danh sách clear register tự động
+        self._command_queue: queue.Queue = queue.Queue()
+        self._pending_clears: list[dict] = []
+        self._last_max_net = 0.0
+        self._last_min_net = 0.0
 
     def set_client(self, client: IModbusClient, sensor_slave_id: int = 1, plc_slave_id: int = 2) -> None:
         self._client = client
         self._sensor_slave_id = sensor_slave_id
         self._plc_slave_id = plc_slave_id
         self._force_timings_ms.clear()
+        self._last_max_net = 0.0
+        self._last_min_net = 0.0
+        
+        # Clear hàng đợi khi đổi kết nối
+        while not self._command_queue.empty():
+            try:
+                self._command_queue.get_nowait()
+            except Exception:
+                pass
+        self._pending_clears.clear()
 
     def set_intervals(self, sensor_ms: int, plc_ms: int = 1000) -> None:
         self._sensor_interval_s = max(0.001, int(sensor_ms) / 1000.0)
@@ -68,15 +85,19 @@ class ModbusBusScheduler:
 
     def set_recording_active(self, active: bool) -> None:
         self._recording_active = bool(active)
+        if active:
+            # Reset peak khi bắt đầu ghi
+            self._last_max_net = -999999.0
+            self._last_min_net = 999999.0
         self._wake_event.set()
 
     def pause_polling(self) -> None:
-        """Temporarily stop periodic reads so a PLC command can use the bus now."""
+        """Temporarily stop periodic reads so a PLC configuration can use the bus now."""
         self._polling_paused = True
         self._wake_event.set()
 
     def resume_polling(self) -> None:
-        """Resume periodic reads after an urgent PLC command finishes."""
+        """Resume periodic reads after configuration finishes."""
         self._polling_paused = False
         self._wake_event.set()
 
@@ -95,7 +116,6 @@ class ModbusBusScheduler:
     def start(self) -> None:
         if self._running and self._thread and self._thread.is_alive():
             return
-        import threading
 
         self._running = True
         self._wake_event.clear()
@@ -115,37 +135,66 @@ class ModbusBusScheduler:
         return self._running
 
     def enqueue_command(self, name: str, callback: Callable[[], bool]) -> bool:
-        """Compatibility shim: run command immediately instead of queueing it."""
-        import threading
-
-        threading.Thread(
-            target=self._run_priority_command,
-            args=(name, callback),
-            name=f"PLC-Cmd-{name}",
-            daemon=True,
-        ).start()
+        """Đưa lệnh điều khiển PLC vào hàng đợi thực thi tuần tự trên thread chính."""
+        self._command_queue.put((name, callback))
+        self._wake_event.set()
         return True
 
-    def _run_priority_command(self, name: str, callback: Callable[[], bool]) -> None:
-        ok = False
-        self.pause_polling()
-        try:
-            time.sleep(0.005)
-            ok = bool(callback())
-        except Exception as exc:
-            self._emit_error(f"Lỗi PLC command {name}: {exc}")
-        finally:
-            time.sleep(0.005)
-            self.resume_polling()
-        self._emit_command_result(name, ok)
+    def schedule_clear_register(self, address: int, value: int, slave_id: int, delay_ms: int) -> None:
+        """Lên lịch clear register (ví dụ xóa bit lệnh D100) trực tiếp trên thread chính."""
+        clear_time = time.monotonic() + (max(0, delay_ms) / 1000.0)
+        self._pending_clears.append({
+            'address': address,
+            'value': value,
+            'slave_id': slave_id,
+            'clear_time': clear_time
+        })
+        self._wake_event.set()
 
     def _loop(self) -> None:
         last_sensor = 0.0
         last_plc = 0.0
         bus_gap_s = 0.002
-        idle_sleep_s = 0.005
+        idle_sleep_s = 0.002
 
         while self._running:
+            now = time.monotonic()
+            did_work = False
+
+            # 1. Xử lý các lệnh clear register đã đến hạn
+            if self._pending_clears:
+                to_run = [item for item in self._pending_clears if now >= item['clear_time']]
+                self._pending_clears = [item for item in self._pending_clears if now < item['clear_time']]
+                for item in to_run:
+                    try:
+                        self._client.write_register(item['address'], item['value'], item['slave_id'])
+                        logger.debug("Scheduler: cleared address %s to %s", item['address'], item['value'])
+                    except Exception as exc:
+                        logger.error("Scheduler clear register failed: %s", exc)
+                    did_work = True
+                    time.sleep(bus_gap_s)
+
+            # 2. Xử lý hàng đợi command ưu tiên (RUN/STOP/CLAMP, v.v.)
+            if not self._command_queue.empty():
+                try:
+                    name, callback = self._command_queue.get_nowait()
+                    ok = False
+                    try:
+                        ok = bool(callback())
+                        if ok:
+                            # Nghỉ ngắn để simulator/PLC kịp xử lý
+                            time.sleep(0.04)
+                    except Exception as exc:
+                        self._emit_error(f"Lỗi PLC command {name}: {exc}")
+                    
+                    self._emit_command_result(name, ok)
+                    self._command_queue.task_done()
+                except queue.Empty:
+                    pass
+                did_work = True
+                time.sleep(bus_gap_s)
+
+            # Nếu đang tạm dừng polling (ví dụ kết nối thiết bị)
             if self._polling_paused:
                 self._wake_event.wait(timeout=idle_sleep_s)
                 self._wake_event.clear()
@@ -153,9 +202,8 @@ class ModbusBusScheduler:
                 last_plc = last_sensor
                 continue
 
+            # 3. Đọc dữ liệu lực của cảm biến định kỳ
             now = time.monotonic()
-            did_work = False
-
             if (now - last_sensor) >= self._sensor_interval_s:
                 status = self._read_sensor_force()
                 if status is not None:
@@ -164,6 +212,7 @@ class ModbusBusScheduler:
                 did_work = True
                 time.sleep(bus_gap_s)
 
+            # 4. Đọc dữ liệu PLC định kỳ (Góc, chu kỳ, trạng thái)
             now = time.monotonic()
             plc_interval = self._plc_realtime_interval_s if self._recording_active else self._plc_status_interval_s
             if (now - last_plc) >= plc_interval:
@@ -176,6 +225,7 @@ class ModbusBusScheduler:
                 did_work = True
                 time.sleep(bus_gap_s)
 
+            # 5. Nghỉ ngắn nếu không làm gì để giảm CPU
             if not did_work:
                 self._wake_event.wait(timeout=idle_sleep_s)
                 self._wake_event.clear()
@@ -183,17 +233,32 @@ class ModbusBusScheduler:
     def _read_sensor_force(self) -> Optional[DeviceStatus]:
         start = time.perf_counter()
         try:
-            regs = self._client.read_registers(REG_NET_WEIGHT_HI, 22, self._sensor_slave_id)
-            if regs is None or len(regs) < 22:
+            # Khi đang record, chỉ đọc 15 thanh ghi (tới Status ở offset 14) thay vì 22
+            count = 15 if self._recording_active else 22
+            regs = self._client.read_registers(REG_NET_WEIGHT_HI, count, self._sensor_slave_id)
+            if regs is None or len(regs) < count:
                 return None
+            
             net_val = self._decode_float32(regs[0], regs[1])
             gross_val = self._decode_float32(regs[2], regs[3])
             tare_val = self._decode_float32(regs[4], regs[5])
             raw_status = int(regs[14])
             is_stable = bool(raw_status & STATUS_BIT_STABLE)
             is_fullscale = bool(raw_status & STATUS_BIT_FULLSCALE)
-            max_net_val = self._decode_float32(regs[18], regs[19])
-            min_net_val = self._decode_float32(regs[20], regs[21])
+            
+            if count == 22:
+                max_net_val = self._decode_float32(regs[18], regs[19])
+                min_net_val = self._decode_float32(regs[20], regs[21])
+                self._last_max_net = max_net_val
+                self._last_min_net = min_net_val
+            else:
+                # Tự tính toán Peak Max/Min trong lúc record để tránh nghẽn bus
+                if self._last_max_net == -999999.0 or net_val > self._last_max_net:
+                    self._last_max_net = net_val
+                if self._last_min_net == 999999.0 or net_val < self._last_min_net:
+                    self._last_min_net = net_val
+                max_net_val = self._last_max_net
+                min_net_val = self._last_min_net
             
             self._record_force_timing((time.perf_counter() - start) * 1000.0)
             return DeviceStatus(
@@ -290,3 +355,4 @@ class ModbusBusScheduler:
                 cb(msg)
             except Exception:
                 pass
+

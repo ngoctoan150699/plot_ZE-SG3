@@ -206,6 +206,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         self._auto_torque = True
         self._manual_torque = 0.0
         self._noise_nm = 0.025
+        self._ui_tick_count = 0
         self._build_ui()
         self.setStyleSheet(self.STYLESHEET)
         self._scan_ports()
@@ -407,7 +408,7 @@ class IntegratedSimulatorWindow(QMainWindow):
                 parity="N",
                 stopbits=1,
                 bytesize=8,
-                timeout=1,
+                timeout=0.05,
             )
             self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên cổng {port}: slave 1 torque, slave 2 PLC")
             self._server.serve_forever()
@@ -604,7 +605,10 @@ class IntegratedSimulatorWindow(QMainWindow):
         self._write_torque_registers()
         self._write_plc_registers(speed)
         self._update_modbus_status_registers(dt)
-        self._update_ui()
+        
+        self._ui_tick_count = (self._ui_tick_count + 1) % 4
+        if self._ui_tick_count == 0:
+            self._update_ui()
 
     def _advance_test(self, pos: float, neg: float, speed: float, cycles: int, window: int, dt: float):
         s = self._state
@@ -730,7 +734,8 @@ class IntegratedSimulatorWindow(QMainWindow):
             s.sample_index & UINT16,
         ]
         self._ctx_set(PLC_ID, PLC_D120_STATUS_WORD, regs)
-        self.lbl_regs.setText("D120..D135 = " + ", ".join(str(v) for v in regs))
+        if getattr(self, "_ui_tick_count", 0) == 0:
+            self.lbl_regs.setText("D120..D135 = " + ", ".join(str(v) for v in regs))
 
     def _update_ui(self):
         s = self._state

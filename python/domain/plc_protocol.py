@@ -119,6 +119,10 @@ class PlcRealtimeState:
         return False
 
     @property
+    def should_record_sample(self) -> bool:
+        return not self.is_done and not self.has_fault
+
+    @property
     def current_angle_deg(self) -> float:
         angle = self.current_angle_x100 / 100.0
         if angle > 180.0:

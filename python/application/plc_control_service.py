@@ -53,6 +53,11 @@ class PlcControlService:
     def __init__(self, client: IModbusClient, slave_id: int = PLC_DEFAULT_SLAVE_ID):
         self._client = client
         self._slave_id = slave_id
+        self._scheduler = None
+
+    def set_scheduler(self, scheduler) -> None:
+        """Set scheduler to delegate pulse clears instead of spawning threads."""
+        self._scheduler = scheduler
 
     def set_client(self, client: IModbusClient, slave_id: int = PLC_DEFAULT_SLAVE_ID) -> None:
         """Replace Modbus client/slave after the UI connects or reconnects."""
@@ -138,6 +143,10 @@ class PlcControlService:
         return False
 
     def _clear_cmd_word_later(self, pulse_ms: int) -> None:
+        if self._scheduler and hasattr(self._scheduler, 'schedule_clear_register'):
+            self._scheduler.schedule_clear_register(PLC_D100_CMD_WORD, 0, self._slave_id, pulse_ms)
+            return
+
         import threading
 
         def _worker() -> None:
@@ -223,6 +232,11 @@ class PlcControlService:
         try:
             if not self._client.write_register(address, 1, self._slave_id):
                 return False
+            
+            if self._scheduler and hasattr(self._scheduler, 'schedule_clear_register'):
+                self._scheduler.schedule_clear_register(address, 0, self._slave_id, pulse_ms)
+                return True
+                
             time.sleep(max(0, int(pulse_ms)) / 1000.0)
             return bool(self._client.write_register(address, 0, self._slave_id))
         except Exception as exc:

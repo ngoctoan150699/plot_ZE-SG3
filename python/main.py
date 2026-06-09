@@ -22,7 +22,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def set_windows_timer_resolution(enable: bool):
+    import sys
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            winmm = ctypes.windll.winmm
+            if enable:
+                winmm.timeBeginPeriod(1)
+                logger.info("Đã nâng độ phân giải Windows timer lên 1ms")
+            else:
+                winmm.timeEndPeriod(1)
+                logger.info("Đã khôi phục độ phân giải Windows timer")
+        except Exception as e:
+            logger.debug("Không thể cấu hình Windows timer: %s", e)
+
+
 def main():
+    set_windows_timer_resolution(True)
     # -------------------------------------------------------
     # 1. INFRASTRUCTURE – Load settings
     # -------------------------------------------------------
@@ -132,8 +149,10 @@ def main():
     # Cleanup khi thoát
     bus_scheduler.stop()
     collector.stop()
+    set_windows_timer_resolution(False)
     logger.info("Ứng dụng đã thoát")
     sys.exit(result)
+
 
 
 if __name__ == "__main__":

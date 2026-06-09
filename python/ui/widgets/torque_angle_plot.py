@@ -63,11 +63,15 @@ class TorqueAnglePlot(FigureCanvas):
 
         # Blit support
         self._bg = None
+        self._last_xlim = None
+        self._last_ylim = None
 
     def _save_background(self):
         """Lưu background (axes, grid, labels) để blit."""
         self.draw()
         self._bg = self.copy_from_bbox(self.ax.bbox)
+        self._last_xlim = self.ax.get_xlim()
+        self._last_ylim = self.ax.get_ylim()
 
     def set_y_limits(self, limit: Optional[float]) -> None:
         """Thiết lập giới hạn trục Y."""
@@ -111,6 +115,14 @@ class TorqueAnglePlot(FigureCanvas):
             self.ax.relim()
             self.ax.autoscale_view(scalex=False, scaley=True)
 
+        # Kiểm tra xem giới hạn trục thực tế có thay đổi so với cache blit không
+        current_xlim = self.ax.get_xlim()
+        current_ylim = self.ax.get_ylim()
+        if self._last_xlim != current_xlim or self._last_ylim != current_ylim:
+            self._bg = None  # Invalidate background cache
+            self._last_xlim = current_xlim
+            self._last_ylim = current_ylim
+
         # Vẽ biểu đồ sử dụng Blitting tăng tốc
         if self._bg is not None:
             try:
@@ -135,4 +147,7 @@ class TorqueAnglePlot(FigureCanvas):
         self._y_data.clear()
         self.line.set_data([], [])
         self._bg = None
+        self._last_xlim = None
+        self._last_ylim = None
         self.draw()
+

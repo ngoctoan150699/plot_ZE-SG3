@@ -66,11 +66,15 @@ class RealTimePlot(FigureCanvas):
 
         # Blit support
         self._bg = None
+        self._last_xlim = None
+        self._last_ylim = None
 
     def _save_background(self):
         """Lưu background (axes, grid, labels) để blit."""
         self.draw()
         self._bg = self.copy_from_bbox(self.ax.bbox)
+        self._last_xlim = self.ax.get_xlim()
+        self._last_ylim = self.ax.get_ylim()
 
     def set_y_limits(self, limit: Optional[float]) -> None:
         """Thiết lập giới hạn trục Y."""
@@ -115,7 +119,15 @@ class RealTimePlot(FigureCanvas):
             self.ax.relim()
             self.ax.autoscale_view(scalex=False, scaley=True)
 
-        # Blit rendering: chỉ vẽ lại line nếu có background cache
+        # Kiểm tra xem giới hạn trục thực tế có thay đổi so với cache blit không
+        current_xlim = self.ax.get_xlim()
+        current_ylim = self.ax.get_ylim()
+        if self._last_xlim != current_xlim or self._last_ylim != current_ylim:
+            self._bg = None  # Invalidate background cache
+            self._last_xlim = current_xlim
+            self._last_ylim = current_ylim
+
+        # Blit rendering: chỉ vẽ lại line nếu có background cache và không đổi trục
         if self._bg is not None:
             try:
                 self.restore_region(self._bg)
@@ -142,4 +154,7 @@ class RealTimePlot(FigureCanvas):
         self._y_data.clear()
         self.line.set_data([], [])
         self._bg = None
+        self._last_xlim = None
+        self._last_ylim = None
         self.draw()
+

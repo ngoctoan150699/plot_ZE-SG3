@@ -740,6 +740,9 @@ class MainWindow(QMainWindow):
         self._report_svc  = report_svc
         self._bus_scheduler = bus_scheduler
 
+        if self._plc_svc and self._bus_scheduler:
+            self._plc_svc.set_scheduler(self._bus_scheduler)
+
         # === Trạng thái nội bộ ===
         self._connected   = False
         self._recording   = False
@@ -1871,6 +1874,9 @@ class MainWindow(QMainWindow):
             self._jog_direction = 0
             if hasattr(self, 'lbl_plc_angle'):
                 self.lbl_plc_angle.setText("0.00°")
+        if ok:
+            # Truy vấn lại trạng thái PLC ngay lập tức để UI cập nhật không độ trễ
+            threading.Thread(target=self._read_plc_status_once, name="PLC-Status-Post-Cmd", daemon=True).start()
 
     def _plc_start_run(self):
         self._plc_command("RUN", lambda: self._plc_svc.start_run() if self._plc_svc else False)
