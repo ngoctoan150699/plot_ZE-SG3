@@ -14,6 +14,7 @@ Cải thiện UX so với file gốc:
 """
 
 import logging
+import threading
 import time
 from datetime import datetime
 from typing import List, Optional, Any, cast
@@ -55,19 +56,13 @@ import os
 import sys
 import tempfile
 
-# Thêm thư mục draw_plot vào sys.path để import các module độc lập
+# Thêm thư mục draw_plot vào sys.path để lazy import Plot Viewer khi cần.
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 _workspace_dir = os.path.dirname(os.path.dirname(_cur_dir))
 _draw_plot_path = os.path.join(_workspace_dir, "draw_plot")
 if _draw_plot_path not in sys.path:
     sys.path.insert(0, _draw_plot_path)
-
-try:
-    from draw_plot import TorquePlotViewer
-    from convert_may_gui import ConvertWidget
-    _HAS_PLOT_VIEWER = True
-except ImportError:
-    _HAS_PLOT_VIEWER = False
+_HAS_PLOT_VIEWER = True
 
 logger = logging.getLogger(__name__)
 
@@ -711,6 +706,9 @@ class MainWindow(QMainWindow):
     # Qt signals cho thread-safe UI update và servo control
     _sig_status = pyqtSignal(DeviceStatus)
     _sig_error  = pyqtSignal(str)
+    _sig_plc_status = pyqtSignal(object)
+    _sig_plc_angle = pyqtSignal(float)
+    _sig_plc_command_result = pyqtSignal(str, bool)
     _sig_servo_finished = pyqtSignal()
     _sig_servo_error = pyqtSignal(str)
 
@@ -726,6 +724,7 @@ class MainWindow(QMainWindow):
         plc_svc: Optional[Any] = None,
         measurement_svc: Optional[Any] = None,
         report_svc: Optional[Any] = None,
+        bus_scheduler: Optional[Any] = None,
     ):
         super().__init__()
         # === Inject dependencies ===
@@ -739,6 +738,7 @@ class MainWindow(QMainWindow):
         self._plc_svc     = plc_svc
         self._measurement_svc = measurement_svc
         self._report_svc  = report_svc
+        self._bus_scheduler = bus_scheduler
 
         # === Trạng thái nội bộ ===
         self._connected   = False
@@ -754,20 +754,40 @@ class MainWindow(QMainWindow):
         self._current_cycle = 0
         self._last_plc_status = None
         self._plc_status_error_logged = False
+        self._plc_status_fail_count = 0
         self._jog_active = False
         self._jog_direction = 0
         self._jog_started_at = 0.0
         self._jog_start_angle = 0.0
+        self._plc_status_polling = False
+        self._plc_angle_polling = False
+        self._plc_poll_lock = threading.Lock()
+        self._plc_poll_running = False
+        self._plc_poll_thread = None
+        self._plc_status_interval_s = 0.15
+        # Không đọc D124 riêng 50ms nữa vì làm nghẽn Modbus mô phỏng/RTU.
+        # Angle sẽ lấy từ block D120..D135 trong cùng vòng đọc status.
+        self._plc_angle_interval_s = 0.15
+        self._plc_command_running = False
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
         self._sig_error.connect(self._on_error)
+        self._sig_plc_status.connect(self._on_plc_status_received)
+        self._sig_plc_angle.connect(self._on_plc_angle_received)
+        self._sig_plc_command_result.connect(self._on_plc_command_result)
         self._sig_servo_finished.connect(self._handle_servo_finished)
         self._sig_servo_error.connect(self._handle_servo_error)
 
-        # === Đăng ký callback cho DataCollector ===
-        self._collector.on_data(lambda s: self._sig_status.emit(s))
-        self._collector.on_error(lambda e: self._sig_error.emit(e))
+        # === Đăng ký callback cho data source ===
+        if self._bus_scheduler:
+            self._bus_scheduler.on_sensor_data(lambda s: self._sig_status.emit(s))
+            self._bus_scheduler.on_plc_status(lambda s: self._sig_plc_status.emit(s))
+            self._bus_scheduler.on_command_result(lambda name, ok: self._sig_plc_command_result.emit(name, ok))
+            self._bus_scheduler.on_error(lambda e: self._sig_error.emit(e))
+        else:
+            self._collector.on_data(lambda s: self._sig_status.emit(s))
+            self._collector.on_error(lambda e: self._sig_error.emit(e))
 
         # === Đăng ký callback cho ServoService nếu có ===
         if self._servo_svc:
@@ -791,11 +811,11 @@ class MainWindow(QMainWindow):
         self._retranslate_ui()
 
         # Real-time bi-directional synchronization between Thu thập tab and Plot Viewer tab
-        if hasattr(self, 'combo_part_name') and _HAS_PLOT_VIEWER:
+        if hasattr(self, '_plot_viewer') and hasattr(self, 'combo_part_name') and _HAS_PLOT_VIEWER:
             self.combo_part_name.currentTextChanged.connect(self._sync_part_name_to_plot_viewer)
             self._plot_viewer.part_name_combo.currentTextChanged.connect(self._sync_part_name_to_acquisition)
             
-        if hasattr(self, 'combo_test_item') and _HAS_PLOT_VIEWER:
+        if hasattr(self, '_plot_viewer') and hasattr(self, 'combo_test_item') and _HAS_PLOT_VIEWER:
             self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
             self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
 
@@ -805,9 +825,8 @@ class MainWindow(QMainWindow):
             self.combo_test_item.currentTextChanged.connect(self._update_jog_speed_from_profile)
         self._update_jog_speed_from_profile()
 
-        self._plc_timer = QTimer(self)
-        self._plc_timer.setInterval(200)
-        self._plc_timer.timeout.connect(self._poll_plc_status)
+        # PLC polling chạy bằng background thread giống DataCollectorService.
+        # Không dùng QTimer để tránh UI thread bị chặn khi Modbus RTU timeout/bận.
 
     def set_app_icon(self, icon_path: str):
         """Set app/window icon and show the same icon on the status bar."""
@@ -950,15 +969,42 @@ class MainWindow(QMainWindow):
         # Tab 1: Plot Viewer
         # -----------------------------------------------
         if _HAS_PLOT_VIEWER:
-            # Plot Viewer: tạo TorquePlotViewer, chỉ lấy plot_tab (loại bỏ tab Converter bên trong)
+            self._plot_viewer_loaded = False
+            self._plot_viewer_container = QWidget()
+            pv_lay = QVBoxLayout(self._plot_viewer_container)
+            pv_lay.setContentsMargins(12, 12, 12, 12)
+            pv_lay.addWidget(QLabel("Plot Viewer sẽ được tải khi mở tab này."))
+            self.main_tabs.addTab(self._plot_viewer_container, "📊 Plot Viewer")
+            self.main_tabs.currentChanged.connect(self._on_main_tab_changed)
+
+    def _on_main_tab_changed(self, index: int):
+        """Lazy-load Plot Viewer only when user opens the tab."""
+        if index != 1 or getattr(self, '_plot_viewer_loaded', False):
+            return
+        try:
+            from draw_plot import TorquePlotViewer
             self._plot_viewer: Any = TorquePlotViewer()
-            plot_viewer_widget = QWidget()
-            pv_lay = QVBoxLayout(plot_viewer_widget)
-            pv_lay.setContentsMargins(0, 0, 0, 0)
+            layout = self._plot_viewer_container.layout()
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
             pv_tab = self._plot_viewer.plot_tab
-            pv_tab.setParent(plot_viewer_widget)
-            pv_lay.addWidget(pv_tab)
-            self.main_tabs.addTab(plot_viewer_widget, "📊 Plot Viewer")
+            pv_tab.setParent(self._plot_viewer_container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(pv_tab)
+            if hasattr(self, 'combo_part_name') and hasattr(self._plot_viewer, 'part_name_combo'):
+                self.combo_part_name.currentTextChanged.connect(self._sync_part_name_to_plot_viewer)
+                self._plot_viewer.part_name_combo.currentTextChanged.connect(self._sync_part_name_to_acquisition)
+                self._sync_part_name_to_plot_viewer(self.combo_part_name.currentText())
+            if hasattr(self, 'combo_test_item') and hasattr(self._plot_viewer, 'test_item_combo'):
+                self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
+                self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
+                self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
+            self._plot_viewer_loaded = True
+        except Exception as exc:
+            logger.warning("Không tải được Plot Viewer: %s", exc)
 
     def showEvent(self, a0):
         """Set initial splitter sizes as a proportion of the window width on first show.
@@ -1786,12 +1832,45 @@ class MainWindow(QMainWindow):
     # ===========================================================
 
     def _plc_command(self, action_name: str, callback) -> bool:
+        """Run PLC command outside UI thread to avoid Not Responding."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             self._log("⚠️ PLC chưa kết nối")
             return False
-        ok = callback()
+        if self._plc_command_running:
+            self._log(f"⏳ PLC đang xử lý lệnh trước, bỏ qua: {action_name}")
+            return False
+        self._plc_command_running = True
+        self._log(f"⏳ PLC: {action_name}...")
+        if self._bus_scheduler:
+            if not self._bus_scheduler.enqueue_command(action_name, callback):
+                self._plc_command_running = False
+                return False
+        else:
+            threading.Thread(
+                target=self._run_plc_command_worker,
+                args=(action_name, callback),
+                name=f"PLC-Cmd-{action_name}",
+                daemon=True,
+            ).start()
+        return True
+
+    def _run_plc_command_worker(self, action_name: str, callback):
+        ok = False
+        try:
+            ok = bool(callback())
+        except Exception:
+            ok = False
+        self._sig_plc_command_result.emit(action_name, ok)
+
+    def _on_plc_command_result(self, action_name: str, ok: bool):
+        self._plc_command_running = False
         self._log(("✅" if ok else "❌") + f" PLC: {action_name}")
-        return bool(ok)
+        if ok and action_name == "Home":
+            self._current_angle = 0.0
+            self._jog_active = False
+            self._jog_direction = 0
+            if hasattr(self, 'lbl_plc_angle'):
+                self.lbl_plc_angle.setText("0.00°")
 
     def _plc_start_run(self):
         self._plc_command("RUN", lambda: self._plc_svc.start_run() if self._plc_svc else False)
@@ -1809,15 +1888,14 @@ class MainWindow(QMainWindow):
         self._plc_command("Abort", lambda: self._plc_svc.abort() if self._plc_svc else False)
 
     def _plc_home(self):
-        ok = self._plc_command("Home", lambda: self._plc_svc.home() if self._plc_svc else False)
-        if ok and self._plc_svc:
-            self._current_angle = 0.0
-            self._jog_active = False
-            self._jog_direction = 0
-            self._plc_svc.write_current_angle(0.0)
-            if hasattr(self, 'lbl_plc_angle'):
-                self.lbl_plc_angle.setText("0.00°")
-            self._log("🏠 Home: đã reset góc PLC D124=0.00°")
+        def _home_and_reset_angle():
+            if not self._plc_svc:
+                return False
+            ok = self._plc_svc.home()
+            if ok:
+                self._plc_svc.write_current_angle(0.0)
+            return ok
+        self._plc_command("Home", _home_and_reset_angle)
 
     def _update_jog_speed_from_profile(self):
         if not hasattr(self, 'spin_plc_jog_speed'):
@@ -1906,16 +1984,87 @@ class MainWindow(QMainWindow):
         if not active:
             self._end_plc_jog()
 
-    def _poll_plc_status(self):
+    def _start_plc_polling(self):
+        """Start one PLC polling thread, similar to DataCollectorService."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             return
-        status = self._plc_svc.read_status()
+        if self._plc_poll_running and self._plc_poll_thread and self._plc_poll_thread.is_alive():
+            return
+        self._plc_poll_running = True
+        self._plc_poll_thread = threading.Thread(
+            target=self._plc_poll_loop,
+            name="PLC-Poller",
+            daemon=True,
+        )
+        self._plc_poll_thread.start()
+
+    def _stop_plc_polling(self):
+        self._plc_poll_running = False
+        thread = getattr(self, '_plc_poll_thread', None)
+        if thread and thread.is_alive():
+            thread.join(timeout=1.0)
+        self._plc_poll_thread = None
+        self._plc_status_polling = False
+        self._plc_angle_polling = False
+
+    def _plc_poll_loop(self):
+        """Read PLC angle fast and full status slower in a single worker thread."""
+        next_angle = 0.0
+        next_status = 0.0
+        while self._plc_poll_running:
+            now = time.monotonic()
+            did_work = False
+
+            if now >= next_status:
+                self._read_plc_status_once()
+                next_status = time.monotonic() + self._plc_status_interval_s
+                did_work = True
+
+            if not did_work:
+                time.sleep(0.005)
+            else:
+                time.sleep(0.001)
+
+    def _read_plc_status_once(self):
+        status = None
+        try:
+            if self._plc_svc and self._plc_svc.is_connected():
+                status = self._plc_svc.read_status()
+        except Exception:
+            status = None
+        self._sig_plc_status.emit(status)
+
+    def _read_plc_angle_once(self):
+        angle = None
+        try:
+            if self._plc_svc and self._plc_svc.is_connected():
+                reg = self._plc_svc._client.read_register(124, self._plc_svc.slave_id)
+                if reg is not None:
+                    raw = int(reg) & 0xFFFF
+                    if raw >= 0x8000:
+                        raw -= 0x10000
+                    angle = raw / 100.0
+        except Exception:
+            angle = None
+        self._sig_plc_angle.emit(float('nan') if angle is None else float(angle))
+
+    def _on_plc_angle_received(self, angle: float):
+        if angle != angle:  # NaN
+            return
+        self._current_angle = angle
+        if hasattr(self, 'lbl_plc_angle'):
+            self.lbl_plc_angle.setText(f"{self._current_angle:.2f}°")
+
+    def _on_plc_status_received(self, status):
         if status is None:
-            if not self._plc_status_error_logged:
+            self._plc_status_fail_count = getattr(self, '_plc_status_fail_count', 0) + 1
+            # Bỏ qua vài lần timeout lẻ sau command/record vì RTU/simulator có thể bận tức thời.
+            if self._plc_status_fail_count >= 5 and not self._plc_status_error_logged:
                 self._log("⚠️ Không đọc được PLC status D120..D135")
                 self._plc_status_error_logged = True
             return
         self._last_plc_status = status
+        self._plc_status_fail_count = 0
         self._plc_status_error_logged = False
         self._current_angle = status.current_angle_deg
         self._current_cycle = status.current_cycle
@@ -1930,6 +2079,11 @@ class MainWindow(QMainWindow):
             self._log("✅ PLC báo hoàn tất test")
             self._recording = False
             self._stop_recording()
+
+    def _poll_plc_status(self):
+        """Backward-compatible alias for manual status refresh."""
+        if not self._plc_poll_running:
+            threading.Thread(target=self._read_plc_status_once, name="PLC-Status-Once", daemon=True).start()
 
     def _prepare_plc_recording(self, profile, is_breakaway: bool) -> bool:
         if not self._plc_svc or not self._plc_svc.is_connected():
@@ -2206,9 +2360,14 @@ class MainWindow(QMainWindow):
 
 
                 self._collector.set_interval(self.spin_interval.value())
-                self._collector.start()
-                if self._plc_svc and not self._plc_timer.isActive():
-                    self._plc_timer.start()
+                if self._bus_scheduler:
+                    self._bus_scheduler.set_client(new_client, sensor_slave_id=sid, plc_slave_id=plc_sid)
+                    self._bus_scheduler.set_intervals(self.spin_interval.value(), 150)
+                    self._bus_scheduler.start()
+                else:
+                    self._collector.start()
+                    if self._plc_svc:
+                        self._start_plc_polling()
                 self._save_settings_from_ui()
                 self._log(f"✅ Kết nối thành công (Cảm biến Slave {sid}, PLC Slave {plc_sid})")
             else:
@@ -2217,9 +2376,11 @@ class MainWindow(QMainWindow):
             self._log(f"❌ Lỗi kết nối: {e}")
 
     def _disconnect(self):
-        if hasattr(self, '_plc_timer'):
-            self._plc_timer.stop()
-        self._collector.stop()
+        if self._bus_scheduler:
+            self._bus_scheduler.stop()
+        else:
+            self._stop_plc_polling()
+            self._collector.stop()
         if self._collector._client:
             self._collector._client.disconnect()
         
