@@ -2137,7 +2137,7 @@ class MainWindow(QMainWindow):
         if not self._plc_svc.start_record():
             self._log("❌ Không pulse được START_RECORD D100.b2")
             return False
-        self._log("✅ Đã ghi PLC config và gửi START_RECORD")
+        self._log(f"✅ Đã ghi PLC config và gửi START_RECORD (D105 cycle={config.cycle_set})")
         return True
 
     # ===========================================================
@@ -2386,7 +2386,7 @@ class MainWindow(QMainWindow):
             self._collector.set_interval(self.spin_interval.value())
             if self._bus_scheduler:
                 self._bus_scheduler.set_clients(sensor_client, plc_client, sensor_slave_id=sid, plc_slave_id=plc_sid)
-                self._bus_scheduler.set_intervals(self.spin_interval.value(), 150)
+                self._bus_scheduler.set_intervals(self.spin_interval.value(), 100)
                 self._bus_scheduler.start()
             else:
                 self._collector.start()
@@ -2835,7 +2835,8 @@ class MainWindow(QMainWindow):
                 negative_angle=vals['negative_angle'],
                 positive_angle=vals['positive_angle'],
                 speed=vals['speed'],
-                jog_speed=vals['jog_speed']
+                jog_speed=vals['jog_speed'],
+                cycles=vals['cycles']
             )
             self._settings.save_servo_profiles(profiles)
             

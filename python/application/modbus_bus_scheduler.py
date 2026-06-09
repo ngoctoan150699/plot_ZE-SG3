@@ -44,9 +44,9 @@ class ModbusBusScheduler:
         self._plc_client = plc_client if plc_client is not None else sensor_client
         self._sensor_slave_id = sensor_slave_id
         self._plc_slave_id = plc_slave_id
-        self._sensor_interval_s = max(0.001, sensor_interval_ms / 1000.0)
-        self._plc_status_interval_s = max(0.5, plc_interval_ms / 1000.0)  # Tối thiểu 500ms cho status PLC
-        self._plc_realtime_interval_s = 0.20  # Tăng lên 200ms khi record để tránh nghẽn PLC
+        self._sensor_interval_s = max(0.05, sensor_interval_ms / 1000.0)  # TCP cảm biến: tối thiểu 50ms
+        self._plc_status_interval_s = max(0.10, plc_interval_ms / 1000.0)  # PLC RTU: khoảng 100ms
+        self._plc_realtime_interval_s = 0.10
         self._recording_active = False
         self._polling_paused = False
         self._running = False
@@ -65,12 +65,21 @@ class ModbusBusScheduler:
         self._plc_scan_timings_ms: list[float] = []
         self._plc_command_warn_ms = 250.0
         self._plc_scan_warn_ms = 250.0
+        self._plc_min_transaction_gap_s = 0.02
+        self._last_plc_done = 0
+        self._last_plc_done_read = 0.0
+        self._plc_done_interval_s = 1.0
         
         # Hàng đợi command và danh sách clear register tự động (cho PLC)
         self._command_queue: queue.Queue = queue.Queue()
         self._pending_clears: list[dict] = []
         self._last_max_net = 0.0
         self._last_min_net = 0.0
+        self._last_gross = 0.0
+        self._last_tare = 0.0
+        self._last_raw_status = 0
+        self._last_sensor_slow_read = 0.0
+        self._sensor_slow_interval_s = 3.0
 
     def set_client(self, client: IModbusClient, sensor_slave_id: int = 1, plc_slave_id: int = 2) -> None:
         """Tương thích ngược: gán 1 client cho cả hai thiết bị."""
@@ -91,6 +100,12 @@ class ModbusBusScheduler:
         self._force_timings_ms.clear()
         self._last_max_net = 0.0
         self._last_min_net = 0.0
+        self._last_gross = 0.0
+        self._last_tare = 0.0
+        self._last_raw_status = 0
+        self._last_sensor_slow_read = 0.0
+        self._last_plc_done = 0
+        self._last_plc_done_read = 0.0
         
         # Clear hàng đợi khi đổi kết nối
         while not self._command_queue.empty():
@@ -101,8 +116,8 @@ class ModbusBusScheduler:
         self._pending_clears.clear()
 
     def set_intervals(self, sensor_ms: int, plc_ms: int = 1000) -> None:
-        self._sensor_interval_s = max(0.001, int(sensor_ms) / 1000.0)
-        self._plc_status_interval_s = max(0.5, int(plc_ms) / 1000.0)  # Tối thiểu 500ms
+        self._sensor_interval_s = max(0.05, int(sensor_ms) / 1000.0)  # TCP tối thiểu 50ms
+        self._plc_status_interval_s = max(0.10, int(plc_ms) / 1000.0)  # RTU tối thiểu 100ms
         self._sensor_wake_event.set()
         self._plc_wake_event.set()
 
@@ -214,8 +229,8 @@ class ModbusBusScheduler:
     def _plc_loop(self) -> None:
         """Thread 2: Xử lý lệnh điều khiển và đọc trạng thái PLC qua Modbus RTU."""
         last_plc = 0.0
-        bus_gap_s = 0.002
-        idle_sleep_s = 0.002
+        bus_gap_s = self._plc_min_transaction_gap_s
+        idle_sleep_s = 0.01
 
         while self._running:
             now = time.monotonic()
@@ -261,7 +276,7 @@ class ModbusBusScheduler:
 
             # 3. Đọc dữ liệu PLC định kỳ (Góc, chu kỳ, trạng thái - cổng RTU)
             now = time.monotonic()
-            # Tối ưu plc_interval: 200ms khi record để vẽ mượt, self._plc_status_interval_s (tối thiểu 500ms) khi idle
+            # Poll PLC rất thưa để không chiếm RS485; command queue vẫn được xử lý ngay khi có lệnh.
             plc_interval = self._plc_realtime_interval_s if self._recording_active else self._plc_status_interval_s
             if (now - last_plc) >= plc_interval:
                 scan_start = time.perf_counter()
@@ -288,32 +303,39 @@ class ModbusBusScheduler:
     def _read_sensor_force(self) -> Optional[DeviceStatus]:
         start = time.perf_counter()
         try:
-            # Khi đang record, chỉ đọc 15 thanh ghi (tới Status ở offset 14) thay vì 22
-            count = 15 if self._recording_active else 22
-            regs = self._sensor_client.read_registers(REG_NET_WEIGHT_HI, count, self._sensor_slave_id)
-            if regs is None or len(regs) < count:
+            # Realtime chỉ cần lực Net Weight: đọc 2 regs float32 tại D63..D64.
+            # Các thông tin phụ cập nhật chậm ở block riêng để giảm delay TCP.
+            regs = self._sensor_client.read_registers(REG_NET_WEIGHT_HI, 2, self._sensor_slave_id)
+            if regs is None or len(regs) < 2:
                 return None
             
             net_val = self._decode_float32(regs[0], regs[1])
-            gross_val = self._decode_float32(regs[2], regs[3])
-            tare_val = self._decode_float32(regs[4], regs[5])
-            raw_status = int(regs[14])
+
+            now = time.monotonic()
+            if (now - self._last_sensor_slow_read) >= self._sensor_slow_interval_s:
+                slow_regs = self._sensor_client.read_registers(REG_NET_WEIGHT_HI, 15, self._sensor_slave_id)
+                self._last_sensor_slow_read = now
+                if slow_regs is not None and len(slow_regs) >= 15:
+                    self._last_gross = self._decode_float32(slow_regs[2], slow_regs[3])
+                    self._last_tare = self._decode_float32(slow_regs[4], slow_regs[5])
+                    self._last_raw_status = int(slow_regs[14])
+
+            raw_status = self._last_raw_status
             is_stable = bool(raw_status & STATUS_BIT_STABLE)
             is_fullscale = bool(raw_status & STATUS_BIT_FULLSCALE)
+            gross_val = self._last_gross
+            tare_val = self._last_tare
             
-            if count == 22:
-                max_net_val = self._decode_float32(regs[18], regs[19])
-                min_net_val = self._decode_float32(regs[20], regs[21])
-                self._last_max_net = max_net_val
-                self._last_min_net = min_net_val
-            else:
-                # Tự tính toán Peak Max/Min trong lúc record để tránh nghẽn bus
-                if self._last_max_net == -999999.0 or net_val > self._last_max_net:
-                    self._last_max_net = net_val
-                if self._last_min_net == 999999.0 or net_val < self._last_min_net:
-                    self._last_min_net = net_val
-                max_net_val = self._last_max_net
-                min_net_val = self._last_min_net
+            # Tự tính Peak Max/Min để không phải đọc thêm D81..D84 ở mỗi scan.
+            if self._last_max_net == 0.0 and self._last_min_net == 0.0:
+                self._last_max_net = net_val
+                self._last_min_net = net_val
+            if self._last_max_net == -999999.0 or net_val > self._last_max_net:
+                self._last_max_net = net_val
+            if self._last_min_net == 999999.0 or net_val < self._last_min_net:
+                self._last_min_net = net_val
+            max_net_val = self._last_max_net
+            min_net_val = self._last_min_net
             
             self._record_force_timing((time.perf_counter() - start) * 1000.0)
             return DeviceStatus(
@@ -333,17 +355,27 @@ class ModbusBusScheduler:
 
     def _read_plc_realtime(self) -> Optional[PlcRealtimeState]:
         try:
+            # Ưu tiên tốc độ: chỉ đọc D123(current_cycle) và D124(current_angle_x100).
+            # Không đọc cả D120..D135 trong vòng nhanh để tránh nghẽn RS485.
             regs = self._plc_client.read_registers(
-                PLC_STATUS_START_ADDRESS,
-                PLC_STATUS_REGISTER_COUNT,
+                PLC_STATUS_START_ADDRESS + 3,
+                2,
                 self._plc_slave_id,
             )
-            if regs is None or len(regs) < PLC_STATUS_REGISTER_COUNT:
+            if regs is None or len(regs) < 2:
                 return None
+
+            now = time.monotonic()
+            if (now - self._last_plc_done_read) >= self._plc_done_interval_s:
+                done_reg = self._plc_client.read_register(PLC_STATUS_START_ADDRESS + 14, self._plc_slave_id)
+                self._last_plc_done_read = now
+                if done_reg is not None:
+                    self._last_plc_done = int(done_reg) & 0xFFFF
+
             return PlcRealtimeState(
-                current_cycle=int(regs[3]) & 0xFFFF,
-                current_angle_x100=decode_signed_16(regs[4]),
-                test_done=int(regs[14]) & 0xFFFF,
+                current_cycle=int(regs[0]) & 0xFFFF,
+                current_angle_x100=decode_signed_16(regs[1]),
+                test_done=self._last_plc_done,
             )
         except Exception:
             return None

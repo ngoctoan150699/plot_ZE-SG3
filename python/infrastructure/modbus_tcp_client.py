@@ -32,7 +32,7 @@ except ImportError:
 class ModbusTcpClient(IModbusClient):
     """Kết nối Modbus TCP/IP qua Ethernet, giữ socket lâu dài và tự reconnect."""
 
-    def __init__(self, host: str, port: int = 502, timeout: float = 0.3):
+    def __init__(self, host: str, port: int = 502, timeout: float = 0.08):
         if _PyModbusTcp is None:
             raise ImportError("pymodbus chưa được cài đặt. Chạy: pip install pymodbus")
 
@@ -116,7 +116,7 @@ class ModbusTcpClient(IModbusClient):
                     logger.warning("TCP read slow: addr=%s count=%s slave=%s %.1fms", address, count, slave_id, elapsed)
                 if result and hasattr(result, 'registers') and len(result.registers) >= count:
                     return list(result.registers)
-                self._mark_error_locked(f"read_registers({address},{count}) empty")
+                # Không reconnect ngay vì một frame empty/timeout đơn lẻ; giữ TCP socket ổn định.
                 return None
             except Exception as e:
                 self._mark_error_locked(f"read_registers({address},{count})", e)
