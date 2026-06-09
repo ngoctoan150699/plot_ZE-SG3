@@ -140,23 +140,31 @@ class DataCollectorService:
                 time.sleep(0.0001)
 
     def _read_device_status(self) -> Optional[DeviceStatus]:
-        """Đọc lực realtime nhanh nhất: chỉ 2 thanh ghi Net Weight Float32."""
+        """Đọc tất cả các thanh ghi lực cùng lúc: 22 thanh ghi từ REG_NET_WEIGHT_HI."""
         sid = self._slave_id
-        regs = self._client.read_registers(REG_NET_WEIGHT_HI, 2, sid)
-        if regs is None or len(regs) < 2:
+        regs = self._client.read_registers(REG_NET_WEIGHT_HI, 22, sid)
+        if regs is None or len(regs) < 22:
             return None
 
         net_val = self._decode_float32(regs[0], regs[1])
+        gross_val = self._decode_float32(regs[2], regs[3])
+        tare_val = self._decode_float32(regs[4], regs[5])
+        raw_status = int(regs[14])
+        is_stable = bool(raw_status & STATUS_BIT_STABLE)
+        is_fullscale = bool(raw_status & STATUS_BIT_FULLSCALE)
+        max_net_val = self._decode_float32(regs[18], regs[19])
+        min_net_val = self._decode_float32(regs[20], regs[21])
+
         return DeviceStatus(
             connected=True,
-            is_stable=True,
-            is_fullscale=False,
+            is_stable=is_stable,
+            is_fullscale=is_fullscale,
             net_weight=net_val,
-            gross_weight=0.0,
-            tare_weight=0.0,
-            max_net_weight=0.0,
-            min_net_weight=0.0,
-            raw_status_reg=0,
+            gross_weight=gross_val,
+            tare_weight=tare_val,
+            max_net_weight=max_net_val,
+            min_net_weight=min_net_val,
+            raw_status_reg=raw_status,
         )
 
     def _read_device_status_fallback(self) -> Optional[DeviceStatus]:

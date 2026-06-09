@@ -783,6 +783,7 @@ class MainWindow(QMainWindow):
         if self._bus_scheduler:
             self._bus_scheduler.on_sensor_data(lambda s: self._sig_status.emit(s))
             self._bus_scheduler.on_plc_status(lambda s: self._sig_plc_status.emit(s))
+            self._bus_scheduler.on_command_result(lambda name, ok: self._sig_plc_command_result.emit(name, ok))
             self._bus_scheduler.on_error(lambda e: self._sig_error.emit(e))
         else:
             self._collector.on_data(lambda s: self._sig_status.emit(s))
@@ -1836,37 +1837,29 @@ class MainWindow(QMainWindow):
             self._log("⚠️ PLC chưa kết nối")
             return False
         if self._plc_command_running:
-            self._log(f"⚡ PLC ưu tiên: gửi ngay {action_name} dù lệnh trước chưa báo xong")
+            self._log(f"⏳ PLC đang xử lý lệnh trước, bỏ qua: {action_name}")
+            return False
         self._plc_command_running = True
         self._log(f"⏳ PLC: {action_name}...")
-        threading.Thread(
-            target=self._run_plc_command_worker,
-            args=(action_name, callback),
-            name=f"PLC-Cmd-{action_name}",
-            daemon=True,
-        ).start()
-        # Không khóa nút/lệnh tiếp theo: PLC commands là lệnh ưu tiên tức thời.
-        self._plc_command_running = False
+        if self._bus_scheduler:
+            if not self._bus_scheduler.enqueue_command(action_name, callback):
+                self._plc_command_running = False
+                return False
+        else:
+            threading.Thread(
+                target=self._run_plc_command_worker,
+                args=(action_name, callback),
+                name=f"PLC-Cmd-{action_name}",
+                daemon=True,
+            ).start()
         return True
 
     def _run_plc_command_worker(self, action_name: str, callback):
         ok = False
-        scheduler = self._bus_scheduler
-        collector = self._collector
         try:
-            if scheduler and hasattr(scheduler, 'pause_polling'):
-                scheduler.pause_polling()
-            if collector and hasattr(collector, 'pause_polling'):
-                collector.pause_polling()
-            time.sleep(0.01)
             ok = bool(callback())
         except Exception:
             ok = False
-        finally:
-            if collector and hasattr(collector, 'resume_polling'):
-                collector.resume_polling()
-            if scheduler and hasattr(scheduler, 'resume_polling'):
-                scheduler.resume_polling()
         self._sig_plc_command_result.emit(action_name, ok)
 
     def _on_plc_command_result(self, action_name: str, ok: bool):
@@ -2375,7 +2368,7 @@ class MainWindow(QMainWindow):
                 self._collector.set_interval(self.spin_interval.value())
                 if self._bus_scheduler:
                     self._bus_scheduler.set_client(new_client, sensor_slave_id=sid, plc_slave_id=plc_sid)
-                    self._bus_scheduler.set_intervals(self.spin_interval.value(), 1000)
+                    self._bus_scheduler.set_intervals(self.spin_interval.value(), 150)
                     self._bus_scheduler.start()
                 else:
                     self._collector.start()

@@ -74,16 +74,17 @@ class PlcControlService:
     def read_cycle_angle_done(self) -> Optional[PlcRealtimeState]:
         """Read minimal realtime PLC data: D123 cycle, D124 angle, D134 done."""
         try:
-            cycle_angle = self._client.read_registers(PLC_D123_CURRENT_CYCLE, 2, self._slave_id)
-            if cycle_angle is None or len(cycle_angle) < 2:
+            regs = self._client.read_registers(
+                PLC_STATUS_START_ADDRESS,
+                PLC_STATUS_REGISTER_COUNT,
+                self._slave_id,
+            )
+            if regs is None or len(regs) < PLC_STATUS_REGISTER_COUNT:
                 return None
-            done = self._client.read_register(PLC_D134_TEST_DONE, self._slave_id)
-            if done is None:
-                done = 0
             return PlcRealtimeState(
-                current_cycle=clamp_u16(cycle_angle[0]),
-                current_angle_x100=decode_signed_16(cycle_angle[1]),
-                test_done=clamp_u16(done),
+                current_cycle=clamp_u16(regs[3]),
+                current_angle_x100=decode_signed_16(regs[4]),
+                test_done=clamp_u16(regs[14]),
             )
         except Exception as exc:
             logger.debug("PLC read_cycle_angle_done failed: %s", exc)
@@ -126,14 +127,15 @@ class PlcControlService:
         write response before the UI reports success.
         """
         bit_mask = clamp_u16(bit_mask)
-        try:
-            if not self._client.write_register(PLC_D100_CMD_WORD, bit_mask, self._slave_id):
-                return False
-            self._clear_cmd_word_later(pulse_ms)
-            return True
-        except Exception as exc:
-            logger.debug("PLC pulse_cmd_bit(%s) failed: %s", bit_mask, exc)
-            return False
+        for attempt in range(3):
+            try:
+                if self._client.write_register(PLC_D100_CMD_WORD, bit_mask, self._slave_id):
+                    self._clear_cmd_word_later(pulse_ms)
+                    return True
+            except Exception as exc:
+                logger.debug("PLC pulse_cmd_bit(%s) attempt %s failed: %s", bit_mask, attempt + 1, exc)
+            time.sleep(0.02)
+        return False
 
     def _clear_cmd_word_later(self, pulse_ms: int) -> None:
         import threading

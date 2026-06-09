@@ -16,6 +16,8 @@ from domain.constants import (
     PLC_STATUS_REGISTER_COUNT,
     PLC_STATUS_START_ADDRESS,
     REG_NET_WEIGHT_HI,
+    STATUS_BIT_STABLE,
+    STATUS_BIT_FULLSCALE,
 )
 from domain.entities import DeviceStatus
 from domain.plc_protocol import PlcRealtimeState, PlcStatus, decode_signed_16
@@ -41,7 +43,7 @@ class ModbusBusScheduler:
         self._plc_slave_id = plc_slave_id
         self._sensor_interval_s = max(0.001, sensor_interval_ms / 1000.0)
         self._plc_status_interval_s = max(0.2, plc_interval_ms / 1000.0)
-        self._plc_realtime_interval_s = 0.02
+        self._plc_realtime_interval_s = 0.05
         self._recording_active = False
         self._polling_paused = False
         self._running = False
@@ -126,66 +128,84 @@ class ModbusBusScheduler:
 
     def _run_priority_command(self, name: str, callback: Callable[[], bool]) -> None:
         ok = False
+        self.pause_polling()
         try:
+            time.sleep(0.005)
             ok = bool(callback())
         except Exception as exc:
             self._emit_error(f"Lỗi PLC command {name}: {exc}")
+        finally:
+            time.sleep(0.005)
+            self.resume_polling()
         self._emit_command_result(name, ok)
 
     def _loop(self) -> None:
-        next_sensor = 0.0
-        next_plc = 0.0
+        last_sensor = 0.0
+        last_plc = 0.0
+        bus_gap_s = 0.002
+        idle_sleep_s = 0.005
+
         while self._running:
             if self._polling_paused:
-                self._wake_event.wait(timeout=0.005)
+                self._wake_event.wait(timeout=idle_sleep_s)
                 self._wake_event.clear()
+                last_sensor = time.monotonic()
+                last_plc = last_sensor
                 continue
 
             now = time.monotonic()
             did_work = False
 
-            if now >= next_sensor:
+            if (now - last_sensor) >= self._sensor_interval_s:
                 status = self._read_sensor_force()
                 if status is not None:
                     self._emit_sensor(status)
-                next_sensor = time.monotonic() + self._sensor_interval_s
+                last_sensor = time.monotonic()
                 did_work = True
+                time.sleep(bus_gap_s)
 
             now = time.monotonic()
-            if now >= next_plc:
+            plc_interval = self._plc_realtime_interval_s if self._recording_active else self._plc_status_interval_s
+            if (now - last_plc) >= plc_interval:
                 if self._recording_active:
                     plc_status = self._read_plc_realtime()
-                    next_plc = time.monotonic() + self._plc_realtime_interval_s
                 else:
                     plc_status = self._read_plc_full_status()
-                    next_plc = time.monotonic() + self._plc_status_interval_s
                 self._emit_plc(plc_status)
+                last_plc = time.monotonic()
                 did_work = True
+                time.sleep(bus_gap_s)
 
             if not did_work:
-                now = time.monotonic()
-                sleep_s = min(max(0.001, next_sensor - now), max(0.001, next_plc - now), 0.02)
-                self._wake_event.wait(timeout=sleep_s)
+                self._wake_event.wait(timeout=idle_sleep_s)
                 self._wake_event.clear()
 
     def _read_sensor_force(self) -> Optional[DeviceStatus]:
         start = time.perf_counter()
         try:
-            regs = self._client.read_registers(REG_NET_WEIGHT_HI, 2, self._sensor_slave_id)
-            if regs is None or len(regs) < 2:
+            regs = self._client.read_registers(REG_NET_WEIGHT_HI, 22, self._sensor_slave_id)
+            if regs is None or len(regs) < 22:
                 return None
             net_val = self._decode_float32(regs[0], regs[1])
+            gross_val = self._decode_float32(regs[2], regs[3])
+            tare_val = self._decode_float32(regs[4], regs[5])
+            raw_status = int(regs[14])
+            is_stable = bool(raw_status & STATUS_BIT_STABLE)
+            is_fullscale = bool(raw_status & STATUS_BIT_FULLSCALE)
+            max_net_val = self._decode_float32(regs[18], regs[19])
+            min_net_val = self._decode_float32(regs[20], regs[21])
+            
             self._record_force_timing((time.perf_counter() - start) * 1000.0)
             return DeviceStatus(
                 connected=True,
-                is_stable=True,
-                is_fullscale=False,
+                is_stable=is_stable,
+                is_fullscale=is_fullscale,
                 net_weight=net_val,
-                gross_weight=0.0,
-                tare_weight=0.0,
-                max_net_weight=0.0,
-                min_net_weight=0.0,
-                raw_status_reg=0,
+                gross_weight=gross_val,
+                tare_weight=tare_val,
+                max_net_weight=max_net_val,
+                min_net_weight=min_net_val,
+                raw_status_reg=raw_status,
             )
         except Exception as exc:
             self._emit_error(f"Lỗi đọc lực ZE-SG3: {exc}")
@@ -193,14 +213,17 @@ class ModbusBusScheduler:
 
     def _read_plc_realtime(self) -> Optional[PlcRealtimeState]:
         try:
-            cycle_angle = self._client.read_registers(123, 2, self._plc_slave_id)
-            if cycle_angle is None or len(cycle_angle) < 2:
+            regs = self._client.read_registers(
+                PLC_STATUS_START_ADDRESS,
+                PLC_STATUS_REGISTER_COUNT,
+                self._plc_slave_id,
+            )
+            if regs is None or len(regs) < PLC_STATUS_REGISTER_COUNT:
                 return None
-            done = self._client.read_register(134, self._plc_slave_id)
             return PlcRealtimeState(
-                current_cycle=int(cycle_angle[0]) & 0xFFFF,
-                current_angle_x100=decode_signed_16(cycle_angle[1]),
-                test_done=0 if done is None else (int(done) & 0xFFFF),
+                current_cycle=int(regs[3]) & 0xFFFF,
+                current_angle_x100=decode_signed_16(regs[4]),
+                test_done=int(regs[14]) & 0xFFFF,
             )
         except Exception:
             return None
