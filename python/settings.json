@@ -1,6 +1,6 @@
 {
   "connection": {
-    "mode": "RTU",
+    "mode": "TCP",
     "port": "COM15",
     "baudrate": 115200,
     "parity": "N",

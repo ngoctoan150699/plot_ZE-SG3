@@ -66,7 +66,8 @@ def main():
         def write_register(self, address: int, value: int, slave_id: int = 1): return False
         def write_registers(self, address: int, values: list, slave_id: int = 1): return False
 
-    null_client = _NullModbusClient()
+    null_sensor_client = _NullModbusClient()
+    null_plc_client = _NullModbusClient()
 
     # -------------------------------------------------------
     # 3. APPLICATION – Services
@@ -80,11 +81,12 @@ def main():
     from application.modbus_bus_scheduler import ModbusBusScheduler
     from infrastructure.plc_servo_controller import DummyPLCServoController
 
-    collector   = DataCollectorService(null_client, slave_id=conn_cfg.slave_id)
-    config_svc  = ConfigService(null_client)
-    plc_svc     = PlcControlService(null_client, slave_id=conn_cfg.slave_id)
+    collector   = DataCollectorService(null_sensor_client, slave_id=conn_cfg.slave_id)
+    config_svc  = ConfigService(null_sensor_client)
+    plc_svc     = PlcControlService(null_plc_client, slave_id=conn_cfg.slave_id)
     bus_scheduler = ModbusBusScheduler(
-        null_client,
+        sensor_client=null_sensor_client,
+        plc_client=null_plc_client,
         sensor_slave_id=conn_cfg.slave_id,
         plc_slave_id=conn_cfg.plc_slave_id,
     )

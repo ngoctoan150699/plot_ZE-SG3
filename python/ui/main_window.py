@@ -743,6 +743,10 @@ class MainWindow(QMainWindow):
         if self._plc_svc and self._bus_scheduler:
             self._plc_svc.set_scheduler(self._bus_scheduler)
 
+        # Lưu lại null clients để swap khi disconnect
+        self._null_sensor_client = self._collector._client
+        self._null_plc_client = self._plc_svc._client if self._plc_svc else None
+
         # === Trạng thái nội bộ ===
         self._connected   = False
         self._recording   = False
@@ -1043,7 +1047,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(8)
 
-        # Protocol selector
+        # Protocol selector (Ẩn đi vì chạy chế độ kép)
         self.grp_proto = QGroupBox("🔌 Giao thức")
         pg = QGridLayout()
         pg.setContentsMargins(6, 8, 6, 6)
@@ -1057,10 +1061,32 @@ class MainWindow(QMainWindow):
         self.combo_proto.currentTextChanged.connect(self._on_proto_changed)
         pg.addWidget(self.combo_proto, 0, 1)
         pg.setColumnStretch(1, 1)
-        self.grp_proto.setLayout(pg); lay.addWidget(self.grp_proto)
+        self.grp_proto.setLayout(pg)
+        self.grp_proto.setVisible(False) # Ẩn bộ chọn giao thức chung
 
-        # RTU
-        self.grp_rtu = QGroupBox("📡 RTU (RS-485)")
+        # Cấu hình Cảm biến (TCP)
+        self.grp_tcp = QGroupBox("🌐 Cấu hình Cảm biến (Modbus TCP)")
+        tg = QGridLayout()
+        tg.setContentsMargins(6, 8, 6, 6)
+        tg.setSpacing(6)
+        self.lbl_tcp_ip = QLabel("IP:")
+        tg.addWidget(self.lbl_tcp_ip, 0, 0)
+        self.combo_ip = QComboBox(); self.combo_ip.setEditable(True)
+        self.combo_ip.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_ip.setMinimumContentsLength(5)
+        self.combo_ip.addItem("192.168.90.101")  # Cài mặc định theo IP người dùng
+        tg.addWidget(self.combo_ip, 0, 1)
+        self.lbl_tcp_port = QLabel("Port:")
+        tg.addWidget(self.lbl_tcp_port, 1, 0)
+        self.spin_tcp_port = QSpinBox(); self.spin_tcp_port.setRange(1,65535)
+        self.spin_tcp_port.setValue(502)
+        tg.addWidget(self.spin_tcp_port, 1, 1)
+        self.grp_tcp.setLayout(tg)
+        self.grp_tcp.setVisible(True)  # Luôn hiển thị cấu hình TCP
+        lay.addWidget(self.grp_tcp)
+
+        # Cấu hình PLC (RTU)
+        self.grp_rtu = QGroupBox("📡 Cấu hình PLC (Modbus RTU)")
         rg = QGridLayout()
         rg.setContentsMargins(6, 8, 6, 6)
         rg.setSpacing(6)
@@ -1100,49 +1126,29 @@ class MainWindow(QMainWindow):
         self.combo_parity.addItems(["None (N)","Even (E)","Odd (O)"])
         rg.addWidget(self.combo_parity, 2, 1, 1, 2)
         rg.setColumnStretch(1, 1)
-        self.grp_rtu.setLayout(rg); lay.addWidget(self.grp_rtu)
-
-        # TCP
-        self.grp_tcp = QGroupBox("🌐 TCP/IP")
-        tg = QGridLayout()
-        tg.setContentsMargins(6, 8, 6, 6)
-        tg.setSpacing(6)
-        self.lbl_tcp_ip = QLabel("IP:")
-        tg.addWidget(self.lbl_tcp_ip, 0, 0)
-        self.combo_ip = QComboBox(); self.combo_ip.setEditable(True)
-        self.combo_ip.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.combo_ip.setMinimumContentsLength(5)
-        self.combo_ip.addItem("192.168.1.100")
-        tg.addWidget(self.combo_ip, 0, 1)
-        self.lbl_tcp_port = QLabel("Port:")
-        tg.addWidget(self.lbl_tcp_port, 1, 0)
-        self.spin_tcp_port = QSpinBox(); self.spin_tcp_port.setRange(1,65535)
-        self.spin_tcp_port.setValue(502)
-        tg.addWidget(self.spin_tcp_port, 1, 1)
-        self.grp_tcp.setLayout(tg)
-        self.grp_tcp.setVisible(False)
-        lay.addWidget(self.grp_tcp)
+        self.grp_rtu.setLayout(rg)
+        self.grp_rtu.setVisible(True)  # Luôn hiển thị cấu hình RTU
+        lay.addWidget(self.grp_rtu)
 
         # Slave ID
-        self.grp_slave = QGroupBox("📋 Slave")
+        self.grp_slave = QGroupBox("📋 Slave PLC")
         sg = QGridLayout()
         sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
         
         self.lbl_slave_id = QLabel(self.i18n.t('sensor_slave_lbl'))
-        sg.addWidget(self.lbl_slave_id, 0, 0)
         self.spin_slave = QSpinBox(); self.spin_slave.setRange(1,247)
         self.spin_slave.setValue(1)
-        sg.addWidget(self.spin_slave, 0, 1)
+        self.lbl_slave_id.setVisible(False)
+        self.spin_slave.setVisible(False)
 
         self.lbl_plc_slave_id = QLabel(self.i18n.t('plc_slave_lbl'))
-        sg.addWidget(self.lbl_plc_slave_id, 0, 2)
+        sg.addWidget(self.lbl_plc_slave_id, 0, 0)
         self.spin_plc_slave = QSpinBox(); self.spin_plc_slave.setRange(1,247)
         self.spin_plc_slave.setValue(2)
-        sg.addWidget(self.spin_plc_slave, 0, 3)
+        sg.addWidget(self.spin_plc_slave, 0, 1)
 
         sg.setColumnStretch(1, 1)
-        sg.setColumnStretch(3, 1)
         self.grp_slave.setLayout(sg); lay.addWidget(self.grp_slave)
 
         self.btn_modbus_status = QPushButton(self.i18n.t('btn_modbus_status'))
@@ -1874,9 +1880,6 @@ class MainWindow(QMainWindow):
             self._jog_direction = 0
             if hasattr(self, 'lbl_plc_angle'):
                 self.lbl_plc_angle.setText("0.00°")
-        if ok:
-            # Truy vấn lại trạng thái PLC ngay lập tức để UI cập nhật không độ trễ
-            threading.Thread(target=self._read_plc_status_once, name="PLC-Status-Post-Cmd", daemon=True).start()
 
     def _plc_start_run(self):
         self._plc_command("RUN", lambda: self._plc_svc.start_run() if self._plc_svc else False)
@@ -2144,9 +2147,9 @@ class MainWindow(QMainWindow):
 
     def _load_settings_to_ui(self):
         c = self._conn_cfg
-        # Protocol
-        idx = 0 if c.mode == 'RTU' else 1
-        self.combo_proto.setCurrentIndex(idx)
+        # Protocol (Ẩn đi vì chạy chế độ kết nối kép)
+        # idx = 0 if c.mode == 'RTU' else 1
+        # self.combo_proto.setCurrentIndex(idx)
         # RTU
         baud_map = {"9600":0,"19200":1,"38400":2,"57600":3,"115200":4}
         self.combo_baud.setCurrentIndex(baud_map.get(str(c.baudrate), 0))
@@ -2216,7 +2219,7 @@ class MainWindow(QMainWindow):
         self._update_sampling_summary()
 
     def _show_modbus_status_dialog(self):
-        client = getattr(self._collector, '_client', None)
+        client = getattr(self._plc_svc, '_client', None) if self._plc_svc else None
         slave_id = self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2
         dialog = ModbusStatusDialog(self, client, slave_id, self.i18n)
         dialog.exec_()
@@ -2224,7 +2227,7 @@ class MainWindow(QMainWindow):
     def _save_settings_from_ui(self):
         parity_map = {0:'N', 1:'E', 2:'O'}
         conn = ConnectionConfig(
-            mode='RTU' if 'RTU' in self.combo_proto.currentText() else 'TCP',
+            mode='TCP',  # Chế độ kết nối kép mặc định
             port=self.combo_com.currentData() or 'COM1',
             baudrate=int(self.combo_baud.currentText()),
             parity=parity_map[self.combo_parity.currentIndex()],
@@ -2308,9 +2311,7 @@ class MainWindow(QMainWindow):
     # ===========================================================
 
     def _on_proto_changed(self, text: str):
-        is_rtu = 'RTU' in text
-        self.grp_rtu.setVisible(is_rtu)
-        self.grp_tcp.setVisible(not is_rtu)
+        pass
 
     def _scan_com_ports(self):
         self.combo_com.clear()
@@ -2327,8 +2328,6 @@ class MainWindow(QMainWindow):
             self._connect()
 
     def _connect(self):
-        # Lấy client từ factory (sẽ được inject vào main.py)
-        # Ở đây dùng event để signal thành công/thất bại
         from infrastructure.modbus_rtu_client import ModbusRtuClient
         from infrastructure.modbus_tcp_client import ModbusTcpClient
 
@@ -2337,53 +2336,65 @@ class MainWindow(QMainWindow):
         plc_sid = self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2
 
         try:
-            if 'RTU' in self.combo_proto.currentText():
-                port = self.combo_com.currentData()
-                if not port:
-                    self._log("❌ Chưa chọn cổng COM"); return
-                baud = int(self.combo_baud.currentText())
-                par  = parity_map[self.combo_parity.currentIndex()]
-                new_client = ModbusRtuClient(port=port, baudrate=baud, parity=par)
+            # 1. Khởi tạo TCP Client cho Cảm biến
+            ip = self.combo_ip.currentText()
+            tcp_port = self.spin_tcp_port.value()
+            self._log(f"⏳ Đang kết nối Cảm biến: {ip}:{tcp_port}...")
+            sensor_client = ModbusTcpClient(host=ip, port=tcp_port)
+            
+            # 2. Khởi tạo RTU Client cho PLC
+            port = self.combo_com.currentData()
+            if not port:
+                self._log("❌ Chưa chọn cổng COM cho PLC")
+                return
+            baud = int(self.combo_baud.currentText())
+            par  = parity_map[self.combo_parity.currentIndex()]
+            self._log(f"⏳ Đang kết nối PLC: {port} @ {baud}...")
+            plc_client = ModbusRtuClient(port=port, baudrate=baud, parity=par)
+
+            # 3. Tiến hành kết nối cả hai
+            sensor_connected = sensor_client.connect()
+            if not sensor_connected:
+                self._log("❌ Kết nối Cảm biến (TCP) thất bại!")
+                return
+                
+            plc_connected = plc_client.connect()
+            if not plc_connected:
+                self._log("❌ Kết nối PLC (RTU) thất bại!")
+                sensor_client.disconnect()
+                return
+
+            # 4. Lưu và gán client mới vào các service
+            self._collector._client = sensor_client
+            self._config_svc._client = sensor_client
+            self._collector._slave_id = sid
+
+            if self._servo_svc:
+                from infrastructure.plc_servo_controller import PLCServoController
+                self._servo_svc._plc = PLCServoController(plc_client, slave_id=plc_sid)
+
+            if self._plc_svc:
+                self._plc_svc.set_client(plc_client, slave_id=plc_sid)
+
+            self._connected = True
+            self._ref_time  = time.monotonic()
+            self._update_connect_btn_style()
+            self.led_label.setObjectName("led_on")
+            self._apply_led_style()
+            self.lbl_conn_status.setText("🟢 Đã kết nối")
+
+            self._collector.set_interval(self.spin_interval.value())
+            if self._bus_scheduler:
+                self._bus_scheduler.set_clients(sensor_client, plc_client, sensor_slave_id=sid, plc_slave_id=plc_sid)
+                self._bus_scheduler.set_intervals(self.spin_interval.value(), 150)
+                self._bus_scheduler.start()
             else:
-                ip   = self.combo_ip.currentText()
-                port = self.spin_tcp_port.value()
-                new_client = ModbusTcpClient(host=ip, port=port)
-
-            if new_client.connect():
-                # Swap client trong services
-                self._collector._client  = new_client
-                self._config_svc._client = new_client
-                self._collector._slave_id = sid
-
-                # Swap to real PLC Servo Controller when connected
-                if self._servo_svc:
-                    from infrastructure.plc_servo_controller import PLCServoController
-                    self._servo_svc._plc = PLCServoController(new_client, slave_id=plc_sid)
-
+                self._collector.start()
                 if self._plc_svc:
-                    self._plc_svc.set_client(new_client, slave_id=plc_sid)
-
-                self._connected = True
-                self._ref_time  = time.monotonic()
-                self._update_connect_btn_style()
-                self.led_label.setObjectName("led_on")
-                self._apply_led_style()
-                self.lbl_conn_status.setText("🟢 Đã kết nối")
-
-
-                self._collector.set_interval(self.spin_interval.value())
-                if self._bus_scheduler:
-                    self._bus_scheduler.set_client(new_client, sensor_slave_id=sid, plc_slave_id=plc_sid)
-                    self._bus_scheduler.set_intervals(self.spin_interval.value(), 150)
-                    self._bus_scheduler.start()
-                else:
-                    self._collector.start()
-                    if self._plc_svc:
-                        self._start_plc_polling()
-                self._save_settings_from_ui()
-                self._log(f"✅ Kết nối thành công (Cảm biến Slave {sid}, PLC Slave {plc_sid})")
-            else:
-                self._log("❌ Không thể kết nối")
+                    self._start_plc_polling()
+                    
+            self._save_settings_from_ui()
+            self._log(f"✅ Kết nối thành công (Cảm biến TCP/IP, PLC Modbus RTU)")
         except Exception as e:
             self._log(f"❌ Lỗi kết nối: {e}")
 
@@ -2393,16 +2404,29 @@ class MainWindow(QMainWindow):
         else:
             self._stop_plc_polling()
             self._collector.stop()
+            
+        # Đóng các client kết nối thực tế
         if self._collector._client:
-            self._collector._client.disconnect()
+            try:
+                self._collector._client.disconnect()
+            except Exception:
+                pass
+        if self._plc_svc and self._plc_svc._client:
+            try:
+                self._plc_svc._client.disconnect()
+            except Exception:
+                pass
+        
+        # Trả về các null client ban đầu
+        self._collector._client = self._null_sensor_client
+        self._config_svc._client = self._null_sensor_client
+        if self._plc_svc:
+            self._plc_svc.set_client(self._null_plc_client, slave_id=self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2)
         
         # Swap back to Dummy PLC Servo Controller when disconnected
         if self._servo_svc:
             from infrastructure.plc_servo_controller import DummyPLCServoController
             self._servo_svc._plc = DummyPLCServoController()
-
-        if self._plc_svc:
-            self._plc_svc.set_client(self._collector._client, slave_id=self.spin_plc_slave.value() if hasattr(self, 'spin_plc_slave') else 2)
 
         self._connected = False
         self._update_connect_btn_style()

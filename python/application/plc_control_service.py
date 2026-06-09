@@ -54,6 +54,7 @@ class PlcControlService:
         self._client = client
         self._slave_id = slave_id
         self._scheduler = None
+        self._last_written: dict[int, int] = {}
 
     def set_scheduler(self, scheduler) -> None:
         """Set scheduler to delegate pulse clears instead of spawning threads."""
@@ -63,6 +64,7 @@ class PlcControlService:
         """Replace Modbus client/slave after the UI connects or reconnects."""
         self._client = client
         self._slave_id = slave_id
+        self._last_written.clear()
 
     @property
     def slave_id(self) -> int:
@@ -132,14 +134,12 @@ class PlcControlService:
         write response before the UI reports success.
         """
         bit_mask = clamp_u16(bit_mask)
-        for attempt in range(3):
-            try:
-                if self._client.write_register(PLC_D100_CMD_WORD, bit_mask, self._slave_id):
-                    self._clear_cmd_word_later(pulse_ms)
-                    return True
-            except Exception as exc:
-                logger.debug("PLC pulse_cmd_bit(%s) attempt %s failed: %s", bit_mask, attempt + 1, exc)
-            time.sleep(0.02)
+        try:
+            if self._client.write_register(PLC_D100_CMD_WORD, bit_mask, self._slave_id):
+                self._clear_cmd_word_later(pulse_ms)
+                return True
+        except Exception as exc:
+            logger.debug("PLC pulse_cmd_bit(%s) failed: %s", bit_mask, exc)
         return False
 
     def _clear_cmd_word_later(self, pulse_ms: int) -> None:
@@ -199,7 +199,7 @@ class PlcControlService:
         """Write speed (as speed_x100) directly to D104."""
         try:
             val_x100 = int(round(float(speed_rpm) * 100.0))
-            return bool(self._client.write_register(PLC_D104_SPEED_X100, val_x100, self._slave_id))
+            return self._write_if_changed(PLC_D104_SPEED_X100, val_x100)
         except Exception as exc:
             logger.debug("PLC write_speed failed: %s", exc)
             return False
@@ -207,7 +207,7 @@ class PlcControlService:
     def write_mode(self, mode: int) -> bool:
         """Write PLC mode directly to D101 (0=Manual, 1=Breakaway, 2=Operating)."""
         try:
-            return bool(self._client.write_register(PLC_D101_MODE, clamp_u16(mode), self._slave_id))
+            return self._write_if_changed(PLC_D101_MODE, clamp_u16(mode))
         except Exception as exc:
             logger.debug("PLC write_mode failed: %s", exc)
             return False
@@ -216,17 +216,26 @@ class PlcControlService:
         """Write current angle to D124 as signed angle x100."""
         try:
             value = encode_signed_16(angle_to_x100(angle_deg))
-            return bool(self._client.write_register(PLC_D124_CURRENT_ANGLE_X100, value, self._slave_id))
+            return self._write_if_changed(PLC_D124_CURRENT_ANGLE_X100, value)
         except Exception as exc:
             logger.debug("PLC write_current_angle failed: %s", exc)
             return False
 
     def _write_bool_register(self, address: int, active: bool) -> bool:
         try:
-            return bool(self._client.write_register(address, 1 if active else 0, self._slave_id))
+            return self._write_if_changed(address, 1 if active else 0)
         except Exception as exc:
             logger.debug("PLC write bool register %s failed: %s", address, exc)
             return False
+
+    def _write_if_changed(self, address: int, value: int) -> bool:
+        value = clamp_u16(value)
+        if self._last_written.get(address) == value:
+            return True
+        ok = bool(self._client.write_register(address, value, self._slave_id))
+        if ok:
+            self._last_written[address] = value
+        return ok
 
     def _write_pulse_register(self, address: int, pulse_ms: int = 150) -> bool:
         try:

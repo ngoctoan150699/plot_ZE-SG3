@@ -156,7 +156,7 @@ DEFAULT_SLAVE_ID            = 1
 DEFAULT_BAUDRATE            = 115200
 DEFAULT_TCP_PORT            = 502
 DEFAULT_TCP_IP              = "192.168.90.101"
-MODBUS_TIMEOUT_S            = 0.3
+MODBUS_TIMEOUT_S            = 0.12
 
 # === YÊU CẦU R2: PLC MODBUS SERVO REGISTERS (Holding Registers, base-0) ===
 PLC_DEFAULT_SLAVE_ID     = 2
