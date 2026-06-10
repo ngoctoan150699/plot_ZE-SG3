@@ -2541,19 +2541,12 @@ class TorquePlotViewer(QMainWindow):
                 except Exception:
                     st = en = None
         else:
-            # Default mode: use per-part/per-item configured ranges
-            try:
-                item_name = self.test_item_combo.currentText()
-                ranges = self.test_item_angle_ranges if is_angle_mode else self.test_item_time_ranges
-                
-                part_ranges = ranges.get(pname, {})
-                pr = part_ranges.get(item_name, {})
-                
-                if isinstance(pr, dict):
-                    st = float(pr.get('start', 0.0))
-                    en = float(pr.get('end', 0.0))
-            except Exception:
-                st = en = None
+            # Default mode must NOT silently crop imported cycle data.
+            # The Test Item default ranges are report/config references; using them here
+            # made Data Info show only a small slice (e.g. C3 = 33 pts) even though
+            # the CSV contains the full cycle (e.g. C3 = 869 pts). Keep the full
+            # selected cycle(s) unless the user explicitly switches to Manual range.
+            st = en = None
 
         # If we have valid numeric bounds, select by the appropriate X-axis (angle or time)
         if st is not None and en is not None:
@@ -2952,18 +2945,15 @@ class TorquePlotViewer(QMainWindow):
             use_range = False
             try:
                 if getattr(self, 'range_mode_combo', None) and self.range_mode_combo.currentText() == 'Manual':
-                    # Manual range applies to Time mode only (unless angle manual controls exist)
+                    # Manual range is explicit user filtering.
                     if not is_angle and getattr(self, 'start_time_spin', None) is not None:
                         use_range = True
                     elif is_angle and getattr(self, 'start_angle_spin', None) is not None:
                         use_range = True
                 elif getattr(self, 'range_mode_combo', None) and self.range_mode_combo.currentText() == 'Default':
-                    pname = self.part_name_combo.currentText() if hasattr(self, 'part_name_combo') else None
-                    item_name = self.test_item_combo.currentText()
-                    ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
-                    part_ranges = ranges.get(pname, {})
-                    if item_name in part_ranges:
-                        use_range = True
+                    # Do not auto-crop by Test Item default range while reviewing cycles.
+                    # This keeps plotted points consistent with the full selected cycle(s).
+                    use_range = False
             except Exception:
                 use_range = False
 
