@@ -23,7 +23,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QAbstractSpinBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTabWidget, QTextEdit,
     QVBoxLayout, QWidget, QToolButton,
@@ -297,6 +297,26 @@ class CustomToolbar(NavigationToolbar):
 
 from PyQt5.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
 
+
+def _make_spinbox_text_edit_friendly(spinbox):
+    """Cho phép xoá trắng / nhập số dang dở trong QSpinBox/QDoubleSpinBox.
+
+    Mặc định Qt sẽ sửa ngay về min/value hiện tại khi nội dung tạm thời không
+    hợp lệ, ví dụ xoá `36,0 °/s` để nhập số mới. Cấu hình này giữ trải nghiệm
+    nhập liệu tự nhiên hơn và chỉ ép giới hạn khi người dùng rời ô hoặc bấm Save.
+    """
+    spinbox.setKeyboardTracking(False)
+    spinbox.setCorrectionMode(QAbstractSpinBox.CorrectToNearestValue)
+    line_edit = spinbox.lineEdit()
+    if line_edit is not None:
+        line_edit.setClearButtonEnabled(True)
+
+
+def _make_spinboxes_text_edit_friendly(*spinboxes):
+    for spinbox in spinboxes:
+        _make_spinbox_text_edit_friendly(spinbox)
+
+
 class ServoSetupDialog(QDialog):
     def __init__(self, parent, settings_repo, part_name, test_item, i18n):
         super().__init__(parent)
@@ -433,6 +453,14 @@ class ServoSetupDialog(QDialog):
         self.spin_cycles.setRange(1, 100)
         self.spin_cycles.setValue(getattr(profile, 'cycles', 3))
         self.spin_cycles.setSuffix(" chu kỳ" if self.i18n.current_language == 'vi' else " cycles")
+
+        _make_spinboxes_text_edit_friendly(
+            self.spin_speed,
+            self.spin_jog_speed,
+            self.spin_pos,
+            self.spin_neg,
+            self.spin_cycles,
+        )
         
         # Hàm cập nhật số xung hiển thị
         # 360 độ ứng với 200000 xung (555.5556 pulse / độ)
@@ -677,6 +705,12 @@ class SamplingSettingsDialog(QDialog):
 
         self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
         self.chk_fixed_y.setChecked(self._fixed_y)
+
+        _make_spinboxes_text_edit_friendly(
+            self.spin_interval,
+            self.spin_window,
+            self.spin_ymax,
+        )
 
         form.addRow("Chu kỳ lấy mẫu:", self.spin_interval)
         form.addRow("Cửa sổ biểu đồ:", self.spin_window)
