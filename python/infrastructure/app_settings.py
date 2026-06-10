@@ -134,7 +134,11 @@ class AppSettings(ISettingsRepository):
         return self._data.get('ui', {})
 
     def save_ui_settings(self, ui_data: dict) -> None:
-        self._data['ui'] = ui_data
+        current = self._data.get('ui', {})
+        if not isinstance(current, dict):
+            current = {}
+        current.update(ui_data)
+        self._data['ui'] = current
         self._save_raw()
 
     def load_servo_profiles(self) -> dict:

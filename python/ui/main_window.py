@@ -840,6 +840,7 @@ class MainWindow(QMainWindow):
 
         # Theme & Ngôn ngữ state (load từ settings)
         ui_cfg = settings_repo.load_ui_settings()
+        self._restoring_ui_state = False
         self._is_dark = ui_cfg.get('dark_theme', False)
 
         from ui.i18n import I18n
@@ -862,8 +863,16 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, 'combo_part_name'):
             self.combo_part_name.currentTextChanged.connect(self._update_jog_speed_from_profile)
+            self.combo_part_name.currentTextChanged.connect(lambda _: self._save_ui_state())
         if hasattr(self, 'combo_test_item'):
             self.combo_test_item.currentTextChanged.connect(self._update_jog_speed_from_profile)
+            self.combo_test_item.currentTextChanged.connect(lambda _: self._save_ui_state())
+        if hasattr(self, 'spin_plc_jog_speed'):
+            self.spin_plc_jog_speed.editingFinished.connect(self._save_ui_state)
+        if hasattr(self, 'main_tabs'):
+            self.main_tabs.currentChanged.connect(lambda _: self._save_ui_state())
+        if hasattr(self, 'tabs'):
+            self.tabs.currentChanged.connect(lambda _: self._save_ui_state())
         self._update_jog_speed_from_profile()
 
         # PLC polling chạy bằng background thread giống DataCollectorService.
@@ -1043,7 +1052,10 @@ class MainWindow(QMainWindow):
                 self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
                 self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
                 self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
+            self._restore_plot_viewer_state()
+            self._connect_plot_viewer_state_signals()
             self._plot_viewer_loaded = True
+            self._save_ui_state()
         except Exception as exc:
             logger.warning("Không tải được Plot Viewer: %s", exc)
 
@@ -1338,10 +1350,12 @@ class MainWindow(QMainWindow):
         self.spin_ymax.setDecimals(1)
         self.spin_ymax.setValue(5.0)
         self.spin_ymax.valueChanged.connect(lambda _: self._update_plot_limits())
+        self.spin_ymax.editingFinished.connect(self._on_acquisition_settings_changed)
 
         self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
         self.chk_fixed_y.setChecked(True)
         self.chk_fixed_y.toggled.connect(lambda _: self._update_plot_limits())
+        self.chk_fixed_y.toggled.connect(lambda _: self._on_acquisition_settings_changed())
 
         for hidden in (
             self.lbl_sample_interval, self.spin_interval,
@@ -2175,6 +2189,130 @@ class MainWindow(QMainWindow):
         return True
 
     # ===========================================================
+    # UI STATE PERSISTENCE
+    # ===========================================================
+
+    def _save_ui_state(self, extra: Optional[dict] = None) -> None:
+        """Lưu trạng thái UI vào settings.json theo kiểu merge, không xoá key cũ."""
+        if getattr(self, '_restoring_ui_state', False) or not hasattr(self, '_settings'):
+            return
+        ui: dict[str, Any] = {
+            'dark_theme': self._is_dark,
+        }
+        if hasattr(self, 'i18n'):
+            ui['language'] = self.i18n.current_language
+        if hasattr(self, 'main_tabs'):
+            ui['main_tab_index'] = self.main_tabs.currentIndex()
+        if hasattr(self, 'tabs'):
+            ui['left_tab_index'] = self.tabs.currentIndex()
+        if hasattr(self, 'spin_interval'):
+            ui['interval_ms'] = self.spin_interval.value()
+        if hasattr(self, 'spin_window'):
+            ui['window_s'] = self.spin_window.value()
+        if hasattr(self, 'spin_ymax'):
+            ui['y_max'] = self.spin_ymax.value()
+        if hasattr(self, 'chk_fixed_y'):
+            ui['fixed_y'] = self.chk_fixed_y.isChecked()
+        if hasattr(self, 'combo_part_name'):
+            ui['part_name'] = self.combo_part_name.currentText()
+        if hasattr(self, 'combo_test_item'):
+            ui['test_item'] = self.combo_test_item.currentText()
+        if hasattr(self, 'spin_plc_jog_speed'):
+            ui['plc_jog_speed'] = self.spin_plc_jog_speed.value()
+        if hasattr(self, '_plot_viewer'):
+            ui['plot_viewer'] = self._collect_plot_viewer_state()
+        if extra:
+            ui.update(extra)
+        self._settings.save_ui_settings(ui)
+
+    def _restore_combo_text(self, combo, text) -> None:
+        if combo is None or text in (None, ''):
+            return
+        idx = combo.findText(str(text))
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        elif combo.isEditable():
+            combo.setCurrentText(str(text))
+
+    def _collect_plot_viewer_state(self) -> dict:
+        viewer = getattr(self, '_plot_viewer', None)
+        if viewer is None:
+            return {}
+        state: dict[str, Any] = {}
+        combo_names = (
+            'test_item_combo', 'part_name_combo', 'test_purpose_combo', 'team_combo',
+            'line_no_combo', 'plot_mode_combo', 'range_mode_combo', 'file_select_combo',
+        )
+        text_names = (
+            'part_no_edit', 'write_edit', 'review_edit', 'approval_edit', 'spec_edit',
+            'tester_edit', 'test_purpose_other_edit', 'lot_no_edit', 'csv_path_edit',
+            'report_path_edit', 'report_title_edit',
+        )
+        spin_names = ('quantity_spin', 'start_spin', 'end_spin', 'start_time_spin', 'end_time_spin')
+        for name in combo_names:
+            widget = getattr(viewer, name, None)
+            if widget is not None:
+                state[name] = widget.currentText()
+        for name in text_names:
+            widget = getattr(viewer, name, None)
+            if widget is not None:
+                state[name] = widget.text()
+        for name in spin_names:
+            widget = getattr(viewer, name, None)
+            if widget is not None:
+                state[name] = widget.value()
+        return state
+
+    def _restore_plot_viewer_state(self) -> None:
+        viewer = getattr(self, '_plot_viewer', None)
+        if viewer is None:
+            return
+        state = self._settings.load_ui_settings().get('plot_viewer', {})
+        if not isinstance(state, dict):
+            return
+        self._restoring_ui_state = True
+        try:
+            for name, value in state.items():
+                widget = getattr(viewer, name, None)
+                if widget is None:
+                    continue
+                if hasattr(widget, 'setCurrentText'):
+                    self._restore_combo_text(widget, value)
+                elif hasattr(widget, 'setText'):
+                    widget.setText(str(value))
+                elif hasattr(widget, 'setValue'):
+                    widget.setValue(value)
+        finally:
+            self._restoring_ui_state = False
+
+    def _connect_plot_viewer_state_signals(self) -> None:
+        viewer = getattr(self, '_plot_viewer', None)
+        if viewer is None:
+            return
+        combo_names = (
+            'test_item_combo', 'part_name_combo', 'test_purpose_combo', 'team_combo',
+            'line_no_combo', 'plot_mode_combo', 'range_mode_combo', 'file_select_combo',
+        )
+        text_names = (
+            'part_no_edit', 'write_edit', 'review_edit', 'approval_edit', 'spec_edit',
+            'tester_edit', 'test_purpose_other_edit', 'lot_no_edit', 'csv_path_edit',
+            'report_path_edit', 'report_title_edit',
+        )
+        spin_names = ('quantity_spin', 'start_spin', 'end_spin', 'start_time_spin', 'end_time_spin')
+        for name in combo_names:
+            widget = getattr(viewer, name, None)
+            if widget is not None:
+                widget.currentIndexChanged.connect(lambda _=None: self._save_ui_state())
+        for name in text_names:
+            widget = getattr(viewer, name, None)
+            if widget is not None:
+                widget.editingFinished.connect(self._save_ui_state)
+        for name in spin_names:
+            widget = getattr(viewer, name, None)
+            if widget is not None:
+                widget.editingFinished.connect(self._save_ui_state)
+
+    # ===========================================================
     # LOAD / SAVE SETTINGS
 
     # ===========================================================
@@ -2206,18 +2344,32 @@ class MainWindow(QMainWindow):
         
         # UI settings (Acquisition / Plot)
         ui = self._settings.load_ui_settings()
-        if 'interval_ms' in ui:
-            self.spin_interval.setValue(int(ui['interval_ms']))
-        if 'window_s' in ui:
-            self.spin_window.setValue(int(ui['window_s']))
-        if 'y_max' in ui:
-            self.spin_ymax.setValue(float(ui['y_max']))
-        if 'fixed_y' in ui:
-            self.chk_fixed_y.setChecked(bool(ui['fixed_y']))
-        if 'part_name' in ui and hasattr(self, 'combo_part_name'):
-            self.combo_part_name.setCurrentText(ui['part_name'])
-        if 'test_item' in ui and hasattr(self, 'combo_test_item'):
-            self.combo_test_item.setCurrentText(ui['test_item'])
+        self._restoring_ui_state = True
+        try:
+            if 'interval_ms' in ui:
+                self.spin_interval.setValue(int(ui['interval_ms']))
+            if 'window_s' in ui:
+                self.spin_window.setValue(int(ui['window_s']))
+            if 'y_max' in ui:
+                self.spin_ymax.setValue(float(ui['y_max']))
+            if 'fixed_y' in ui:
+                self.chk_fixed_y.setChecked(bool(ui['fixed_y']))
+            if 'part_name' in ui and hasattr(self, 'combo_part_name'):
+                self._restore_combo_text(self.combo_part_name, ui['part_name'])
+            if 'test_item' in ui and hasattr(self, 'combo_test_item'):
+                self._restore_combo_text(self.combo_test_item, ui['test_item'])
+            if 'plc_jog_speed' in ui and hasattr(self, 'spin_plc_jog_speed'):
+                self.spin_plc_jog_speed.setValue(float(ui['plc_jog_speed']))
+            if 'left_tab_index' in ui and hasattr(self, 'tabs'):
+                idx = int(ui['left_tab_index'])
+                if 0 <= idx < self.tabs.count():
+                    self.tabs.setCurrentIndex(idx)
+            if 'main_tab_index' in ui and hasattr(self, 'main_tabs'):
+                idx = int(ui['main_tab_index'])
+                if 0 <= idx < self.main_tabs.count():
+                    self.main_tabs.setCurrentIndex(idx)
+        finally:
+            self._restoring_ui_state = False
         
         # Apply initial plot limits
         self._update_plot_limits()
@@ -2298,17 +2450,7 @@ class MainWindow(QMainWindow):
             slave_id=self.spin_slave.value(),
         )
         self._settings.save_device_config(dev)
-        ui_dict: dict[str, Any] = {
-            'interval_ms': self.spin_interval.value(),
-            'window_s':    self.spin_window.value(),
-            'y_max':       self.spin_ymax.value(),
-            'fixed_y':     self.chk_fixed_y.isChecked(),
-        }
-        if hasattr(self, 'combo_part_name'):
-            ui_dict['part_name'] = self.combo_part_name.currentText()
-        if hasattr(self, 'combo_test_item'):
-            ui_dict['test_item'] = self.combo_test_item.currentText()
-        self._settings.save_ui_settings(ui_dict)
+        self._save_ui_state()
 
     def _update_plot_limits(self):
         """Cập nhật giới hạn trục Y của cả biểu đồ Torque-Time và Torque-Angle."""
@@ -2933,6 +3075,7 @@ class MainWindow(QMainWindow):
         self.combo_part_name.blockSignals(True)
         self.combo_part_name.setCurrentText(text)
         self.combo_part_name.blockSignals(False)
+        self._save_ui_state()
 
     def _sync_test_item_to_acquisition(self, text: str):
         if not hasattr(self, 'combo_test_item'):
@@ -2940,6 +3083,7 @@ class MainWindow(QMainWindow):
         self.combo_test_item.blockSignals(True)
         self.combo_test_item.setCurrentText(text)
         self.combo_test_item.blockSignals(False)
+        self._save_ui_state()
 
     # ===========================================================
     # UTIL
@@ -2960,14 +3104,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, a0):
         """Tự động lưu cài đặt và ngắt kết nối khi đóng app."""
         self._save_settings_from_ui()
-        # Lưu theme khi thoát
-        ui = self._settings.load_ui_settings()
-        ui['dark_theme'] = self._is_dark
-        ui['interval_ms'] = self.spin_interval.value()
-        ui['window_s'] = self.spin_window.value()
-        if hasattr(self, 'i18n'):
-            ui['language'] = self.i18n.current_language
-        self._settings.save_ui_settings(ui)
+        # Lưu toàn bộ trạng thái UI khi thoát
+        self._save_ui_state()
         if self._connected:
             self._disconnect()
         super().closeEvent(a0)

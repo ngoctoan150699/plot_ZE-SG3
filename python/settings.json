@@ -36,10 +36,38 @@
     "window_s": 60,
     "y_max": 40.0,
     "fixed_y": true,
-    "part_name": "Outer Tie Rod",
+    "part_name": "Ball Joint",
     "test_item": "Breakaway Torque",
     "dark_theme": false,
-    "language": "vi"
+    "language": "vi",
+    "main_tab_index": 0,
+    "left_tab_index": 2,
+    "plc_jog_speed": 10.0,
+    "plot_viewer": {
+      "test_item_combo": "Breakaway Torque",
+      "part_name_combo": "Ball Joint",
+      "test_purpose_combo": "Setting (S)",
+      "team_combo": "PM",
+      "line_no_combo": "ITR #1",
+      "plot_mode_combo": "Angle vs Torque",
+      "range_mode_combo": "Default",
+      "file_select_combo": "All",
+      "part_no_edit": "",
+      "write_edit": "",
+      "review_edit": "",
+      "approval_edit": "",
+      "tester_edit": "",
+      "test_purpose_other_edit": "",
+      "lot_no_edit": "",
+      "csv_path_edit": "C:/Users/NgocToan/Desktop/New folder (2)",
+      "report_path_edit": "C:/Users/NgocToan/Desktop/New folder (3)",
+      "report_title_edit": "TEST REPORT",
+      "quantity_spin": 1,
+      "start_spin": 1,
+      "end_spin": 100,
+      "start_time_spin": 0.0,
+      "end_time_spin": 1.0
+    }
   },
   "servo_profiles": {
     "ITR_B": {
@@ -59,14 +87,14 @@
     "B/Joint_B": {
       "negative_angle": 0.0,
       "positive_angle": 36.0,
-      "speed": 10.0,
+      "speed": 100.0,
       "jog_speed": 10.0,
       "cycles": 1
     },
     "B/Joint_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 10.0,
+      "speed": 100.0,
       "jog_speed": 10.0,
       "cycles": 3
     },
@@ -80,7 +108,7 @@
     "OTR_O": {
       "negative_angle": -36.0,
       "positive_angle": 36.0,
-      "speed": 10.0,
+      "speed": 100.0,
       "jog_speed": 10.0,
       "cycles": 3
     },
