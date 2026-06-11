@@ -670,7 +670,7 @@ class SamplingSettingsDialog(QDialog):
         self._build_ui()
 
     def _build_ui(self):
-        self.setWindowTitle("Sampling Setting")
+        self.setWindowTitle(self.i18n.t('sampling_dialog_title'))
         self.resize(340, 220)
         parent = cast(Any, self.parent())
         is_dark = bool(getattr(parent, '_is_dark', False)) if parent else False
@@ -680,7 +680,7 @@ class SamplingSettingsDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        info = QLabel("⏱️ Cài đặt lấy mẫu & biểu đồ")
+        info = QLabel(self.i18n.t('sampling_dialog_info'))
         info.setStyleSheet("font-weight: bold; color: #89b4fa;" if is_dark else "font-weight: bold; color: #1976d2;")
         layout.addWidget(info)
 
@@ -703,7 +703,7 @@ class SamplingSettingsDialog(QDialog):
         self.spin_ymax.setValue(self._y_max)
         self.spin_ymax.setSuffix(" Nm")
 
-        self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
+        self.chk_fixed_y = QCheckBox(self.i18n.t('chk_fixed_y'))
         self.chk_fixed_y.setChecked(self._fixed_y)
 
         _make_spinboxes_text_edit_friendly(
@@ -712,9 +712,9 @@ class SamplingSettingsDialog(QDialog):
             self.spin_ymax,
         )
 
-        form.addRow("Chu kỳ lấy mẫu:", self.spin_interval)
-        form.addRow("Cửa sổ biểu đồ:", self.spin_window)
-        form.addRow("Giới hạn Y:", self.spin_ymax)
+        form.addRow(self.i18n.t('interval_lbl'), self.spin_interval)
+        form.addRow(self.i18n.t('window_lbl'), self.spin_window)
+        form.addRow(self.i18n.t('ymax_lbl'), self.spin_ymax)
         form.addRow("", self.chk_fixed_y)
         layout.addLayout(form)
 
@@ -810,6 +810,7 @@ class MainWindow(QMainWindow):
         # Angle sẽ lấy từ block D120..D135 trong cùng vòng đọc status.
         self._plc_angle_interval_s = 0.15
         self._plc_command_running = False
+        self._plc_running = False
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
@@ -1322,7 +1323,7 @@ class MainWindow(QMainWindow):
         sg.setContentsMargins(6, 8, 6, 6)
         sg.setSpacing(6)
 
-        self.btn_sampling_settings = QPushButton("⏱️ Sampling Setting")
+        self.btn_sampling_settings = QPushButton(self.i18n.t('btn_sampling_settings'))
         self.btn_sampling_settings.setMinimumHeight(34)
         self.btn_sampling_settings.clicked.connect(self._open_sampling_settings)
         sg.addWidget(self.btn_sampling_settings)
@@ -1352,7 +1353,7 @@ class MainWindow(QMainWindow):
         self.spin_ymax.valueChanged.connect(lambda _: self._update_plot_limits())
         self.spin_ymax.editingFinished.connect(self._on_acquisition_settings_changed)
 
-        self.chk_fixed_y = QCheckBox("Cố định thang đo Y")
+        self.chk_fixed_y = QCheckBox(self.i18n.t('chk_fixed_y'))
         self.chk_fixed_y.setChecked(True)
         self.chk_fixed_y.toggled.connect(lambda _: self._update_plot_limits())
         self.chk_fixed_y.toggled.connect(lambda _: self._on_acquisition_settings_changed())
@@ -1379,6 +1380,9 @@ class MainWindow(QMainWindow):
         self.combo_part_name.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_part_name.setMinimumContentsLength(5)
         self.combo_part_name.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
+        self.combo_part_name.currentTextChanged.connect(self._sync_part_name_to_plot_viewer)
+        self.combo_part_name.currentTextChanged.connect(lambda _text: self._save_ui_state())
+        self.combo_part_name.currentTextChanged.connect(lambda _text: self._update_jog_speed_from_profile())
         pg_lay.addWidget(self.combo_part_name, 0, 1)
         
         self.lbl_test_item = QLabel("Chế độ đo:")
@@ -1387,6 +1391,9 @@ class MainWindow(QMainWindow):
         self.combo_test_item.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_test_item.setMinimumContentsLength(5)
         self.combo_test_item.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
+        self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
+        self.combo_test_item.currentTextChanged.connect(lambda _text: self._save_ui_state())
+        self.combo_test_item.currentTextChanged.connect(lambda _text: self._update_jog_speed_from_profile())
         pg_lay.addWidget(self.combo_test_item, 1, 1)
         
         self.btn_servo_setup = QPushButton("⚙️ Thiết lập Servo")
@@ -1397,29 +1404,23 @@ class MainWindow(QMainWindow):
         self.grp_program.setLayout(pg_lay)
         lay.addWidget(self.grp_program)
 
-        self.grp_plc_control = QGroupBox("🕹️ PLC / Servo Control")
+        self.grp_plc_control = QGroupBox(self.i18n.t('plc_control_grp'))
         pc_lay = QVBoxLayout()
         pc_lay.setContentsMargins(6, 8, 6, 6)
         pc_lay.setSpacing(6)
 
         row_run = QHBoxLayout()
         row_run.setSpacing(6)
-        self.btn_plc_run = QPushButton("▶ RUN")
-        self.btn_plc_stop = QPushButton("⏹ STOP")
-        self.btn_plc_clamp = QPushButton("🔒 Clamp")
-        self.btn_plc_run.clicked.connect(self._plc_start_run)
-        self.btn_plc_stop.clicked.connect(self._plc_stop_run)
-        self.btn_plc_clamp.clicked.connect(self._plc_toggle_clamp)
+        self.btn_plc_run = QPushButton(self.i18n.t('btn_plc_run'))
+        self.btn_plc_run.clicked.connect(self._plc_toggle_run_stop)
         row_run.addWidget(self.btn_plc_run)
-        row_run.addWidget(self.btn_plc_stop)
-        row_run.addWidget(self.btn_plc_clamp)
         pc_lay.addLayout(row_run)
 
         row_cmd = QHBoxLayout()
         row_cmd.setSpacing(6)
-        self.btn_plc_reset = QPushButton("🔄 Reset")
-        self.btn_plc_abort = QPushButton("🛑 Abort")
-        self.btn_plc_home = QPushButton("🏠 Home")
+        self.btn_plc_reset = QPushButton(self.i18n.t('btn_plc_reset'))
+        self.btn_plc_abort = QPushButton(self.i18n.t('btn_plc_abort'))
+        self.btn_plc_home = QPushButton(self.i18n.t('btn_plc_home'))
         self.btn_plc_reset.clicked.connect(self._plc_reset_fault)
         self.btn_plc_abort.clicked.connect(self._plc_abort)
         self.btn_plc_home.clicked.connect(self._plc_home)
@@ -1442,8 +1443,8 @@ class MainWindow(QMainWindow):
 
         row_jog = QHBoxLayout()
         row_jog.setSpacing(6)
-        self.btn_plc_jog_minus = QPushButton("◀ Jog-")
-        self.btn_plc_jog_plus = QPushButton("Jog+ ▶")
+        self.btn_plc_jog_minus = QPushButton(self.i18n.t('btn_plc_jog_minus'))
+        self.btn_plc_jog_plus = QPushButton(self.i18n.t('btn_plc_jog_plus'))
         self.btn_plc_jog_minus.pressed.connect(lambda: self._plc_jog_minus(True))
         self.btn_plc_jog_minus.released.connect(lambda: self._plc_jog_minus(False))
         self.btn_plc_jog_plus.pressed.connect(lambda: self._plc_jog_plus(True))
@@ -1453,7 +1454,7 @@ class MainWindow(QMainWindow):
         pc_lay.addLayout(row_jog)
 
         for btn in (
-            self.btn_plc_run, self.btn_plc_stop, self.btn_plc_clamp,
+            self.btn_plc_run,
             self.btn_plc_reset, self.btn_plc_abort, self.btn_plc_home,
             self.btn_plc_jog_minus, self.btn_plc_jog_plus,
         ):
@@ -1569,9 +1570,7 @@ class MainWindow(QMainWindow):
             (getattr(self, 'btn_tare_acq', None), '#FF9800', 'white'),
             (getattr(self, 'btn_rec_clear', None), '#F44336', 'white'),
             (getattr(self, 'btn_servo_setup', None), '#607D8B', 'white'),
-            (getattr(self, 'btn_plc_run', None), '#2E7D32', 'white'),
-            (getattr(self, 'btn_plc_stop', None), '#C62828', 'white'),
-            (getattr(self, 'btn_plc_clamp', None), '#6A1B9A', 'white'),
+            (getattr(self, 'btn_plc_run', None), None, 'white'),
             (getattr(self, 'btn_plc_reset', None), '#0277BD', 'white'),
             (getattr(self, 'btn_plc_abort', None), '#B71C1C', 'white'),
             (getattr(self, 'btn_plc_home', None), '#455A64', 'white'),
@@ -1581,6 +1580,9 @@ class MainWindow(QMainWindow):
         ]
         for btn, bg, fg in button_specs:
             if btn is not None:
+                if btn is getattr(self, 'btn_plc_run', None):
+                    self._update_plc_run_button()
+                    continue
                 btn.setStyleSheet(
                     f"background-color: {bg}; color: {fg}; "
                     "font-weight: bold; padding: 4px; border-radius: 3px;"
@@ -1922,12 +1924,41 @@ class MainWindow(QMainWindow):
     def _on_plc_command_result(self, action_name: str, ok: bool):
         self._plc_command_running = False
         self._log(("✅" if ok else "❌") + f" PLC: {action_name}")
+        if ok:
+            if action_name == "RUN":
+                self._plc_running = True
+                self._update_plc_run_button()
+            elif action_name in ("STOP", "Abort", "Home"):
+                self._plc_running = False
+                self._update_plc_run_button()
         if ok and action_name == "Home":
             self._current_angle = 0.0
             self._jog_active = False
             self._jog_direction = 0
             if hasattr(self, 'lbl_plc_angle'):
                 self.lbl_plc_angle.setText("0.00°")
+
+    def _update_plc_run_button(self):
+        if not hasattr(self, 'btn_plc_run'):
+            return
+        if getattr(self, '_plc_running', False):
+            self.btn_plc_run.setText(self.i18n.t('btn_plc_stop'))
+            bg = '#C62828' if not self._is_dark else '#f38ba8'
+            fg = 'white' if not self._is_dark else '#1e1e2e'
+        else:
+            self.btn_plc_run.setText(self.i18n.t('btn_plc_run'))
+            bg = '#2E7D32' if not self._is_dark else '#a6e3a1'
+            fg = 'white' if not self._is_dark else '#1e1e2e'
+        self.btn_plc_run.setStyleSheet(
+            f"background-color: {bg}; color: {fg}; "
+            "font-weight: bold; padding: 4px; border-radius: 3px;"
+        )
+
+    def _plc_toggle_run_stop(self):
+        if getattr(self, '_plc_running', False):
+            self._plc_stop_run()
+        else:
+            self._plc_start_run()
 
     def _plc_start_run(self):
         self._plc_command("RUN", lambda: self._plc_svc.start_run() if self._plc_svc else False)
@@ -2377,7 +2408,7 @@ class MainWindow(QMainWindow):
 
     def _update_sampling_summary(self):
         if hasattr(self, 'lbl_sampling_summary'):
-            fixed = "Fixed Y" if self.chk_fixed_y.isChecked() else "Auto Y"
+            fixed = self.i18n.t('fixed_y_summary') if self.chk_fixed_y.isChecked() else self.i18n.t('auto_y_summary')
             self.lbl_sampling_summary.setText(
                 f"{self.spin_interval.value()} ms | {self.spin_window.value()} s | "
                 f"±{self.spin_ymax.value():.1f} Nm | {fixed}"
@@ -3025,6 +3056,7 @@ class MainWindow(QMainWindow):
                 self.spin_plc_jog_speed.blockSignals(False)
             
             # Ghi tốc độ JOG mới xuống PLC qua D104 nếu đang kết nối
+            self._save_ui_state()
             if self._plc_svc and self._plc_svc.is_connected():
                 if self._plc_svc.write_speed(vals['jog_speed']):
                     self._log(f"⚡ Đã ghi tốc độ JOG {vals['jog_speed'] * 100:.0f} Hz xuống PLC (D104)")
@@ -3237,6 +3269,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'chk_fixed_y'):
             self.chk_fixed_y.setText(self.i18n.t('chk_fixed_y'))
         
+        if hasattr(self, 'btn_sampling_settings'):
+            self.btn_sampling_settings.setText(self.i18n.t('btn_sampling_settings'))
         if hasattr(self, 'grp_program'):
             self.grp_program.setTitle(self.i18n.t('part_program_grp'))
         if hasattr(self, 'lbl_part_name'):
@@ -3245,8 +3279,23 @@ class MainWindow(QMainWindow):
             self.lbl_test_item.setText(self.i18n.t('test_item_lbl'))
         if hasattr(self, 'btn_servo_setup'):
             self.btn_servo_setup.setText(self.i18n.t('btn_servo_setup'))
+        if hasattr(self, 'grp_plc_control'):
+            self.grp_plc_control.setTitle(self.i18n.t('plc_control_grp'))
+        if hasattr(self, 'btn_plc_run'):
+            self._update_plc_run_button()
+        if hasattr(self, 'btn_plc_reset'):
+            self.btn_plc_reset.setText(self.i18n.t('btn_plc_reset'))
+        if hasattr(self, 'btn_plc_abort'):
+            self.btn_plc_abort.setText(self.i18n.t('btn_plc_abort'))
+        if hasattr(self, 'btn_plc_home'):
+            self.btn_plc_home.setText(self.i18n.t('btn_plc_home'))
+        if hasattr(self, 'btn_plc_jog_minus'):
+            self.btn_plc_jog_minus.setText(self.i18n.t('btn_plc_jog_minus'))
+        if hasattr(self, 'btn_plc_jog_plus'):
+            self.btn_plc_jog_plus.setText(self.i18n.t('btn_plc_jog_plus'))
         if hasattr(self, 'lbl_plc_jog_speed'):
             self.lbl_plc_jog_speed.setText(self.i18n.t('lbl_plc_jog_speed'))
+        self._update_sampling_summary()
 
         if hasattr(self, 'grp_recording'):
             self.grp_recording.setTitle(self.i18n.t('recording_grp'))
@@ -3357,3 +3406,5 @@ class MainWindow(QMainWindow):
         if self._recording:
             self._stop_recording()
         QMessageBox.warning(self, self.i18n.t('msg_err'), f"Lỗi Servo: {err_msg}")
+
+

@@ -113,11 +113,9 @@ class ReportService:
         if not os.path.exists(report_dir):
             os.makedirs(report_dir, exist_ok=True)
 
-        # Chèn hậu tố '_report' vào trước phần mở rộng hoặc giữ nguyên tên y hệt
-        # Yêu cầu: "lưu vào trong thư muc ở trên với nguyên tắc đặt tên giống như trên (Form báo cáo y hệt lần trước)"
-        # Để phân biệt rõ và không ghi đè nếu hai thư mục trùng nhau, ta giữ nguyên tên giống hệt
-        # nhưng lưu trong thư mục `report_dir` riêng biệt.
-        full_path = os.path.join(report_dir, filename)
+        root, ext = os.path.splitext(filename)
+        report_filename = f"{root}_report{ext or '.csv'}"
+        full_path = os.path.join(report_dir, report_filename)
 
         if not trimmed_samples:
             # Fallback nếu danh sách rỗng
