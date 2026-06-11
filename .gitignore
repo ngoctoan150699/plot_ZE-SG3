@@ -11,6 +11,6 @@ env/
 build/
 dist/
 *.spec
-
-
-
+# Backups
+*.bak
+*.bak_*
