@@ -1234,7 +1234,7 @@ class MainWindow(QMainWindow):
         self.combo_unit = QComboBox()
         self.combo_unit.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_unit.setMinimumContentsLength(5)
-        for k, v in UNITS.items(): self.combo_unit.addItem(f"{k}: {v}", k)
+        self.combo_unit.addItem("Nm", 8)
         sg.addWidget(self.combo_unit, 0, 1)
 
         self.lbl_measure_mode = QLabel("Chế độ đo:")
@@ -2366,7 +2366,8 @@ class MainWindow(QMainWindow):
 
         # Device (Config Tab)
         d = self._dev_cfg
-        self.combo_unit.setCurrentIndex(d.measure_unit)
+        u_idx = self.combo_unit.findData(d.measure_unit)
+        self.combo_unit.setCurrentIndex(u_idx if u_idx >= 0 else 0)
         self.combo_mtype.setCurrentIndex(d.measure_type)
         self.combo_filter.setCurrentIndex(d.filter_level)
         
@@ -2780,7 +2781,8 @@ class MainWindow(QMainWindow):
         
         cfg = self._config_svc.read_config(self.spin_slave.value())
         if cfg:
-            self.combo_unit.setCurrentIndex(cfg.measure_unit)
+            u_idx = self.combo_unit.findData(cfg.measure_unit)
+            self.combo_unit.setCurrentIndex(u_idx if u_idx >= 0 else 0)
             self.combo_mtype.setCurrentIndex(cfg.measure_type)
             
             self.spin_fs.setValue(cfg.cell_full_scale)

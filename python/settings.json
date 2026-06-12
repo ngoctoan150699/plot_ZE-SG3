@@ -39,9 +39,9 @@
     "part_name": "Ball Joint",
     "test_item": "Breakaway Torque",
     "dark_theme": false,
-    "language": "vi",
+    "language": "en",
     "main_tab_index": 0,
-    "left_tab_index": 2,
+    "left_tab_index": 1,
     "plc_jog_speed": 10.0,
     "plot_viewer": {
       "test_item_combo": "Breakaway Torque",
