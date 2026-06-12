@@ -3001,16 +3001,9 @@ class TorquePlotViewer(QMainWindow):
                             st = float(self.start_time_spin.value())
                             en = float(self.end_time_spin.value())
                         elif range_mode == 'Default':
-                            # Default mode: use per-part/per-item ranges
-                            pname = self.part_name_combo.currentText() if hasattr(self, 'part_name_combo') else None
-                            item_name = self.test_item_combo.currentText()
-                            if pname:
-                                ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
-                                part_ranges = ranges.get(pname, {})
-                                pr = part_ranges.get(item_name, {})
-                                if isinstance(pr, dict):
-                                    st = float(pr.get('start', 0.0))
-                                    en = float(pr.get('end', 0.0))
+                            # Default mode: do not crop data (matches get_current_range_values)
+                            st = None
+                            en = None
                         
                         # Only apply mask if we have valid range
                         if st is None or en is None:
@@ -3515,15 +3508,9 @@ class TorquePlotViewer(QMainWindow):
                          st = float(self.start_time_spin.value())
                          en = float(self.end_time_spin.value())
                     elif range_mode == 'Default':
-                         pname = self.part_name_combo.currentText() if hasattr(self, 'part_name_combo') else None
-                         item_name = self.test_item_combo.currentText() if hasattr(self, 'test_item_combo') else None
-                         if pname:
-                             ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
-                             part_ranges = ranges.get(pname, {})
-                             pr = part_ranges.get(item_name, {})
-                             if isinstance(pr, dict):
-                                 st = float(pr.get('start', 0.0))
-                                 en = float(pr.get('end', 0.0))
+                         # Default mode: do not crop data (matches get_current_range_values)
+                         st = None
+                         en = None
                 except Exception:
                     st = en = None
 
@@ -3822,7 +3809,7 @@ class TorquePlotViewer(QMainWindow):
                         end_val = float(self.end_time_spin.value())
                     except: pass
 
-                # 2) Default mode: use per-part configured ranges (respecting Angle/Time mode)
+                # 2) Default mode: use per-part configured ranges (respecting Angle/Time mode) if they are valid
                 if (start_val is None or end_val is None) and range_mode == 'Default' and pname:
                     try:
                         item_name = self.test_item_combo.currentText()
@@ -3830,8 +3817,11 @@ class TorquePlotViewer(QMainWindow):
                         part_ranges = ranges.get(pname, {})
                         pr = part_ranges.get(item_name, {})
                         if isinstance(pr, dict):
-                            start_val = float(pr.get('start', 0.0))
-                            end_val = float(pr.get('end', 0.0))
+                            st_temp = float(pr.get('start', 0.0))
+                            en_temp = float(pr.get('end', 0.0))
+                            if st_temp != en_temp:
+                                start_val = st_temp
+                                end_val = en_temp
                     except: pass
             except: pass
 
