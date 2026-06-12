@@ -5,7 +5,10 @@ set "ROOT=%~dp0"
 cd /d "%ROOT%"
 
 set "PY=.\.venv\Scripts\python.exe"
-set "APP_NAME=ZE-SG3 Torque Acquisition"
+if not exist "%PY%" set "PY=G:\python\python.exe"
+"%PY%" --version >nul 2>&1
+if errorlevel 1 set "PY=G:\python\python.exe"
+set "APP_NAME=ZE-SG3 Torque Acquisition v1.0.1"
 set "ICON=python\app_icon.ico"
 
 echo [1/5] Cleaning build cache...

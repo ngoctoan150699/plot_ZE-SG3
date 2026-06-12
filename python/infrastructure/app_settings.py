@@ -21,11 +21,26 @@ from domain.constants import (
 
 logger = logging.getLogger(__name__)
 
-# File cài đặt lưu cùng thư mục với script chạy (hoặc thư mục chứa file .exe nếu đóng gói)
-if getattr(sys, 'frozen', False):
-    _SETTINGS_FILE = Path(sys.executable).parent / "settings.json"
-else:
-    _SETTINGS_FILE = Path(__file__).parent.parent / "settings.json"
+# File cài đặt chính lưu chung với các cấu hình Plot Viewer trong %APPDATA%/plc_sim
+# để toàn bộ settings/range/spec/report paths nằm cùng một thư mục dễ backup/chuyển máy.
+def _get_app_config_dir() -> Path:
+    try:
+        import os
+        appdata = os.getenv('APPDATA') or os.getenv('LOCALAPPDATA')
+        if appdata:
+            base = Path(appdata)
+        else:
+            base = Path.home()
+        cfg_dir = base / "plc_sim"
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        return cfg_dir
+    except Exception:
+        if getattr(sys, 'frozen', False):
+            return Path(sys.executable).parent
+        return Path(__file__).parent.parent
+
+
+_SETTINGS_FILE = _get_app_config_dir() / "settings.json"
 
 
 class AppSettings(ISettingsRepository):
