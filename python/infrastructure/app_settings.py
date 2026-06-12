@@ -7,6 +7,7 @@ Dùng JSON file để lưu cấu hình kết nối và thiết bị giữa các 
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -20,8 +21,11 @@ from domain.constants import (
 
 logger = logging.getLogger(__name__)
 
-# File cài đặt lưu cùng thư mục với script chạy
-_SETTINGS_FILE = Path(__file__).parent.parent / "settings.json"
+# File cài đặt lưu cùng thư mục với script chạy (hoặc thư mục chứa file .exe nếu đóng gói)
+if getattr(sys, 'frozen', False):
+    _SETTINGS_FILE = Path(sys.executable).parent / "settings.json"
+else:
+    _SETTINGS_FILE = Path(__file__).parent.parent / "settings.json"
 
 
 class AppSettings(ISettingsRepository):
