@@ -2012,8 +2012,9 @@ class MainWindow(QMainWindow):
 
     def _on_plc_jog_speed_changed(self, val: float):
         if self._plc_svc and self._plc_svc.is_connected():
-            if self._plc_svc.write_speed(val):
-                self._log(f"⚡ Đã ghi tốc độ JOG {val * 100:.0f} Hz xuống PLC (D104)")
+            output_deg_s = float(val) * 0.3
+            if self._plc_svc.write_speed(output_deg_s):
+                self._log(f"⚡ Đã ghi tốc độ JOG {output_deg_s:.1f}°/s xuống PLC (D104)")
 
     def _selected_plc_mode(self) -> int:
         """Return PLC mode matching the selected measurement mode in the app."""
@@ -2028,7 +2029,8 @@ class MainWindow(QMainWindow):
         """Temporarily switch PLC to Manual mode so D110/D111 JOG can run."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             return
-        self._plc_svc.write_speed(self.spin_plc_jog_speed.value())
+        jog_rpm = float(self.spin_plc_jog_speed.value())
+        self._plc_svc.write_speed(jog_rpm * 0.3)
         self._jog_active = True
         self._jog_direction = 1 if direction >= 0 else -1
         self._jog_started_at = time.monotonic()
@@ -2196,13 +2198,27 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'lbl_plc_angle'):
             self.lbl_plc_angle.setText("0.00°")
 
+        # START_RECORD chỉ làm servo quay khi PLC đang RUN/Servo ON.
+        # Nếu operator bấm trực tiếp "Bắt đầu ghi" mà chưa bấm CHẠY,
+        # tự pulse D100.b0 trước để set M0/Y005 giống flow chạy ổn trước đây.
+        if not plc_status or not plc_status.is_running or not plc_status.is_servo_on:
+            if not self._plc_svc.start_run():
+                self._log("❌ Không pulse được RUN D100.b0 trước khi ghi")
+                return False
+            self._plc_running = True
+            self._update_plc_run_button()
+            self._log("▶ PLC RUN trước khi START_RECORD")
+            time.sleep(0.15)
+
         part_select = max(1, self.combo_part_name.currentIndex() + 1) if hasattr(self, 'combo_part_name') else 1
+        motor_rpm = float(profile.speed)
+        output_deg_s = motor_rpm * 0.3  # gearbox 1/20: output deg/s = motor rpm * 360 / 60 / 20
         config = PlcTestConfig(
             mode=1 if is_breakaway else 2,
             pos_angle_x100=angle_to_x100(profile.positive_angle),
             # D103 gửi xuống PLC là độ lớn góc nghịch dương; PLC tự đổi dấu khi chạy chiều nghịch.
             neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
-            speed_x100=speed_to_x100(profile.speed),
+            speed_x100=speed_to_x100(output_deg_s),
             cycle_set=1 if is_breakaway else getattr(profile, 'cycles', 3),
             # Ghi thô lấy toàn bộ hành trình; vùng 80% giữa hành trình để Plot Draw/tính toán xử lý sau.
             window_percent=100,
@@ -3060,8 +3076,9 @@ class MainWindow(QMainWindow):
             # Ghi tốc độ JOG mới xuống PLC qua D104 nếu đang kết nối
             self._save_ui_state()
             if self._plc_svc and self._plc_svc.is_connected():
-                if self._plc_svc.write_speed(vals['jog_speed']):
-                    self._log(f"⚡ Đã ghi tốc độ JOG {vals['jog_speed'] * 100:.0f} Hz xuống PLC (D104)")
+                jog_deg_s = float(vals['jog_speed']) * 0.3
+                if self._plc_svc.write_speed(jog_deg_s):
+                    self._log(f"⚡ Đã ghi tốc độ JOG {jog_deg_s:.1f}°/s xuống PLC (D104)")
                 else:
                     self._log(f"⚠️ Ghi tốc độ JOG xuống PLC (D104) thất bại")
 

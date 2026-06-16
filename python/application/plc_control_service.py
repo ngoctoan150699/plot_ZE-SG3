@@ -42,6 +42,7 @@ from domain.plc_protocol import (
     clamp_u16,
     decode_signed_16,
     encode_signed_16,
+    speed_to_x100,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,11 +196,11 @@ class PlcControlService:
         """Pulse Home command through D112 = 1 -> 0."""
         return self._write_pulse_register(PLC_D112_HOME_CMD, pulse_ms=pulse_ms)
 
-    def write_speed(self, speed_rpm: float) -> bool:
-        """Write speed (as speed_x100) directly to D104."""
+    def write_speed(self, speed_deg_s: float) -> bool:
+        """Write output speed in deg/s to D104 as PLC PLSY pulse/s."""
         try:
-            val_x100 = int(round(float(speed_rpm) * 100.0))
-            return self._write_if_changed(PLC_D104_SPEED_X100, val_x100)
+            value = speed_to_x100(speed_deg_s)
+            return self._write_if_changed(PLC_D104_SPEED_X100, value)
         except Exception as exc:
             logger.debug("PLC write_speed failed: %s", exc)
             return False
