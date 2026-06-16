@@ -1,14 +1,14 @@
 {
   "connection": {
     "mode": "TCP",
-    "port": "COM1",
+    "port": "COM11",
     "baudrate": 115200,
     "parity": "N",
     "stopbits": 1,
     "bytesize": 8,
     "timeout": 0.5,
-    "ip": "192.168.90.101",
-    "tcp_port": 502,
+    "ip": "127.0.0.1",
+    "tcp_port": 5020,
     "slave_id": 1,
     "plc_slave_id": 2
   },
@@ -39,8 +39,8 @@
     "part_name": "Inner Tie Rod",
     "test_item": "Breakaway Torque",
     "dark_theme": false,
-    "language": "en",
-    "main_tab_index": 1,
+    "language": "vi",
+    "main_tab_index": 0,
     "left_tab_index": 2,
     "plc_jog_speed": 10.0,
     "plot_viewer": {
@@ -51,7 +51,7 @@
       "line_no_combo": "ITR #1",
       "plot_mode_combo": "Angle vs Torque",
       "range_mode_combo": "Default",
-      "file_select_combo": "torque_20260609_201108.csv",
+      "file_select_combo": "All",
       "part_no_edit": "",
       "write_edit": "",
       "review_edit": "",

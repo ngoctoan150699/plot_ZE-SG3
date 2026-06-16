@@ -55,19 +55,30 @@ def x100_to_angle(value: int) -> float:
     return decode_signed_16(value) / 100.0
 
 
+SERVO_PULSE_PER_REV = 10000.0
+GEAR_RATIO = 20.0
+OUTPUT_PULSE_PER_REV = SERVO_PULSE_PER_REV * GEAR_RATIO
+PULSE_PER_DEGREE = OUTPUT_PULSE_PER_REV / 360.0
+
+
 def speed_to_x100(speed_deg_s: float) -> int:
-    """Convert deg/s to the PLC x100 speed representation."""
-    value = int(round(float(speed_deg_s) * 100.0))
+    """Convert output speed in deg/s to PLC PLSY pulse/s.
+
+    MAIN.csv uses D104 directly as the first operand of PLSY, so D104 must be
+    pulse/s, not deg/s x100. With 10000 pulse/motor rev and gearbox 1:20:
+    1 output rev = 200000 pulse, 1 degree = 200000 / 360 pulse.
+    """
+    value = int(round(float(speed_deg_s) * PULSE_PER_DEGREE))
     if value < 0:
         raise ValueError(f"speed must be non-negative: {speed_deg_s}")
     if value > UINT16_MASK:
-        raise ValueError(f"speed x100 out of range: {value}")
+        raise ValueError(f"speed pulse/s out of range: {value}")
     return value
 
 
 def x100_to_speed(value: int) -> float:
-    """Convert the PLC x100 speed register to deg/s."""
-    return (int(value) & UINT16_MASK) / 100.0
+    """Convert PLC D104 pulse/s back to output speed in deg/s."""
+    return (int(value) & UINT16_MASK) / PULSE_PER_DEGREE
 
 
 def combine_u32(low: int, high: int) -> int:

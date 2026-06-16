@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Integrated ZE-SG3 Torque + PLC Modbus RTU simulator.
+"""Integrated ZE-SG3 Torque TCP/IP + PLC Modbus RTU simulator.
 
-Một COM simulator, hai Modbus slave:
-- Slave ID 1: ZE-SG3 torque sensor registers.
-- Slave ID 2: PLC/servo controller D100..D135.
+Hai kênh Modbus mô phỏng cùng lúc:
+- TCP/IP: ZE-SG3 / cảm biến lực torque, Slave ID 1.
+- RTU/COM: PLC/servo controller D100..D135, Slave ID 2.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QPushButton,
     QSpinBox,
@@ -37,7 +38,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from pymodbus.datastore import ModbusServerContext, ModbusSlaveContext, ModbusSequentialDataBlock
-from pymodbus.server.sync import ModbusSerialServer
+from pymodbus.server.sync import ModbusSerialServer, ModbusTcpServer
 from pymodbus.transaction import ModbusRtuFramer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
@@ -200,6 +201,7 @@ class IntegratedSimulatorWindow(QMainWindow):
         super().__init__()
         self._context: ModbusServerContext | None = None
         self._server = None
+        self._plc_server = None
         self._loop = None
         self._thread = None
         self._state = PlantState()
@@ -219,28 +221,37 @@ class IntegratedSimulatorWindow(QMainWindow):
         self.sig_log.connect(self._log)
 
     def _build_ui(self):
-        self.setWindowTitle("Bộ mô phỏng ZE-SG3 + PLC (Torque ID 1, PLC ID 2)")
+        self.setWindowTitle("Mô phỏng ZE-SG3 TCP/IP + PLC RTU (Torque ID 1, PLC ID 2)")
         self.setGeometry(80, 60, 860, 760)
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        conn = QGroupBox("Kết nối Modbus RTU")
+        conn = QGroupBox("Kết nối mô phỏng")
         grid = QGridLayout(conn)
-        grid.addWidget(QLabel("Cổng COM mô phỏng:"), 0, 0)
+        grid.addWidget(QLabel("Torque TCP IP lắng nghe:"), 0, 0)
+        self.edit_host = QLineEdit("0.0.0.0")
+        self.edit_host.setPlaceholderText("0.0.0.0 hoặc 127.0.0.1")
+        grid.addWidget(self.edit_host, 0, 1)
+        grid.addWidget(QLabel("Torque TCP Port:"), 1, 0)
+        self.spin_tcp_port = QSpinBox()
+        self.spin_tcp_port.setRange(1, 65535)
+        self.spin_tcp_port.setValue(5020)
+        grid.addWidget(self.spin_tcp_port, 1, 1)
+        grid.addWidget(QLabel("PLC RTU COM:"), 2, 0)
         self.combo_port = QComboBox()
-        grid.addWidget(self.combo_port, 0, 1)
-        btn_scan = QPushButton("Quét cổng COM")
+        grid.addWidget(self.combo_port, 2, 1)
+        btn_scan = QPushButton("Quét COM")
         btn_scan.clicked.connect(self._scan_ports)
-        grid.addWidget(btn_scan, 0, 2)
-        grid.addWidget(QLabel("Baudrate:"), 1, 0)
+        grid.addWidget(btn_scan, 2, 2)
+        grid.addWidget(QLabel("PLC RTU Baudrate:"), 3, 0)
         self.combo_baud = QComboBox()
         for baud in [9600, 19200, 38400, 57600, 115200]:
             self.combo_baud.addItem(str(baud), baud)
         self.combo_baud.setCurrentText("115200")
-        grid.addWidget(self.combo_baud, 1, 1)
-        self.lbl_ids = QLabel("Torque Slave ID = 1 | PLC Slave ID = 2 | 8N1")
-        grid.addWidget(self.lbl_ids, 2, 0, 1, 3)
+        grid.addWidget(self.combo_baud, 3, 1)
+        self.lbl_ids = QLabel("Torque/cảm biến lực: TCP Slave ID 1 | PLC: RTU Slave ID 2 | 8N1")
+        grid.addWidget(self.lbl_ids, 4, 0, 1, 3)
         layout.addWidget(conn)
 
         row = QHBoxLayout()
@@ -381,36 +392,52 @@ class IntegratedSimulatorWindow(QMainWindow):
         return [int(x) for x in val]
 
     def _start_server(self):
-        port = self.combo_port.currentData()
-        if not port:
-            self._log("❌ Chưa chọn cổng COM")
+        host = self.edit_host.text().strip() or "0.0.0.0"
+        tcp_port = int(self.spin_tcp_port.value())
+        plc_port = self.combo_port.currentData()
+        if not plc_port:
+            self._log("❌ Chưa chọn cổng COM cho PLC RTU")
             return
-        baud = self.combo_baud.currentData()
+        plc_baud = self.combo_baud.currentData()
         self._state = PlantState()
         self._context = self._create_context()
-        self._thread = threading.Thread(target=self._run_server, args=(port, baud), daemon=True, name="IntegratedModbusServer")
+        self._thread = threading.Thread(
+            target=self._run_servers,
+            args=(host, tcp_port, plc_port, plc_baud),
+            daemon=True,
+            name="TorqueTcpPlcRtuSimulator",
+        )
         self._thread.start()
         self._timer.start()
         self._cmd_timer.start()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
+        self.edit_host.setEnabled(False)
+        self.spin_tcp_port.setEnabled(False)
         self.combo_port.setEnabled(False)
         self.combo_baud.setEnabled(False)
-        self._log(f"✅ Bộ mô phỏng đang chạy trên {port} @ {baud}, Torque ID=1, PLC ID=2")
+        self._log(f"✅ Torque TCP {host}:{tcp_port}; PLC RTU {plc_port} @ {plc_baud}, ID PLC=2")
 
-    def _run_server(self, port: str, baud: int):
+    def _run_servers(self, host: str, tcp_port: int, plc_port: str, plc_baud: int):
         try:
-            self._server = ModbusSerialServer(
+            self._server = ModbusTcpServer(
+                context=self._context,
+                address=(host, tcp_port),
+                allow_reuse_address=True,
+            )
+            self._plc_server = ModbusSerialServer(
                 context=self._context,
                 framer=ModbusRtuFramer,
-                port=port,
-                baudrate=baud,
+                port=plc_port,
+                baudrate=plc_baud,
                 parity="N",
                 stopbits=1,
                 bytesize=8,
                 timeout=0.05,
             )
-            self.sig_log.emit(f"🔗 Lắng nghe Modbus RTU trên cổng {port}: slave 1 torque, slave 2 PLC")
+            self.sig_log.emit(f"🔗 Torque/cảm biến lực TCP: {host}:{tcp_port}, slave 1")
+            self.sig_log.emit(f"🔗 PLC Modbus RTU: {plc_port} @ {plc_baud}, slave 2")
+            threading.Thread(target=self._plc_server.serve_forever, daemon=True, name="PlcRtuServer").start()
             self._server.serve_forever()
         except Exception as exc:
             self.sig_log.emit(f"❌ Lỗi server: {exc}")
@@ -429,9 +456,21 @@ class IntegratedSimulatorWindow(QMainWindow):
                     if hasattr(self._server, "socket") and self._server.socket:
                         self._server.socket.close()
             except Exception as exc:
-                logger.warning("Stop server error: %s", exc)
+                logger.warning("Stop torque TCP server error: %s", exc)
+        if self._plc_server:
+            try:
+                self._plc_server.is_running = False
+                if getattr(self._plc_server, "handler", None) is not None:
+                    self._plc_server.server_close()
+                else:
+                    if hasattr(self._plc_server, "socket") and self._plc_server.socket:
+                        self._plc_server.socket.close()
+            except Exception as exc:
+                logger.warning("Stop PLC RTU server error: %s", exc)
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        self.edit_host.setEnabled(True)
+        self.spin_tcp_port.setEnabled(True)
         self.combo_port.setEnabled(True)
         self.combo_baud.setEnabled(True)
         self._log("⏹ Bộ mô phỏng đã dừng")

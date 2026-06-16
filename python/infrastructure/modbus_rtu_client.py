@@ -21,7 +21,7 @@ try:
     _RTU_KWARGS = lambda port, baud, par, stop, bs, to: dict(
         port=port, method='rtu', baudrate=baud,
         parity=par, stopbits=stop, bytesize=bs, timeout=to,
-        retries=0, retry_on_empty=False, inter_byte_timeout=0.01
+        retries=0, inter_byte_timeout=0.01
     )
     _SLAVE_KWARG = 'unit'
 except ImportError:
@@ -30,7 +30,7 @@ except ImportError:
         _RTU_KWARGS = lambda port, baud, par, stop, bs, to: dict(
             port=port, baudrate=baud, parity=par,
             stopbits=stop, bytesize=bs, timeout=to,
-            retries=0, retry_on_empty=False, inter_byte_timeout=0.01
+            retries=0, inter_byte_timeout=0.01
         )
         import inspect as _inspect
         _sig = _inspect.signature(_PyModbusRtu.read_holding_registers)
