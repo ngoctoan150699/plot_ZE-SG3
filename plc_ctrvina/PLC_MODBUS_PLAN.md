@@ -27,18 +27,32 @@ PLC đang dùng FXCPU FX3U/FX3UC, cấu hình Modbus RTU slave:
 
 ## Open Questions
 
-Các chân I/O chính đã được xác nhận:
+Các chân I/O thực tế đang được dùng trong [MAIN.csv](file:///d:/DuAn/18.Other/plot_draw/plot_ZE-SG3/plc_ctrvina/MAIN.csv):
 
-| Device | Chức năng |
-|---|---|
-| `X000` | Start vật lý |
-| `X001` | Stop vật lý |
-| `X002` | Nút nhấn 1 |
-| `X003` | Nút nhấn 2 |
-| `Y000` | Chân xuất xung vào driver servo |
-| `Y004` | Chân quyết định chiều servo |
-| `Y005` | Servo ON |
-| `Y006` | Xi lanh |
+### Input X
+
+| Device | Chức năng | Logic trong `MAIN.csv` |
+|---|---|---|
+| `X000` | Start vật lý | Góp điều kiện latch `M0` RUN |
+| `X001` | Stop vật lý | Cắt `M0`, dừng test `M1/M2`, set trạng thái done `M3` |
+| `X002` | Nút kẹp/nhả 1 | Kết hợp `X003` tạo `M11` |
+| `X003` | Nút kẹp/nhả 2 | `X002 AND X003` cạnh lên sẽ `ALT M10` |
+| `X004` | Dừng khẩn / interlock an toàn | Cắt `M0`, chặn `Y005` Servo ON, dừng test `M1/M2` |
+
+### Output Y
+
+| Device | Chức năng | Logic trong `MAIN.csv` |
+|---|---|---|
+| `Y000` | Chân xuất xung servo | Output pulse cho `DPLSV` manual jog và `PLSY` test auto |
+| `Y004` | Chân chiều servo | `RST` khi `D160 > 0`, `SET` khi `D160 < 0`; dùng làm direction input cho servo |
+| `Y005` | Servo ON | ON khi `M0=1`, không lỗi `M4`, không có `X004` |
+| `Y006` | Xi lanh kẹp/nhả | `Y006 = M10`, `M10` toggle bằng `X002+X003` hoặc `D100.b4` |
+| `Y007` | Đèn RUN / trạng thái sẵn sàng | ON khi `M0=1` và không lỗi `M4` |
+| `Y010` | Đèn STOP / chưa RUN | ON khi `M0=0` và không lỗi `M4` |
+| `Y011` | Đèn lỗi | ON khi `M4=1` |
+
+> [!IMPORTANT]
+> `X004` đang được dùng như tín hiệu an toàn/interlock vì nó vừa cắt RUN, vừa chặn Servo ON, vừa dừng test. Nếu phần cứng thực tế đặt tên khác như E-Stop, Servo Alarm, Safety Door thì cần đổi comment trong GX Works2 cho khớp.
 
 Còn cần xác nhận nếu có thêm tín hiệu bảo vệ:
 
@@ -501,15 +515,17 @@ Các thao tác manual:
 
 ### 9.4. Plan Breakaway Torque
 
-Breakaway là chu trình quay từ vị trí hiện tại đến góc dương `D102` để PC lấy giá trị momen phá vỡ ban đầu.
+Breakaway là chu trình quay từ `0 -> +D102 -> 0` và lặp theo số cycle `D105`.
+PC lấy dữ liệu momen trong pha đi/về tùy nhu cầu phân tích Breakaway Torque.
 
 PC/HMI ghi cấu hình trước khi start:
 
 ```text
 D101 = 1              ; Breakaway mode
 D102 = POS_ANGLE_X100 ; ví dụ +3600 = +36.00°
-D103 = NEG_ANGLE_X100 ; có thể không dùng trong Breakaway, vẫn ghi -3600 để đồng bộ
+D103 = NEG_ANGLE_X100 ; không dùng trong Breakaway, vẫn có thể ghi -3600 để đồng bộ
 D104 = SPEED_X100     ; tốc độ mong muốn
+D105 = CYCLE_SET      ; số vòng Breakaway, mỗi vòng = 0 -> +D102 -> 0
 D107 = PART_SELECT
 D108 = 1              ; Breakaway Torque
 ```
@@ -523,37 +539,39 @@ Trình tự điều khiển:
 4. PLC set:
    - M1 = 1
    - M2 = 1
+   - M3 = 0
    - D121 = 1
-   - D122 = 10/20
-   - D123 = 1
+   - D123 = D180 = 1
+   - D130 = 1
    - D125 = D102
-   - D130 = 1 trong vùng lấy dữ liệu
-5. PC đọc liên tục:
-   - D124 current angle
-   - D125 target angle
-   - D130 data valid
-   - D131 record enable
-   - D134 test done
-   - D129 error code
-6. Khi D131=1 và D130=1, PC lưu mẫu torque/góc/thời gian
-7. Khi PLC đạt target:
-   - M1 = 0
-   - M2 = 0
-   - M3 = 1
-   - D134 = 1
-   - D122 = 900
-8. PC nhận done, dừng ghi dữ liệu, pulse D100.b7 CLEAR_DONE
+5. Pha đi tới góc dương:
+   - D130 = 1
+   - D122 = 20
+   - D125 = D102
+6. Khi tới +D102 trong ngưỡng sai số:
+   - PLC chốt D124 = D125
+   - Đồng bộ lại D170/D172 theo bộ đếm pulse
+   - D130 đổi 1 -> 2
+   - D125 đổi về 0
+7. Pha quay về 0:
+   - D130 = 2
+   - D122 = 30
+   - D125 = 0
+8. Khi về 0 trong ngưỡng sai số:
+   - Nếu D180 < D105: tăng D180, quay lại pha D130 = 1
+   - Nếu D180 >= D105: M1 = 0, M2 = 0, M3 = 1, D134 = 1
+9. PC nhận done, dừng ghi dữ liệu, pulse D100.b7 CLEAR_DONE
 ```
 
-Đề xuất phase Breakaway:
+Đề xuất phase Breakaway theo logic hiện tại:
 
-| Phase `D122` | Ý nghĩa | `D130 DATA_VALID` | `D131 RECORD_ENABLE` |
-|---:|---|---:|---:|
-| `10` | Prepare | `0` | `0` |
-| `20` | Moving to positive angle | `1` | `1` |
-| `30` | Hold/settle ngắn nếu cần | `0/1` | `1` |
-| `900` | Done | `0` | `0` |
-| `999` | Fault/Abort | `0` | `0` |
+| Phase `D122` | `D130` | Ý nghĩa | `D131 RECORD_ENABLE` |
+|---:|---:|---|---:|
+| `10` | `1` | Prepare/start cycle | `1` khi `M2=1` |
+| `20` | `1` | Moving `0 -> +D102` | `1` |
+| `30` | `2` | Returning `+D102 -> 0` | `1` |
+| `0` | giữ giá trị cuối | Done/Idle sau khi đủ cycle | `0` |
+| `999` | bất kỳ | Fault/Abort nếu bổ sung fault logic | `0` |
 
 ### 9.5. Plan Operating Torque
 
