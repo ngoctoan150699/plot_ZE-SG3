@@ -2671,12 +2671,19 @@ class TorquePlotViewer(QMainWindow):
                 except Exception:
                     st = en = None
         else:
-            # Default mode must NOT silently crop imported cycle data.
-            # The Test Item default ranges are report/config references; using them here
-            # made Data Info show only a small slice (e.g. C3 = 33 pts) even though
-            # the CSV contains the full cycle (e.g. C3 = 869 pts). Keep the full
-            # selected cycle(s) unless the user explicitly switches to Manual range.
-            st = en = None
+            # Default: apply configured range for the current Part/Test Item when available.
+            try:
+                item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else None
+                ranges = self.test_item_angle_ranges if is_angle_mode else self.test_item_time_ranges
+                pr = (ranges.get(pname, {}) if pname else {}).get(item_name, {}) if item_name else {}
+                if pr:
+                    st = float(pr.get('start', 0.0))
+                    en = float(pr.get('end', 0.0))
+            except Exception:
+                st = en = None
+
+        if st is not None and en is not None and st > en:
+            st, en = en, st
 
         # If we have valid numeric bounds, select by the appropriate X-axis (angle or time)
         if st is not None and en is not None:
@@ -4877,6 +4884,9 @@ class TorquePlotViewer(QMainWindow):
             if isinstance(pr, dict):
                 st = float(pr.get('start', 0.0))
                 en = float(pr.get('end', 0.0))
+
+        if st is not None and en is not None and st > en:
+            st, en = en, st
 
         selected_c = active_sample.get('selected_cycles', [])
         trimmed_samples = []
