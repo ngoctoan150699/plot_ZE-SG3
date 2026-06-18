@@ -4692,6 +4692,89 @@ class TorquePlotViewer(QMainWindow):
                 path += '.xlsx'
             self.summary_report_path_edit.setText(path)
 
+    def _append_summary_report(self, summary_path: str, metadata, filename: str, raw_path: str, report_path: str):
+        """Append one measurement row to an Excel Summary file formatted as a Table."""
+        if not summary_path:
+            return None
+        try:
+            from openpyxl import Workbook, load_workbook
+            from openpyxl.worksheet.table import Table, TableStyleInfo
+            from openpyxl.utils import get_column_letter
+            from datetime import datetime
+
+            os.makedirs(os.path.dirname(summary_path) or '.', exist_ok=True)
+            if os.path.exists(summary_path):
+                wb = load_workbook(summary_path)
+                ws = wb.active
+            else:
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Summary"
+
+            headers = [
+                "Saved At", "Date", "Test Item", "Part Name", "Part No", "Sample No",
+                "Purpose", "Team", "Line No", "Tester", "Spec Min", "Spec Max",
+                "Average Nm", "Min Nm", "Max Nm", "Judgment", "Remark",
+                "Filename", "Raw CSV", "CTR Report",
+            ]
+            if ws.max_row == 1 and all(ws.cell(row=1, column=c).value is None for c in range(1, len(headers) + 1)):
+                for col, header in enumerate(headers, start=1):
+                    ws.cell(row=1, column=col, value=header)
+            else:
+                for col, header in enumerate(headers, start=1):
+                    if ws.cell(row=1, column=col).value != header:
+                        ws.cell(row=1, column=col, value=header)
+
+            def _float_from_label(label):
+                try:
+                    text = label.text().strip()
+                    return float(text) if text and text != '-' else None
+                except Exception:
+                    return None
+
+            spec_min = float(self.spec_min_spin.value()) if getattr(self, 'spec_min_spin', None) else None
+            spec_max = float(self.spec_max_spin.value()) if getattr(self, 'spec_max_spin', None) else None
+            row = [
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                getattr(metadata, 'date', ''),
+                getattr(metadata, 'test_item', ''),
+                getattr(metadata, 'part_name', ''),
+                getattr(metadata, 'part_no', ''),
+                int(getattr(metadata, 'sample_no', 1)),
+                getattr(metadata, 'test_purpose', ''),
+                getattr(metadata, 'team', ''),
+                getattr(metadata, 'line_no', ''),
+                getattr(metadata, 'tester', ''),
+                spec_min,
+                spec_max,
+                _float_from_label(self.avg_label) if hasattr(self, 'avg_label') else None,
+                _float_from_label(self.min_label) if hasattr(self, 'min_label') else None,
+                _float_from_label(self.max_label) if hasattr(self, 'max_label') else None,
+                self.judgment_label.text().strip() if hasattr(self, 'judgment_label') else '',
+                getattr(metadata, 'remark', ''),
+                filename,
+                raw_path,
+                report_path,
+            ]
+            ws.append(row)
+
+            # Recreate table range to include the appended row.
+            for tbl_name in list(ws.tables.keys()):
+                del ws.tables[tbl_name]
+            end_col = get_column_letter(len(headers))
+            table = Table(displayName="TorqueSummary", ref=f"A1:{end_col}{ws.max_row}")
+            style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
+                                   showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+            table.tableStyleInfo = style
+            ws.add_table(table)
+            for col in range(1, len(headers) + 1):
+                ws.column_dimensions[get_column_letter(col)].width = min(45, max(12, len(str(ws.cell(row=1, column=col).value)) + 2))
+            wb.save(summary_path)
+            return summary_path
+        except Exception as exc:
+            QMessageBox.warning(self, "Summary Report", f"Could not update summary report:\n{exc}")
+            return None
+
     def save_report(self):
         """Save both raw CSV and CTR report CSV using ReportService."""
         if not self.samples:
@@ -4841,9 +4924,15 @@ class TorquePlotViewer(QMainWindow):
                 metadata=metadata
             )
 
+            summary_path = ''
+            if hasattr(self, 'summary_report_path_edit'):
+                summary_path = self.summary_report_path_edit.text().strip()
+            summary_saved_path = self._append_summary_report(summary_path, metadata, filename, raw_path, report_path) if summary_path else None
+            summary_msg = f"\n3. Summary Report: {summary_saved_path}" if summary_saved_path else ""
+
             QMessageBox.information(
                 self, "Report Saved",
-                f"Successfully saved both reports:\n\n1. Raw CSV: {raw_path}\n2. CTR Report: {report_path}"
+                f"Successfully saved reports:\n\n1. Raw CSV: {raw_path}\n2. CTR Report: {report_path}{summary_msg}"
             )
 
             self.csv_dir = csv_dir
