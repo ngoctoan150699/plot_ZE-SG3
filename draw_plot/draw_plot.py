@@ -892,6 +892,11 @@ class TorquePlotViewer(QMainWindow):
         self.import_btn.clicked.connect(self.import_csv)
         top_h.addWidget(self.import_btn)
 
+        self.add_files_btn = QPushButton("➕ Add Files")
+        self.add_files_btn.setFixedHeight(28)
+        self.add_files_btn.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold; padding: 4px;")
+        self.add_files_btn.clicked.connect(self.add_files)
+        top_h.addWidget(self.add_files_btn)
 
         self.clear_btn = QPushButton("🗑 Clear All")
         self.clear_btn.setFixedHeight(28)
