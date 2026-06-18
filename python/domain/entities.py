@@ -144,6 +144,7 @@ class ReportMetadata:
     part_name: str    = ""
     part_no: str      = ""
     sample_no: int    = 1
+    remark: str       = ""
     test_purpose: str = ""
     tester: str       = ""
     team: str         = ""

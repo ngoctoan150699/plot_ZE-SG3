@@ -1030,6 +1030,11 @@ class MainWindow(QMainWindow):
 
     def _on_main_tab_changed(self, index: int):
         """Lazy-load Plot Viewer only when user opens the tab."""
+        if index == 0 and hasattr(self, '_plot_viewer'):
+            try:
+                self._plot_viewer.clear_remark()
+            except Exception:
+                pass
         if index != 1 or getattr(self, '_plot_viewer_loaded', False):
             return
         try:

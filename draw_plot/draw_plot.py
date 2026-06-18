@@ -1335,20 +1335,36 @@ class TorquePlotViewer(QMainWindow):
         self.team_combo.setMaximumWidth(180)
         meta_layout.addWidget(self.team_combo, 6, 3)
 
-        # Lot No on Row 7 Col 0-1
-        meta_layout.addWidget(QLabel("LOT NO:"), 7, 0)
+        # Remark on Row 7 Col 0-3. Not persisted; cleared when returning to acquisition tab.
+        meta_layout.addWidget(QLabel("REMARK:"), 7, 0)
+        self.remark_edit = QLineEdit("")
+        self.remark_edit.setMaxLength(100)
+        self.remark_edit.setPlaceholderText("MAX 100 CHARACTERS")
+        def _on_remark_changed(text):
+            pos = self.remark_edit.cursorPosition()
+            upp = text.upper()
+            if text != upp:
+                self.remark_edit.blockSignals(True)
+                self.remark_edit.setText(upp)
+                self.remark_edit.setCursorPosition(min(pos, len(upp)))
+                self.remark_edit.blockSignals(False)
+        self.remark_edit.textChanged.connect(_on_remark_changed)
+        meta_layout.addWidget(self.remark_edit, 7, 1, 1, 3)
+
+        # Lot No on Row 8 Col 0-1
+        meta_layout.addWidget(QLabel("LOT NO:"), 8, 0)
         self.lot_no_edit = QLineEdit("")
         self.lot_no_edit.setMaximumWidth(180)
-        meta_layout.addWidget(self.lot_no_edit, 7, 1)
+        meta_layout.addWidget(self.lot_no_edit, 8, 1)
 
-        # Line No combo on Row 7 Col 2-3
-        meta_layout.addWidget(QLabel("LINE NO:"), 7, 2)
+        # Line No combo on Row 8 Col 2-3
+        meta_layout.addWidget(QLabel("LINE NO:"), 8, 2)
         self.line_no_combo = QComboBox()
         self.line_no_combo.addItems(LINE_NOS)
         self.line_no_combo.setMaximumWidth(180)
-        meta_layout.addWidget(self.line_no_combo, 7, 3)
+        meta_layout.addWidget(self.line_no_combo, 8, 3)
 
-        # Profile save/load buttons (Row 8)
+        # Profile save/load buttons (Row 9)
         prof_h = QHBoxLayout()
         prof_h.setSpacing(8)
         self.save_profile_btn = QPushButton("Save Profile")
@@ -1359,10 +1375,10 @@ class TorquePlotViewer(QMainWindow):
         self.load_profile_btn.setFixedHeight(26)
         self.load_profile_btn.clicked.connect(self.load_profile)
         prof_h.addWidget(self.load_profile_btn)
-        meta_layout.addLayout(prof_h, 8, 0, 1, 4)
+        meta_layout.addLayout(prof_h, 9, 0, 1, 4)
 
-        # Folder Paths (Row 9 & 10)
-        meta_layout.addWidget(QLabel("CSV File path:"), 9, 0)
+        # Folder Paths (Row 10 & 11)
+        meta_layout.addWidget(QLabel("CSV File path:"), 10, 0)
         csv_path_h = QHBoxLayout()
         csv_path_h.setSpacing(4)
         csv_path_h.setContentsMargins(0, 0, 0, 0)
@@ -1377,9 +1393,9 @@ class TorquePlotViewer(QMainWindow):
         csv_path_h.addWidget(self.csv_browse_btn)
         csv_path_widget = QWidget()
         csv_path_widget.setLayout(csv_path_h)
-        meta_layout.addWidget(csv_path_widget, 9, 1, 1, 3)
+        meta_layout.addWidget(csv_path_widget, 10, 1, 1, 3)
 
-        meta_layout.addWidget(QLabel("Report File path:"), 10, 0)
+        meta_layout.addWidget(QLabel("Report File path:"), 11, 0)
         report_path_h = QHBoxLayout()
         report_path_h.setSpacing(4)
         report_path_h.setContentsMargins(0, 0, 0, 0)
@@ -1394,14 +1410,14 @@ class TorquePlotViewer(QMainWindow):
         report_path_h.addWidget(self.report_browse_btn)
         report_path_widget = QWidget()
         report_path_widget.setLayout(report_path_h)
-        meta_layout.addWidget(report_path_widget, 10, 1, 1, 3)
+        meta_layout.addWidget(report_path_widget, 11, 1, 1, 3)
 
-        # Save Report Button (Row 11)
+        # Save Report Button (Row 12)
         self.save_report_btn = QPushButton("💾 Save the Report")
         self.save_report_btn.setFixedHeight(32)
         self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 10pt;")
         self.save_report_btn.clicked.connect(self.save_report)
-        meta_layout.addWidget(self.save_report_btn, 11, 0, 1, 4)
+        meta_layout.addWidget(self.save_report_btn, 12, 0, 1, 4)
 
         # Place judgment in its own column so it's always visible
         meta_layout.addWidget(QLabel("JUDGMENT:"), 5, 2)
@@ -4371,6 +4387,14 @@ class TorquePlotViewer(QMainWindow):
                     os.remove(tmp_png)
                 except Exception:
                     pass
+    def clear_remark(self):
+        """Clear one-time Remark when leaving the analysis/report workflow."""
+        try:
+            if hasattr(self, 'remark_edit'):
+                self.remark_edit.clear()
+        except Exception:
+            pass
+
     def save_profile(self):
         """Save current metadata as a JSON profile."""
         suggested = 'profile.json'
@@ -4678,6 +4702,7 @@ class TorquePlotViewer(QMainWindow):
             part_name=self.part_name_combo.currentText(),
             part_no=self.part_no_edit.text().strip(),
             sample_no=int(self.sample_no_spin.value()) if hasattr(self, 'sample_no_spin') else 1,
+            remark=self.remark_edit.text().strip() if hasattr(self, 'remark_edit') else '',
             test_purpose=self.test_purpose_combo.currentText(),
             tester=self.tester_edit.text().strip(),
             team=self.team_combo.currentText() if hasattr(self, 'team_combo') else '',
