@@ -1221,6 +1221,7 @@ class TorquePlotViewer(QMainWindow):
             spec_h.addWidget(self.spec_min_spin)
             try:
                 self.spec_min_spin.valueChanged.connect(self.update_average)
+                self.spec_min_spin.editingFinished.connect(self.save_current_spec)
             except Exception:
                 pass
             self.spec_max_spin = CommaDoubleSpinBox()
@@ -1233,6 +1234,7 @@ class TorquePlotViewer(QMainWindow):
             spec_h.addWidget(self.spec_max_spin)
             try:
                 self.spec_max_spin.valueChanged.connect(self.update_average)
+                self.spec_max_spin.editingFinished.connect(self.save_current_spec)
             except Exception:
                 pass
             self.spec_min_spin.show()
@@ -2348,13 +2350,41 @@ class TorquePlotViewer(QMainWindow):
                 self.on_part_name_changed()
             except: pass
 
+    def _save_test_item_specs(self):
+        """Persist per-part, per-test-item specification settings."""
+        cfg = get_config_file('test_item_specs_v2.json')
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(self.test_item_specs, f, indent=2)
+
+    def save_current_spec(self):
+        """Save the currently visible Spec Min/Max immediately after editing."""
+        try:
+            if not (getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None)):
+                return
+            part_name = self.part_name_combo.currentText()
+            item_name = self.test_item_combo.currentText()
+            if not part_name or not item_name:
+                return
+            part_specs = self.test_item_specs.setdefault(part_name, {})
+            part_specs[item_name] = {
+                'min': float(self.spec_min_spin.value()),
+                'max': float(self.spec_max_spin.value()),
+            }
+            self._save_test_item_specs()
+        except Exception as exc:
+            QMessageBox.warning(self, 'Spec Save Failed', f'Could not save specification:\n{exc}')
+
     def open_test_item_spec_setup(self):
         """Open the Test Item Specification configuration dialog."""
         test_items = [self.test_item_combo.itemText(i) for i in range(self.test_item_combo.count())]
         parts = [self.part_name_combo.itemText(i) for i in range(self.part_name_combo.count())]
         dlg = TestItemSpecDialog(self, parts, test_items, self.test_item_specs)
         if dlg.exec_() == QDialog.Accepted:
-            # reload specs
+            self.test_item_specs = dlg.specs or {}
+            try:
+                self._save_test_item_specs()
+            except Exception as exc:
+                QMessageBox.warning(self, 'Spec Save Failed', f'Could not save specification:\n{exc}')
             self.on_part_name_changed()
 
     def open_calibration_setup(self):
