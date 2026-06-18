@@ -1176,7 +1176,17 @@ class TorquePlotViewer(QMainWindow):
                 self.part_no_edit.setCursorPosition(pos)
                 self.part_no_edit.blockSignals(False)
         self.part_no_edit.textChanged.connect(_on_part_no_changed)
-        meta_layout.addWidget(self.part_no_edit, 1, 1)
+        part_sample_h = QHBoxLayout()
+        part_sample_h.setSpacing(8)
+        part_sample_h.addWidget(self.part_no_edit)
+        part_sample_h.addWidget(QLabel("SAMPLE NO:"))
+        self.sample_no_spin = QSpinBox()
+        self.sample_no_spin.setRange(1, 99)
+        self.sample_no_spin.setValue(1)
+        self.sample_no_spin.setMaximumWidth(70)
+        self.sample_no_spin.setToolTip("Sample No, valid range 01 to 99")
+        part_sample_h.addWidget(self.sample_no_spin)
+        meta_layout.addLayout(part_sample_h, 1, 1)
 
         # Report role fields (Write / Review / Approval) placed in a single horizontal row (compact)
         report_h = QHBoxLayout()
@@ -4384,6 +4394,7 @@ class TorquePlotViewer(QMainWindow):
             'stt_end': int(self.end_spin.value()) if hasattr(self, 'end_spin') else 100,
             'team': self.team_combo.currentText() if hasattr(self, 'team_combo') else '',
             'line_no': self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else '',
+            'sample_no': int(self.sample_no_spin.value()) if hasattr(self, 'sample_no_spin') else 1,
         }
         try:
             if getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None):
@@ -4437,6 +4448,11 @@ class TorquePlotViewer(QMainWindow):
                     pass
             if 'part_no' in profile:
                 self.part_no_edit.setText(profile.get('part_no', ''))
+            if 'sample_no' in profile and hasattr(self, 'sample_no_spin'):
+                try:
+                    self.sample_no_spin.setValue(max(1, min(99, int(profile.get('sample_no', 1)))))
+                except Exception:
+                    pass
             # Apply spec: prefer numeric spec_min/spec_max if present, otherwise try textual spec
             if 'spec_min' in profile and 'spec_max' in profile and getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None):
                 try:
@@ -4661,6 +4677,7 @@ class TorquePlotViewer(QMainWindow):
             test_item=self.test_item_combo.currentText(),
             part_name=self.part_name_combo.currentText(),
             part_no=self.part_no_edit.text().strip(),
+            sample_no=int(self.sample_no_spin.value()) if hasattr(self, 'sample_no_spin') else 1,
             test_purpose=self.test_purpose_combo.currentText(),
             tester=self.tester_edit.text().strip(),
             team=self.team_combo.currentText() if hasattr(self, 'team_combo') else '',
