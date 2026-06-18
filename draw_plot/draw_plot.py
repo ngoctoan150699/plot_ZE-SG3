@@ -1751,6 +1751,60 @@ class TorquePlotViewer(QMainWindow):
         self.plot_mode_combo.setCurrentIndex(1)
         self.on_plot_mode_changed()
     
+    def apply_theme(self, dark: bool):
+        """Apply Light/Dark theme from the main application to the analysis tab."""
+        self._is_dark_theme = bool(dark)
+        if dark:
+            self.setStyleSheet("""
+                QWidget, QMainWindow { background-color: #1e1e2e; color: #cdd6f4; }
+                QGroupBox { background-color: #181825; border: 1px solid #45475a; border-radius: 8px; margin-top: 1.2em; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #89b4fa; font-weight: bold; }
+                QLabel { color: #cdd6f4; }
+                QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit {
+                    background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px;
+                    selection-background-color: #89b4fa; selection-color: #11111b;
+                }
+                QPushButton { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 5px; padding: 6px 12px; font-weight: 600; }
+                QPushButton:hover { background-color: #45475a; }
+                QTabWidget::pane, QFrame { border-color: #45475a; }
+                QScrollArea { background-color: transparent; border: none; }
+            """)
+            fig_color = '#1e1e2e'
+            ax_color = '#181825'
+            text_color = '#cdd6f4'
+            grid_color = '#a6adc8'
+        else:
+            # Reuse the existing light stylesheet initialized by the analysis tab.
+            self.setStyleSheet("""
+                QWidget, QMainWindow { background-color: #f4f6f9; color: #333333; }
+                QGroupBox { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; margin-top: 1.2em; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #2c3e50; font-weight: bold; }
+                QLabel { color: #333333; }
+                QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit { background-color: #ffffff; color: #333333; border: 1px solid #cccccc; border-radius: 4px; padding: 5px; selection-background-color: #3f51b5; }
+                QPushButton { background-color: #ffffff; color: #333333; border: 1px solid #dcdcdc; border-radius: 5px; padding: 6px 12px; font-weight: 600; }
+                QPushButton:hover { background-color: #f0f0f0; }
+                QScrollArea { background-color: transparent; border: none; }
+            """)
+            fig_color = '#ffffff'
+            ax_color = '#ffffff'
+            text_color = '#333333'
+            grid_color = '#dddddd'
+
+        try:
+            if hasattr(self, 'fig') and hasattr(self, 'ax'):
+                self.fig.patch.set_facecolor(fig_color)
+                self.ax.set_facecolor(ax_color)
+                self.ax.tick_params(colors=text_color)
+                self.ax.xaxis.label.set_color(text_color)
+                self.ax.yaxis.label.set_color(text_color)
+                self.ax.title.set_color(text_color)
+                self.ax.grid(True, alpha=0.25, color=grid_color)
+                for spine in self.ax.spines.values():
+                    spine.set_edgecolor('#45475a' if dark else '#cccccc')
+                self.canvas.draw_idle()
+        except Exception:
+            pass
+
     def import_csv(self):
         """Import one or more CSV files and add them as samples."""
         paths, _ = QFileDialog.getOpenFileNames(self, "Open CSV File(s)", "", "CSV Files (*.csv);;All Files (*)")

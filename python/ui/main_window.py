@@ -1060,6 +1060,8 @@ class MainWindow(QMainWindow):
                 self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
             self._restore_plot_viewer_state()
             self._connect_plot_viewer_state_signals()
+            if hasattr(self._plot_viewer, 'apply_theme'):
+                self._plot_viewer.apply_theme(self._is_dark)
             self._plot_viewer_loaded = True
             self._save_ui_state()
         except Exception as exc:
@@ -1796,6 +1798,12 @@ class MainWindow(QMainWindow):
         # Cập nhật màu chart theo theme
         if hasattr(self, 'plot'):
             self._apply_chart_theme(dark)
+
+        if hasattr(self, '_plot_viewer') and hasattr(self._plot_viewer, 'apply_theme'):
+            try:
+                self._plot_viewer.apply_theme(dark)
+            except Exception:
+                pass
 
     def _apply_chart_theme(self, dark: bool):
         if hasattr(self, 'plot'):
