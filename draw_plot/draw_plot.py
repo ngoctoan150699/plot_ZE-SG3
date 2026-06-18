@@ -2015,14 +2015,33 @@ class TorquePlotViewer(QMainWindow):
             return False
 
     def read_csv_arrays(self, path: str):
-        """Read CSV and return (time_list, torque_list, angle_list, cycle_list)."""
+        """Read CSV and return (time_list, torque_list, angle_list, cycle_list).
+
+        Supported formats:
+        - CTR report: data after END_OF_HEADER with Save,State,Cycle,Time,Command,Angle,Torque.
+        - Raw export: Time (s), Angle (deg), Torque (Nm), Cycle.
+        - Legacy/simple export: Time, Torque.
+        """
         time_list = []
         torque_list = []
         angle_list = []
         cycle_list = []
-        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             lines = [ln.strip() for ln in f if ln.strip()]
 
+        def _to_float(value, default=0.0):
+            try:
+                return float(str(value).strip().replace(',', '.'))
+            except Exception:
+                return default
+
+        def _to_int(value, default=1):
+            try:
+                return int(float(str(value).strip().replace(',', '.')))
+            except Exception:
+                return default
+
+        # CTR DATA FORMAT #1: data rows start after END_OF_HEADER.
         ctr_entries = []
         if any(ln == "END_OF_HEADER" for ln in lines):
             in_data = False
@@ -2032,19 +2051,18 @@ class TorquePlotViewer(QMainWindow):
                     continue
                 if not in_data:
                     continue
-                parts = line.split(',')
-                # Headers: [Save, State, Cycle, Time, Command, Angle, Torque]
+                parts = [p.strip() for p in line.split(',')]
+                # Columns: Save, State, Cycle, Time, Command, Angle, Torque
                 if len(parts) >= 7:
                     try:
-                        # Cycle can be formatted as float like '1.000000', use float() first
-                        cycle_val = int(float(parts[2]))
-                        time_val = float(parts[3])
-                        angle_val = float(parts[5])
-                        torque_val = float(parts[6])
-                        ctr_entries.append((time_val, torque_val, angle_val, cycle_val))
-                    except ValueError:
+                        ctr_entries.append((
+                            _to_float(parts[3]),
+                            _to_float(parts[6]),
+                            _to_float(parts[5]),
+                            _to_int(parts[2]),
+                        ))
+                    except Exception:
                         continue
-        
         if ctr_entries:
             for t, tr, a, c in ctr_entries:
                 time_list.append(t)
@@ -2053,20 +2071,58 @@ class TorquePlotViewer(QMainWindow):
                 cycle_list.append(c)
             return time_list, torque_list, angle_list, cycle_list
 
-        # Try simple two-column (Time, Torque) - no angle, no cycle
+        # Header-aware raw/simple CSV parser.
+        header = None
+        data_start = 0
+        for i, line in enumerate(lines[:10]):
+            lower = line.lower()
+            if 'time' in lower and ('torque' in lower or 'angle' in lower):
+                header = [p.strip().lower() for p in line.split(',')]
+                data_start = i + 1
+                break
+
+        if header:
+            def _find_col(*keywords):
+                for idx, name in enumerate(header):
+                    if all(k in name for k in keywords):
+                        return idx
+                return None
+
+            time_idx = _find_col('time')
+            angle_idx = _find_col('angle')
+            torque_idx = _find_col('torque')
+            cycle_idx = _find_col('cycle')
+
+            for line in lines[data_start:]:
+                parts = [p.strip() for p in line.split(',')]
+                if time_idx is None or torque_idx is None:
+                    continue
+                if len(parts) <= max(time_idx, torque_idx):
+                    continue
+                time_list.append(_to_float(parts[time_idx]))
+                torque_list.append(_to_float(parts[torque_idx]))
+                if angle_idx is not None and len(parts) > angle_idx:
+                    angle_list.append(_to_float(parts[angle_idx]))
+                else:
+                    angle_list.append(0.0)
+                if cycle_idx is not None and len(parts) > cycle_idx:
+                    cycle_list.append(_to_int(parts[cycle_idx]))
+                else:
+                    cycle_list.append(1)
+            return time_list, torque_list, angle_list, cycle_list
+
+        # Legacy two-column CSV: Time, Torque.
         for line in lines:
-            parts = line.split(',')
+            parts = [p.strip() for p in line.split(',')]
             if len(parts) >= 2:
                 try:
-                    time_val = float(parts[0])
-                    torque_val = float(parts[1])
-                    time_list.append(time_val)
-                    torque_list.append(torque_val)
-                    angle_list.append(0.0) # Default angle
-                    cycle_list.append(1)   # Default cycle
-                except ValueError:
+                    time_list.append(_to_float(parts[0]))
+                    torque_list.append(_to_float(parts[1]))
+                    angle_list.append(0.0)
+                    cycle_list.append(1)
+                except Exception:
                     continue
-        
+
         return time_list, torque_list, angle_list, cycle_list
 
     def on_plot_mode_changed(self, index=None):
