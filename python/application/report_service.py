@@ -26,12 +26,15 @@ class ReportService:
 
     def generate_filename(self, metadata: ReportMetadata, output_dir: str) -> str:
         """
-        Sinh tên tệp theo quy tắc: yymmdd-TestItem-PartNo-Purpose-Team-##
-        - TestItem: B (Breakaway) hoặc O (Operating)
+        Sinh tên tệp theo quy tắc:
+        yymmdd-TestItem-PartNo-Purpose-Team-SampleNo-##
+
+        - TestItem: B (Breakaway) hoặc O (Operating/Oscillating)
         - PartNo: Lấy 7 ký tự đầu tiên
         - Purpose: Lấy ký tự đầu tiên viết hoa
         - Team: Lấy nguyên cụm mã Team
-        - ##: Số thứ tự tự động tăng từ 01
+        - SampleNo: 01..99
+        - ##: Số thứ tự tự động tăng từ 01 nếu trùng prefix
         """
         # 1. Ngày tháng yymmdd
         date_str = datetime.now().strftime('%y%m%d')
@@ -39,7 +42,7 @@ class ReportService:
         # 2. Ký hiệu Test Item
         test_char = 'B'
         if metadata.test_item:
-            if 'Operating' in metadata.test_item or 'O' == metadata.test_item:
+            if 'Operating' in metadata.test_item or 'Oscillating' in metadata.test_item or 'O' == metadata.test_item:
                 test_char = 'O'
             elif 'Breakaway' in metadata.test_item or 'B' == metadata.test_item:
                 test_char = 'B'
@@ -47,7 +50,6 @@ class ReportService:
         # 3. Part No (lấy 7 ký tự đầu)
         part_no_clean = (metadata.part_no or "").strip().upper()
         part_no_short = part_no_clean[:7] if part_no_clean else "UNKNOWN"
-        # Đệm khoảng trống nếu ngắn hơn 7 ký tự (hoặc giữ nguyên)
         if len(part_no_short) < 7:
             part_no_short = part_no_short.ljust(7, '_')
 
@@ -58,15 +60,21 @@ class ReportService:
         # 5. Team
         team_str = (metadata.team or "OTHER").strip().upper()
 
-        # Tên tệp cơ sở (chưa có số thứ tự và phần mở rộng)
-        base_name = f"{date_str}-{test_char}-{part_no_short}-{purpose_char}-{team_str}"
+        # 6. Sample No (01..99)
+        try:
+            sample_no = max(1, min(99, int(getattr(metadata, 'sample_no', 1))))
+        except Exception:
+            sample_no = 1
+        sample_no_str = f"{sample_no:02d}"
 
-        # 6. Tự động tăng số thứ tự mẫu đo
+        # Tên tệp cơ sở (chưa có số thứ tự và phần mở rộng)
+        base_name = f"{date_str}-{test_char}-{part_no_short}-{purpose_char}-{team_str}-{sample_no_str}"
+
+        # 7. Tự động tăng số thứ tự mẫu đo
         seq = 1
         while True:
             filename = f"{base_name}-{seq:02d}.csv"
             full_path = os.path.join(output_dir, filename)
-            # Kiểm tra xem tệp đã tồn tại trong thư mục chưa
             if not os.path.exists(full_path):
                 return filename
             seq += 1
