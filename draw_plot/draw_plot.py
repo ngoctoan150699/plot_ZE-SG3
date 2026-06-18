@@ -847,6 +847,7 @@ class TorquePlotViewer(QMainWindow):
                     pdata = json.load(f)
                     self.csv_dir = pdata.get('csv_dir', '')
                     self.report_dir = pdata.get('report_dir', '')
+                    self.summary_report_path = pdata.get('summary_report_path', '')
         except Exception:
             pass
 
@@ -1414,12 +1415,29 @@ class TorquePlotViewer(QMainWindow):
         report_path_widget.setLayout(report_path_h)
         meta_layout.addWidget(report_path_widget, 11, 1, 1, 3)
 
-        # Save Report Button (Row 12)
+        meta_layout.addWidget(QLabel("Summary Report:"), 12, 0)
+        summary_path_h = QHBoxLayout()
+        summary_path_h.setSpacing(4)
+        summary_path_h.setContentsMargins(0, 0, 0, 0)
+        self.summary_report_path_edit = QLineEdit(getattr(self, 'summary_report_path', ''))
+        summary_path_h.addWidget(self.summary_report_path_edit)
+        self.summary_report_browse_btn = QPushButton()
+        self.summary_report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.summary_report_browse_btn.setToolTip("Browse summary Excel report file")
+        self.summary_report_browse_btn.setFixedSize(34, 30)
+        self.summary_report_browse_btn.setIconSize(self.summary_report_browse_btn.size() * 0.62)
+        self.summary_report_browse_btn.clicked.connect(self.browse_summary_report_path)
+        summary_path_h.addWidget(self.summary_report_browse_btn)
+        summary_path_widget = QWidget()
+        summary_path_widget.setLayout(summary_path_h)
+        meta_layout.addWidget(summary_path_widget, 12, 1, 1, 3)
+
+        # Save Report Button (Row 13)
         self.save_report_btn = QPushButton("💾 Save the Report")
         self.save_report_btn.setFixedHeight(32)
         self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 10pt;")
         self.save_report_btn.clicked.connect(self.save_report)
-        meta_layout.addWidget(self.save_report_btn, 12, 0, 1, 4)
+        meta_layout.addWidget(self.save_report_btn, 13, 0, 1, 4)
 
         # Place judgment in its own column so it's always visible
         meta_layout.addWidget(QLabel("JUDGMENT:"), 5, 2)
@@ -4663,6 +4681,17 @@ class TorquePlotViewer(QMainWindow):
         if dir_path:
             self.report_path_edit.setText(dir_path)
 
+    def browse_summary_report_path(self):
+        start_dir = ""
+        if hasattr(self, 'summary_report_path_edit'):
+            current = self.summary_report_path_edit.text().strip()
+            start_dir = os.path.dirname(current) if current else self.report_path_edit.text().strip()
+        path, _ = QFileDialog.getSaveFileName(self, "Select Summary Excel Report", start_dir, "Excel Files (*.xlsx)")
+        if path and hasattr(self, 'summary_report_path_edit'):
+            if not path.lower().endswith('.xlsx'):
+                path += '.xlsx'
+            self.summary_report_path_edit.setText(path)
+
     def save_report(self):
         """Save both raw CSV and CTR report CSV using ReportService."""
         if not self.samples:
@@ -4817,13 +4846,17 @@ class TorquePlotViewer(QMainWindow):
                 f"Successfully saved both reports:\n\n1. Raw CSV: {raw_path}\n2. CTR Report: {report_path}"
             )
 
-            # Save report paths to report_paths.json
             self.csv_dir = csv_dir
             self.report_dir = report_dir
+            self.summary_report_path = self.summary_report_path_edit.text().strip() if hasattr(self, 'summary_report_path_edit') else ''
             try:
                 cfg = get_config_file('report_paths.json')
                 with open(cfg, 'w', encoding='utf-8') as f:
-                    json.dump({'csv_dir': csv_dir, 'report_dir': report_dir}, f, indent=2)
+                    json.dump({
+                        'csv_dir': csv_dir,
+                        'report_dir': report_dir,
+                        'summary_report_path': self.summary_report_path,
+                    }, f, indent=2)
             except:
                 pass
 
