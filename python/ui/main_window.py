@@ -474,7 +474,8 @@ class ServoSetupDialog(QDialog):
         self.spin_neg.valueChanged.connect(lambda _: update_pulses_labels())
         update_pulses_labels()
             
-        # Labels
+
+        # Update labels
         self.lbl_speed = QLabel("Vận tốc (speed):" if self.i18n.current_language == 'vi' else "Speed:")
         self.lbl_jog_speed = QLabel("Tốc độ JOG:" if self.i18n.current_language == 'vi' else "JOG Speed:")
         self.lbl_pos = QLabel("Gốc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
@@ -1039,7 +1040,7 @@ class MainWindow(QMainWindow):
             return
         try:
             from draw_plot import TorquePlotViewer
-            self._plot_viewer: Any = TorquePlotViewer()
+            self._plot_viewer: Any = TorquePlotViewer(self.i18n)
             layout = self._plot_viewer_container.layout()
             while layout.count():
                 item = layout.takeAt(0)
@@ -3203,6 +3204,12 @@ class MainWindow(QMainWindow):
         self.tabs.setTabText(0, self.i18n.t('tab_connection'))
         self.tabs.setTabText(1, self.i18n.t('tab_config'))
         self.tabs.setTabText(2, self.i18n.t('tab_acquisition'))
+
+        if hasattr(self, '_plot_viewer') and hasattr(self._plot_viewer, 'set_i18n'):
+            try:
+                self._plot_viewer.set_i18n(self.i18n)
+            except Exception:
+                pass
 
         # 2. Display Group
         if hasattr(self, 'display_panel_grp'):

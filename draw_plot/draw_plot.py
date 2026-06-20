@@ -768,8 +768,9 @@ class CalibrationDialog(QDialog):
 class TorquePlotViewer(QMainWindow):
     """CSV Torque Plot Viewer"""
     
-    def __init__(self):
+    def __init__(self, i18n=None):
         super().__init__()
+        self.i18n = i18n
         self.time_data = []
         self.torque_data = []
         # Support multiple datasets: list of dicts {name, time, torque, color}
@@ -862,9 +863,23 @@ class TorquePlotViewer(QMainWindow):
              self.on_part_name_changed()
         except: pass
 
+    def _tr(self, key: str) -> str:
+        """Translate a Plot Viewer text key with a safe fallback."""
+        try:
+            if self.i18n is not None:
+                return self.i18n.t(key)
+        except Exception:
+            pass
+        return key
+
+    def set_i18n(self, i18n):
+        """Attach the shared app i18n instance and refresh visible labels."""
+        self.i18n = i18n
+        self.retranslate_ui()
+
     def init_ui(self):
         """Initialize UI"""
-        self.setWindowTitle("CSV Torque Plot Viewer")
+        self.setWindowTitle(self._tr('plot_window_title'))
         self.setGeometry(100, 100, 1450, 950)
         
         # Plot Viewer as central widget
@@ -877,9 +892,9 @@ class TorquePlotViewer(QMainWindow):
         main_layout.setSpacing(6)
         
         # === Control Panel ===
-        ctrl_group = QGroupBox("📁 File & Range")
-        ctrl_group.setStyleSheet("QGroupBox{font-weight:bold;}")
-        ctrl_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.ctrl_group = QGroupBox(self._tr('plot_file_range_grp'))
+        self.ctrl_group.setStyleSheet("QGroupBox{font-weight:bold;}")
+        self.ctrl_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         # Use a vertical layout with two rows and tighter spacing
         ctrl_v = QVBoxLayout()
         ctrl_v.setSpacing(6)
@@ -887,26 +902,26 @@ class TorquePlotViewer(QMainWindow):
 
         # Top row: import buttons, file label, selector, export
         top_h = QHBoxLayout()
-        self.import_btn = QPushButton("📂 Import CSV(s)")
+        self.import_btn = QPushButton(self._tr('plot_import_csv'))
         self.import_btn.setFixedHeight(28)
         self.import_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 4px;")
         self.import_btn.clicked.connect(self.import_csv)
         top_h.addWidget(self.import_btn)
 
-        self.add_files_btn = QPushButton("➕ Add Files")
+        self.add_files_btn = QPushButton(self._tr('plot_add_files'))
         self.add_files_btn.setFixedHeight(28)
         self.add_files_btn.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold; padding: 4px;")
         self.add_files_btn.clicked.connect(self.add_files)
         top_h.addWidget(self.add_files_btn)
 
-        self.clear_btn = QPushButton("🗑 Clear All")
+        self.clear_btn = QPushButton(self._tr('plot_clear_all'))
         self.clear_btn.setFixedHeight(28)
         self.clear_btn.setStyleSheet("background-color: #F44336; color: white; font-weight: bold; padding: 4px;")
         self.clear_btn.clicked.connect(self.clear_all_samples)
         top_h.addWidget(self.clear_btn)
 
         # File label (shows last loaded file) - elide long paths
-        self.file_label = QLabel("No file loaded")
+        self.file_label = QLabel(self._tr('plot_no_file_loaded'))
         self.file_label.setStyleSheet("color: gray;")
         self.file_label.setMinimumWidth(200)
         self.file_label.setMaximumWidth(420)
@@ -919,9 +934,11 @@ class TorquePlotViewer(QMainWindow):
         # Group Mode label and combo tightly
         mode_h = QHBoxLayout()
         mode_h.setSpacing(5)
-        mode_h.addWidget(QLabel("Mode:"))
+        self.mode_label = QLabel(self._tr('plot_mode_lbl'))
+        mode_h.addWidget(self.mode_label)
         self.plot_mode_combo = QComboBox()
-        self.plot_mode_combo.addItems(["Time vs Torque", "Angle vs Torque"])
+        self.plot_mode_combo.addItem(self._tr('plot_mode_time'), 'time')
+        self.plot_mode_combo.addItem(self._tr('plot_mode_angle'), 'angle')
         self.plot_mode_combo.currentIndexChanged.connect(self.on_plot_mode_changed)
         # Default index set at end of init_ui to ensure widgets exist
         mode_h.addWidget(self.plot_mode_combo)
@@ -929,7 +946,7 @@ class TorquePlotViewer(QMainWindow):
         top_h.addLayout(mode_h)
 
         # Export button on the top right
-        self.export_btn = QPushButton("📄 Export XLSX")
+        self.export_btn = QPushButton(self._tr('plot_export_xlsx'))
         self.export_btn.setFixedHeight(28)
         self.export_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 4px;")
         self.export_btn.clicked.connect(self.export_xlsx)
@@ -956,9 +973,11 @@ class TorquePlotViewer(QMainWindow):
         # (end_spin not added to layout)
 
         # Data range mode: Default / Manual (compact)
-        bottom_h.addWidget(QLabel("Range:"))
+        self.range_label = QLabel(self._tr('plot_range_lbl'))
+        bottom_h.addWidget(self.range_label)
         self.range_mode_combo = QComboBox()
-        self.range_mode_combo.addItems(["Default", "Manual"])
+        self.range_mode_combo.addItem(self._tr('plot_range_default'), 'default')
+        self.range_mode_combo.addItem(self._tr('plot_range_manual'), 'manual')
         self.range_mode_combo.setMaximumWidth(90)
         self.range_mode_combo.currentIndexChanged.connect(self.on_range_mode_changed)
         bottom_h.addWidget(self.range_mode_combo)
@@ -1068,8 +1087,8 @@ class TorquePlotViewer(QMainWindow):
             self.end_time_spin.setValue(1.0)
             self.end_time_spin.valueChanged.connect(self.update_average)
             # hide initially
-            self.start_label_widget = QLabel("Start Time (s):")
-            self.end_label_widget = QLabel("End Time (s):")
+            self.start_label_widget = QLabel(self._tr('plot_start_time'))
+            self.end_label_widget = QLabel(self._tr('plot_end_time'))
             self.start_label_widget.hide()
             self.end_label_widget.hide()
             self.start_time_spin.hide()
@@ -1084,21 +1103,21 @@ class TorquePlotViewer(QMainWindow):
             self.end_time_spin = None
 
         # Setup buttons for part time ranges (compact)
-        self.range_setup_btn = QPushButton("Ranges")
+        self.range_setup_btn = QPushButton(self._tr('plot_ranges'))
         self.range_setup_btn.setMaximumWidth(80)
-        self.range_setup_btn.setToolTip("Configure Test Item Ranges (Time/Angle)")
+        self.range_setup_btn.setToolTip(self._tr('plot_ranges_tip'))
         self.range_setup_btn.clicked.connect(self.open_part_range_setup)
         bottom_h.addWidget(self.range_setup_btn)
 
-        self.spec_setup_btn = QPushButton("Specs")
+        self.spec_setup_btn = QPushButton(self._tr('plot_specs'))
         self.spec_setup_btn.setMaximumWidth(70)
-        self.spec_setup_btn.setToolTip("Configure Test Item Specifications")
+        self.spec_setup_btn.setToolTip(self._tr('plot_specs_tip'))
         self.spec_setup_btn.clicked.connect(self.open_test_item_spec_setup)
         bottom_h.addWidget(self.spec_setup_btn)
 
-        self.calibration_btn = QPushButton("Calibration")
+        self.calibration_btn = QPushButton(self._tr('plot_calibration'))
         self.calibration_btn.setMaximumWidth(90)
-        self.calibration_btn.setToolTip("Configure Calibration per Part")
+        self.calibration_btn.setToolTip(self._tr('plot_calibration_tip'))
         self.calibration_btn.clicked.connect(self.open_calibration_setup)
         bottom_h.addWidget(self.calibration_btn)
 
@@ -1106,10 +1125,10 @@ class TorquePlotViewer(QMainWindow):
         # Avg label moved to Info Panel to save space
         ctrl_v.addLayout(bottom_h)
 
-        ctrl_group.setLayout(ctrl_v)
-        main_layout.addWidget(ctrl_group)
+        self.ctrl_group.setLayout(ctrl_v)
+        main_layout.addWidget(self.ctrl_group)
         # === Files legend (color mapping) ===
-        files_group = QGroupBox("📂 Imported Files")
+        self.files_group = QGroupBox(self._tr('plot_imported_files_grp'))
         # files_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         files_layout = QVBoxLayout()
@@ -1134,19 +1153,20 @@ class TorquePlotViewer(QMainWindow):
         files_ctrl_h.setSpacing(6)
         # compact: no global select/clear buttons; delete available per-item
         files_layout.addLayout(files_ctrl_h)
-        files_group.setLayout(files_layout)
+        self.files_group.setLayout(files_layout)
         # Restrict max height so it scrolls internally instead of growing
-        files_group.setMaximumHeight(200)
+        self.files_group.setMaximumHeight(200)
 
-        # NOTE: do not add files_group to main_layout here — it will be placed
+        # NOTE: do not add self.files_group to main_layout here — it will be placed
         # into the left column alongside the metadata so it only occupies the
         # left side and leaves the plot area wide.
         
         # === Report Metadata ===
-        meta_group = QGroupBox("📝 Report Info")
+        self.meta_group = QGroupBox(self._tr('plot_report_info_grp'))
         meta_layout = QGridLayout()
 
-        meta_layout.addWidget(QLabel("TEST ITEM:"), 0, 0)
+        self.test_item_label = QLabel(self._tr('plot_test_item'))
+        meta_layout.addWidget(self.test_item_label, 0, 0)
         self.test_item_combo = QComboBox()
         self.test_item_combo.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
         self.test_item_combo.setEnabled(False) # Locked editing, synced from Thu thap
@@ -1155,7 +1175,8 @@ class TorquePlotViewer(QMainWindow):
         except: pass
         meta_layout.addWidget(self.test_item_combo, 0, 1)
 
-        meta_layout.addWidget(QLabel("PART NAME:"), 0, 2)
+        self.part_name_label = QLabel(self._tr('plot_part_name'))
+        meta_layout.addWidget(self.part_name_label, 0, 2)
         self.part_name_combo = QComboBox()
         self.part_name_combo.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
         self.part_name_combo.setEnabled(False) # Locked editing, synced from Thu thap
@@ -1165,7 +1186,8 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
 
-        meta_layout.addWidget(QLabel("PART NO:"), 1, 0)
+        self.part_no_label = QLabel(self._tr('plot_part_no'))
+        meta_layout.addWidget(self.part_no_label, 1, 0)
         self.part_no_edit = QLineEdit("")
         self.part_no_edit.setMaximumWidth(140)
         def _on_part_no_changed(text):
@@ -1180,34 +1202,39 @@ class TorquePlotViewer(QMainWindow):
         part_sample_h = QHBoxLayout()
         part_sample_h.setSpacing(8)
         part_sample_h.addWidget(self.part_no_edit)
-        part_sample_h.addWidget(QLabel("SAMPLE NO:"))
+        self.sample_no_label = QLabel(self._tr('plot_sample_no'))
+        part_sample_h.addWidget(self.sample_no_label)
         self.sample_no_spin = QSpinBox()
         self.sample_no_spin.setRange(1, 99)
         self.sample_no_spin.setValue(1)
         self.sample_no_spin.setMaximumWidth(70)
-        self.sample_no_spin.setToolTip("Sample No, valid range 01 to 99")
+        self.sample_no_spin.setToolTip(self._tr('plot_sample_tip'))
         part_sample_h.addWidget(self.sample_no_spin)
         meta_layout.addLayout(part_sample_h, 1, 1)
 
         # Report role fields (Write / Review / Approval) placed in a single horizontal row (compact)
         report_h = QHBoxLayout()
         report_h.setSpacing(8)
-        report_h.addWidget(QLabel("Write:"))
+        self.write_label = QLabel(self._tr('plot_write'))
+        report_h.addWidget(self.write_label)
         self.write_edit = QLineEdit("")
         self.write_edit.setMaximumWidth(140)
         report_h.addWidget(self.write_edit)
-        report_h.addWidget(QLabel("Review:"))
+        self.review_label = QLabel(self._tr('plot_review'))
+        report_h.addWidget(self.review_label)
         self.review_edit = QLineEdit("")
         self.review_edit.setMaximumWidth(140)
         report_h.addWidget(self.review_edit)
-        report_h.addWidget(QLabel("Approval:"))
+        self.approval_label = QLabel(self._tr('plot_approval'))
+        report_h.addWidget(self.approval_label)
         self.approval_edit = QLineEdit("")
         self.approval_edit.setMaximumWidth(140)
         report_h.addWidget(self.approval_edit)
         meta_layout.addLayout(report_h, 3, 0, 1, 4)
 
         # SPECIFICATION moved to its own row below PART NO
-        meta_layout.addWidget(QLabel("SPECIFICATION:"), 2, 0)
+        self.specification_label = QLabel(self._tr('plot_specification'))
+        meta_layout.addWidget(self.specification_label, 2, 0)
         spec_h = QHBoxLayout()
         self.spec_min_spin = None
         self.spec_max_spin = None
@@ -1218,7 +1245,8 @@ class TorquePlotViewer(QMainWindow):
             self.spec_min_spin.setSuffix(" Nm")
             self.spec_min_spin.setValue(0.0)
             self.spec_min_spin.setToolTip('Specification minimum (Nm)')
-            spec_h.addWidget(QLabel("Min:"))
+            self.spec_min_label = QLabel(self._tr('plot_min'))
+            spec_h.addWidget(self.spec_min_label)
             spec_h.addWidget(self.spec_min_spin)
             try:
                 self.spec_min_spin.valueChanged.connect(self.update_average)
@@ -1231,7 +1259,8 @@ class TorquePlotViewer(QMainWindow):
             self.spec_max_spin.setSuffix(" Nm")
             self.spec_max_spin.setValue(0.0)
             self.spec_max_spin.setToolTip('Specification maximum (Nm)')
-            spec_h.addWidget(QLabel("Max:"))
+            self.spec_max_label = QLabel(self._tr('plot_max'))
+            spec_h.addWidget(self.spec_max_label)
             spec_h.addWidget(self.spec_max_spin)
             try:
                 self.spec_max_spin.valueChanged.connect(self.update_average)
@@ -1251,13 +1280,15 @@ class TorquePlotViewer(QMainWindow):
                 pass
         meta_layout.addLayout(spec_h, 2, 1, 1, 3)
 
-        meta_layout.addWidget(QLabel("DATE:"), 4, 0)
+        self.date_label = QLabel(self._tr('plot_date'))
+        meta_layout.addWidget(self.date_label, 4, 0)
         self.date_edit = QDateEdit(QDate.currentDate())
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setMaximumWidth(140)
         meta_layout.addWidget(self.date_edit, 4, 1)
 
-        meta_layout.addWidget(QLabel("TESTER:"), 4, 2)
+        self.tester_label = QLabel(self._tr('plot_tester'))
+        meta_layout.addWidget(self.tester_label, 4, 2)
         self.tester_edit = QLineEdit("")
         self.tester_edit.setMaximumWidth(180)
         def _on_tester_changed(text):
@@ -1271,7 +1302,8 @@ class TorquePlotViewer(QMainWindow):
         self.tester_edit.textChanged.connect(_on_tester_changed)
         meta_layout.addWidget(self.tester_edit, 4, 3)
 
-        meta_layout.addWidget(QLabel("TEST PURPOSE:"), 5, 0)
+        self.test_purpose_label = QLabel(self._tr('plot_test_purpose'))
+        meta_layout.addWidget(self.test_purpose_label, 5, 0)
         self.test_purpose_combo = QComboBox()
         self.test_purpose_combo.addItems([
             "Setting (S)",
@@ -1286,7 +1318,7 @@ class TorquePlotViewer(QMainWindow):
         self.test_purpose_combo.currentIndexChanged.connect(self.on_test_purpose_changed)
         
         self.test_purpose_other_edit = QLineEdit("")
-        self.test_purpose_other_edit.setPlaceholderText("Enter test purpose...")
+        self.test_purpose_other_edit.setPlaceholderText(self._tr('plot_purpose_placeholder'))
         self.test_purpose_other_edit.hide()
         
         tp_container = QWidget()
@@ -1297,7 +1329,8 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(tp_container, 5, 1)
         
         # Judgment display label (show OK/NG)
-        meta_layout.addWidget(QLabel("JUDGMENT:"), 5, 2)
+        self.judgment_title_label = QLabel(self._tr('plot_judgment'))
+        meta_layout.addWidget(self.judgment_title_label, 5, 2)
         self.judgment_h = QHBoxLayout()
         self.judgment_label = QLabel("")
         self.judgment_label.setFont(QFont("Arial", 11, QFont.Bold))
@@ -1306,7 +1339,8 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addLayout(self.judgment_h, 5, 3)
         
         # Aspect ratio and Quantity together on Row 6 Col 0-1
-        meta_layout.addWidget(QLabel("Graph H/W Ratio:"), 6, 0)
+        self.graph_ratio_label = QLabel(self._tr('plot_graph_ratio'))
+        meta_layout.addWidget(self.graph_ratio_label, 6, 0)
         ratio_qty_h = QHBoxLayout()
         ratio_qty_h.setSpacing(4)
         ratio_qty_h.setContentsMargins(0, 0, 0, 0)
@@ -1320,7 +1354,8 @@ class TorquePlotViewer(QMainWindow):
         self.aspect_ratio_spin.setMaximumWidth(90)
         ratio_qty_h.addWidget(self.aspect_ratio_spin)
         
-        ratio_qty_h.addWidget(QLabel("Qty:"))
+        self.qty_label = QLabel(self._tr('plot_qty'))
+        ratio_qty_h.addWidget(self.qty_label)
         self.quantity_spin = QSpinBox()
         self.quantity_spin.setRange(1, 1000000)
         self.quantity_spin.setValue(1)
@@ -1332,17 +1367,19 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(ratio_qty_widget, 6, 1)
 
         # Team combo on Row 6 Col 2-3
-        meta_layout.addWidget(QLabel("TEAM:"), 6, 2)
+        self.team_label = QLabel(self._tr('plot_team'))
+        meta_layout.addWidget(self.team_label, 6, 2)
         self.team_combo = QComboBox()
         self.team_combo.addItems(TEAMS)
         self.team_combo.setMaximumWidth(180)
         meta_layout.addWidget(self.team_combo, 6, 3)
 
         # Remark on Row 7 Col 0-3. Not persisted; cleared when returning to acquisition tab.
-        meta_layout.addWidget(QLabel("REMARK:"), 7, 0)
+        self.remark_label = QLabel(self._tr('plot_remark'))
+        meta_layout.addWidget(self.remark_label, 7, 0)
         self.remark_edit = QLineEdit("")
         self.remark_edit.setMaxLength(100)
-        self.remark_edit.setPlaceholderText("MAX 100 CHARACTERS")
+        self.remark_edit.setPlaceholderText(self._tr('plot_remark_placeholder'))
         def _on_remark_changed(text):
             pos = self.remark_edit.cursorPosition()
             upp = text.upper()
@@ -1355,13 +1392,15 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(self.remark_edit, 7, 1, 1, 3)
 
         # Lot No on Row 8 Col 0-1
-        meta_layout.addWidget(QLabel("LOT NO:"), 8, 0)
+        self.lot_no_label = QLabel(self._tr('plot_lot_no'))
+        meta_layout.addWidget(self.lot_no_label, 8, 0)
         self.lot_no_edit = QLineEdit("")
         self.lot_no_edit.setMaximumWidth(180)
         meta_layout.addWidget(self.lot_no_edit, 8, 1)
 
         # Line No combo on Row 8 Col 2-3
-        meta_layout.addWidget(QLabel("LINE NO:"), 8, 2)
+        self.line_no_label = QLabel(self._tr('plot_line_no'))
+        meta_layout.addWidget(self.line_no_label, 8, 2)
         self.line_no_combo = QComboBox()
         self.line_no_combo.addItems(LINE_NOS)
         self.line_no_combo.setMaximumWidth(180)
@@ -1370,18 +1409,19 @@ class TorquePlotViewer(QMainWindow):
         # Profile save/load buttons (Row 9)
         prof_h = QHBoxLayout()
         prof_h.setSpacing(8)
-        self.save_profile_btn = QPushButton("Save Profile")
+        self.save_profile_btn = QPushButton(self._tr('plot_save_profile'))
         self.save_profile_btn.setFixedHeight(26)
         self.save_profile_btn.clicked.connect(self.save_profile)
         prof_h.addWidget(self.save_profile_btn)
-        self.load_profile_btn = QPushButton("Load Profile")
+        self.load_profile_btn = QPushButton(self._tr('plot_load_profile'))
         self.load_profile_btn.setFixedHeight(26)
         self.load_profile_btn.clicked.connect(self.load_profile)
         prof_h.addWidget(self.load_profile_btn)
         meta_layout.addLayout(prof_h, 9, 0, 1, 4)
 
         # Folder Paths (Row 10 & 11)
-        meta_layout.addWidget(QLabel("CSV File path:"), 10, 0)
+        self.csv_path_label = QLabel(self._tr('plot_csv_path'))
+        meta_layout.addWidget(self.csv_path_label, 10, 0)
         csv_path_h = QHBoxLayout()
         csv_path_h.setSpacing(4)
         csv_path_h.setContentsMargins(0, 0, 0, 0)
@@ -1389,7 +1429,7 @@ class TorquePlotViewer(QMainWindow):
         csv_path_h.addWidget(self.csv_path_edit)
         self.csv_browse_btn = QPushButton()
         self.csv_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.csv_browse_btn.setToolTip("Browse CSV save directory")
+        self.csv_browse_btn.setToolTip(self._tr('plot_browse_csv_tip'))
         self.csv_browse_btn.setFixedSize(34, 30)
         self.csv_browse_btn.setIconSize(self.csv_browse_btn.size() * 0.62)
         self.csv_browse_btn.clicked.connect(self.browse_csv_path)
@@ -1398,7 +1438,8 @@ class TorquePlotViewer(QMainWindow):
         csv_path_widget.setLayout(csv_path_h)
         meta_layout.addWidget(csv_path_widget, 10, 1, 1, 3)
 
-        meta_layout.addWidget(QLabel("Report File path:"), 11, 0)
+        self.report_path_label = QLabel(self._tr('plot_report_path'))
+        meta_layout.addWidget(self.report_path_label, 11, 0)
         report_path_h = QHBoxLayout()
         report_path_h.setSpacing(4)
         report_path_h.setContentsMargins(0, 0, 0, 0)
@@ -1406,7 +1447,7 @@ class TorquePlotViewer(QMainWindow):
         report_path_h.addWidget(self.report_path_edit)
         self.report_browse_btn = QPushButton()
         self.report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.report_browse_btn.setToolTip("Browse report save directory")
+        self.report_browse_btn.setToolTip(self._tr('plot_browse_report_tip'))
         self.report_browse_btn.setFixedSize(34, 30)
         self.report_browse_btn.setIconSize(self.report_browse_btn.size() * 0.62)
         self.report_browse_btn.clicked.connect(self.browse_report_path)
@@ -1415,7 +1456,8 @@ class TorquePlotViewer(QMainWindow):
         report_path_widget.setLayout(report_path_h)
         meta_layout.addWidget(report_path_widget, 11, 1, 1, 3)
 
-        meta_layout.addWidget(QLabel("Summary Report:"), 12, 0)
+        self.summary_report_label = QLabel(self._tr('plot_summary_report'))
+        meta_layout.addWidget(self.summary_report_label, 12, 0)
         summary_path_h = QHBoxLayout()
         summary_path_h.setSpacing(4)
         summary_path_h.setContentsMargins(0, 0, 0, 0)
@@ -1423,7 +1465,7 @@ class TorquePlotViewer(QMainWindow):
         summary_path_h.addWidget(self.summary_report_path_edit)
         self.summary_report_browse_btn = QPushButton()
         self.summary_report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.summary_report_browse_btn.setToolTip("Browse summary Excel report file")
+        self.summary_report_browse_btn.setToolTip(self._tr('plot_browse_summary_tip'))
         self.summary_report_browse_btn.setFixedSize(34, 30)
         self.summary_report_browse_btn.setIconSize(self.summary_report_browse_btn.size() * 0.62)
         self.summary_report_browse_btn.clicked.connect(self.browse_summary_report_path)
@@ -1433,20 +1475,20 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(summary_path_widget, 12, 1, 1, 3)
 
         # Save Report Button (Row 13)
-        self.save_report_btn = QPushButton("💾 Save the Report")
+        self.save_report_btn = QPushButton(self._tr('plot_save_report'))
         self.save_report_btn.setFixedHeight(32)
         self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 10pt;")
         self.save_report_btn.clicked.connect(self.save_report)
         meta_layout.addWidget(self.save_report_btn, 13, 0, 1, 4)
 
         # Place judgment in its own column so it's always visible
-        meta_layout.addWidget(QLabel("JUDGMENT:"), 5, 2)
+        meta_layout.addWidget(self.judgment_title_label, 5, 2)
         meta_layout.addWidget(self.judgment_label, 5, 3)
-        meta_group.setLayout(meta_layout)
+        self.meta_group.setLayout(meta_layout)
         # meta_group.setMaximumWidth(380) => Removed
 
         # === Plot ===
-        self.plot_group = QGroupBox("📈 Plot")  # Generic title, will be updated by on_plot_mode_changed
+        self.plot_group = QGroupBox(self._tr('plot_plot_grp'))  # Generic title, will be updated by on_plot_mode_changed
         plot_layout = QVBoxLayout()
         plot_layout.setContentsMargins(6, 6, 6, 6)
         plot_layout.setSpacing(6)
@@ -1457,7 +1499,7 @@ class TorquePlotViewer(QMainWindow):
         self.canvas.setMinimumHeight(420)
         
         # Initial labels will be set by on_plot_mode_changed
-        self.ax.set_ylabel("Torque (N·m)", fontsize=10)
+        self.ax.set_ylabel(self._tr('plot_axis_torque'), fontsize=10)
         self.ax.grid(True, alpha=0.3)
         self.fig.tight_layout()
         
@@ -1479,24 +1521,25 @@ class TorquePlotViewer(QMainWindow):
         left_layout.setSpacing(10)
         
         # Add Widgets to Left Side
-        left_layout.addWidget(files_group)
+        left_layout.addWidget(self.files_group)
         
         # Report title
         title_h = QHBoxLayout()
         title_h.setSpacing(6)
-        title_h.addWidget(QLabel("Report Title:"))
+        self.report_title_label = QLabel(self._tr('plot_report_title'))
+        title_h.addWidget(self.report_title_label)
         self.report_title_edit = QLineEdit("TEST REPORT")
         title_h.addWidget(self.report_title_edit)
         left_layout.addLayout(title_h)
         
         # Metadata
         # Remove fixed width constraints to allow fit
-        meta_group.setMaximumWidth(16777215) 
-        meta_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        left_layout.addWidget(meta_group)
+        self.meta_group.setMaximumWidth(16777215)
+        self.meta_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        left_layout.addWidget(self.meta_group)
 
         # === Cycle Selection ===
-        self.cycle_group = QGroupBox("🔄 Cycle Selection")
+        self.cycle_group = QGroupBox(self._tr('plot_cycle_selection_grp'))
         self.cycle_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         cycle_v = QVBoxLayout()
 
@@ -1504,9 +1547,10 @@ class TorquePlotViewer(QMainWindow):
         # 1. Target File Selection (Moved from top to here for better UX)
         file_sel_h = QHBoxLayout()
         file_sel_h.setSpacing(5) # Tighter spacing
-        file_sel_h.addWidget(QLabel("File:"))
+        self.file_select_label = QLabel(self._tr('plot_file'))
+        file_sel_h.addWidget(self.file_select_label)
         self.file_select_combo = QComboBox()
-        self.file_select_combo.addItem("All")
+        self.file_select_combo.addItem(self._tr('plot_all'), '__all__')
         self.file_select_combo.currentIndexChanged.connect(self.on_file_selection_changed)
         file_sel_h.addWidget(self.file_select_combo)
         # Add stretch to keep them close to the left/start if the combo isn't expanding, or just let combo expand?
@@ -1524,10 +1568,10 @@ class TorquePlotViewer(QMainWindow):
         
         # 2. Cycle Controls
         cycle_btns_h = QHBoxLayout()
-        self.btn_cycle_all = QPushButton("All")
+        self.btn_cycle_all = QPushButton(self._tr('plot_all'))
         self.btn_cycle_all.setFixedWidth(70)
         self.btn_cycle_all.clicked.connect(self.select_all_cycles)
-        self.btn_cycle_none = QPushButton("None")
+        self.btn_cycle_none = QPushButton(self._tr('plot_none'))
         self.btn_cycle_none.setFixedWidth(70)
         self.btn_cycle_none.clicked.connect(self.deselect_all_cycles)
         cycle_btns_h.addWidget(self.btn_cycle_all)
@@ -1543,9 +1587,9 @@ class TorquePlotViewer(QMainWindow):
         left_layout.addWidget(self.cycle_group)
 
         # === Info Panel (Vertical Grid for Side Panel) ===
-        info_group = QGroupBox("📊 Data Info")
-        info_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        info_group.setStyleSheet("QGroupBox { background-color: #fafafa; border: 1px solid #dcdcdc; border-radius: 4px; margin-top: 6px; padding-top: 4px; } QGroupBox::title { color: #555; font-size: 11px; font-weight: bold; }")
+        self.info_group = QGroupBox(self._tr('plot_data_info_grp'))
+        self.info_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.info_group.setStyleSheet("QGroupBox { background-color: #fafafa; border: 1px solid #dcdcdc; border-radius: 4px; margin-top: 6px; padding-top: 4px; } QGroupBox::title { color: #555; font-size: 11px; font-weight: bold; }")
         
         # Use Grid layout for clearer vertical presentation in side panel
         info_layout = QGridLayout()
@@ -1553,55 +1597,61 @@ class TorquePlotViewer(QMainWindow):
         info_layout.setSpacing(6)
         
         # Row 0: Source Label (All or specific file)
-        self.source_label = QLabel("Target: All")
+        self.source_label = QLabel(self._tr('plot_target_all'))
         self.source_label.setStyleSheet("color: #1976D2; font-weight: bold; font-size: 11px;")
         info_layout.addWidget(self.source_label, 0, 0, 1, 4) # Span across row
 
         # Row 1: Samples & Points
-        self.samples_label = QLabel("Samples: 0")
+        self.samples_label = QLabel(f"{self._tr('plot_samples')}: 0")
         self.samples_label.setStyleSheet("color: #555; font-size: 11px;")
         info_layout.addWidget(self.samples_label, 1, 0)
         
-        self.total_label = QLabel("Pts: 0")
+        self.total_label = QLabel(f"{self._tr('plot_pts')}: 0")
         self.total_label.setStyleSheet("font-weight: bold; color: #333; font-size: 11px;")
         info_layout.addWidget(self.total_label, 1, 1)
 
         # Row 2: Avg
-        info_layout.addWidget(QLabel("Avg (Nm):"), 2, 0)
+        self.avg_nm_label = QLabel(self._tr('plot_avg_nm'))
+        info_layout.addWidget(self.avg_nm_label, 2, 0)
         self.avg_label = QLabel("-")
         self.avg_label.setStyleSheet("color: #F44336; font-weight: bold; font-size: 14px;")
         info_layout.addWidget(self.avg_label, 2, 1)
         
-        info_layout.addWidget(QLabel("Avg (Kgf.cm):"), 2, 2)
+        self.avg_kgf_label = QLabel(self._tr('plot_avg_kgf'))
+        info_layout.addWidget(self.avg_kgf_label, 2, 2)
         self.avg_label_kgf = QLabel("-")
         self.avg_label_kgf.setStyleSheet("color: #F44336; font-weight: bold; font-size: 14px;")
         info_layout.addWidget(self.avg_label_kgf, 2, 3)
         
         # Row 3: Min
-        info_layout.addWidget(QLabel("Min (Nm):"), 3, 0)
+        self.min_nm_label = QLabel(self._tr('plot_min_nm'))
+        info_layout.addWidget(self.min_nm_label, 3, 0)
         self.min_label = QLabel("-")
         self.min_label.setStyleSheet("color: #D32F2F; font-size: 11px;")
         info_layout.addWidget(self.min_label, 3, 1)
         
-        info_layout.addWidget(QLabel("Min (Kgf.cm):"), 3, 2)
+        self.min_kgf_label = QLabel(self._tr('plot_min_kgf'))
+        info_layout.addWidget(self.min_kgf_label, 3, 2)
         self.min_label_kgf = QLabel("-")
         self.min_label_kgf.setStyleSheet("color: #D32F2F; font-size: 11px;")
         info_layout.addWidget(self.min_label_kgf, 3, 3)
         
         # Row 4: Max
-        info_layout.addWidget(QLabel("Max (Nm):"), 4, 0)
+        self.max_nm_label = QLabel(self._tr('plot_max_nm'))
+        info_layout.addWidget(self.max_nm_label, 4, 0)
         self.max_label = QLabel("-")
         self.max_label.setStyleSheet("color: #1976D2; font-size: 11px;")
         info_layout.addWidget(self.max_label, 4, 1)
         
-        info_layout.addWidget(QLabel("Max (Kgf.cm):"), 4, 2)
+        self.max_kgf_label = QLabel(self._tr('plot_max_kgf'))
+        info_layout.addWidget(self.max_kgf_label, 4, 2)
         self.max_label_kgf = QLabel("-")
         self.max_label_kgf.setStyleSheet("color: #1976D2; font-size: 11px;")
         info_layout.addWidget(self.max_label_kgf, 4, 3)
 
-        info_group.setLayout(info_layout)
+        self.info_group.setLayout(info_layout)
         # Add to left layout (instead of main_layout bottom)
-        left_layout.addWidget(info_group)
+        left_layout.addWidget(self.info_group)
 
         left_layout.addStretch() # Push everything up
         
@@ -1751,6 +1801,121 @@ class TorquePlotViewer(QMainWindow):
         self.plot_mode_combo.setCurrentIndex(1)
         self.on_plot_mode_changed()
     
+    def _combo_data(self, combo, default=None):
+        try:
+            data = combo.currentData()
+            return data if data is not None else default
+        except Exception:
+            return default
+
+    def _is_angle_mode(self) -> bool:
+        return self._combo_data(getattr(self, 'plot_mode_combo', None), 'time') == 'angle'
+
+    def _range_mode_key(self) -> str:
+        return self._combo_data(getattr(self, 'range_mode_combo', None), 'default') or 'default'
+
+    def _is_all_files_selected(self) -> bool:
+        return self._combo_data(getattr(self, 'file_select_combo', None), '__all__') == '__all__'
+
+    def _set_combo_text_by_data(self, combo, items):
+        try:
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for text, data in items:
+                combo.addItem(text, data)
+            idx = combo.findData(current)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+        except Exception:
+            try:
+                combo.blockSignals(False)
+            except Exception:
+                pass
+
+    def retranslate_ui(self):
+        """Refresh visible Plot Viewer labels when the main app language changes."""
+        try:
+            self.setWindowTitle(self._tr('plot_window_title'))
+            for attr, key in [
+                ('ctrl_group', 'plot_file_range_grp'), ('files_group', 'plot_imported_files_grp'),
+                ('meta_group', 'plot_report_info_grp'), ('plot_group', 'plot_plot_grp'),
+                ('cycle_group', 'plot_cycle_selection_grp'), ('info_group', 'plot_data_info_grp'),
+                ('mode_label', 'plot_mode_lbl'), ('range_label', 'plot_range_lbl'),
+                ('test_item_label', 'plot_test_item'), ('part_name_label', 'plot_part_name'),
+                ('part_no_label', 'plot_part_no'), ('sample_no_label', 'plot_sample_no'),
+                ('write_label', 'plot_write'), ('review_label', 'plot_review'), ('approval_label', 'plot_approval'),
+                ('specification_label', 'plot_specification'), ('spec_min_label', 'plot_min'),
+                ('spec_max_label', 'plot_max'), ('date_label', 'plot_date'), ('tester_label', 'plot_tester'),
+                ('test_purpose_label', 'plot_test_purpose'), ('judgment_title_label', 'plot_judgment'),
+                ('graph_ratio_label', 'plot_graph_ratio'), ('qty_label', 'plot_qty'), ('team_label', 'plot_team'),
+                ('remark_label', 'plot_remark'), ('lot_no_label', 'plot_lot_no'), ('line_no_label', 'plot_line_no'),
+                ('csv_path_label', 'plot_csv_path'), ('report_path_label', 'plot_report_path'),
+                ('summary_report_label', 'plot_summary_report'), ('report_title_label', 'plot_report_title'),
+                ('file_select_label', 'plot_file'), ('avg_nm_label', 'plot_avg_nm'), ('avg_kgf_label', 'plot_avg_kgf'),
+                ('min_nm_label', 'plot_min_nm'), ('min_kgf_label', 'plot_min_kgf'),
+                ('max_nm_label', 'plot_max_nm'), ('max_kgf_label', 'plot_max_kgf'),
+            ]:
+                widget = getattr(self, attr, None)
+                if widget is not None:
+                    widget.setText(self._tr(key)) if hasattr(widget, 'setText') else widget.setTitle(self._tr(key))
+
+            for attr, key in [
+                ('import_btn', 'plot_import_csv'), ('add_files_btn', 'plot_add_files'),
+                ('clear_btn', 'plot_clear_all'), ('export_btn', 'plot_export_xlsx'),
+                ('range_setup_btn', 'plot_ranges'), ('spec_setup_btn', 'plot_specs'),
+                ('calibration_btn', 'plot_calibration'), ('save_profile_btn', 'plot_save_profile'),
+                ('load_profile_btn', 'plot_load_profile'), ('save_report_btn', 'plot_save_report'),
+                ('btn_cycle_all', 'plot_all'), ('btn_cycle_none', 'plot_none'),
+            ]:
+                widget = getattr(self, attr, None)
+                if widget is not None:
+                    widget.setText(self._tr(key))
+
+            if getattr(self, 'plot_mode_combo', None):
+                self._set_combo_text_by_data(self.plot_mode_combo, [
+                    (self._tr('plot_mode_time'), 'time'), (self._tr('plot_mode_angle'), 'angle')
+                ])
+            if getattr(self, 'range_mode_combo', None):
+                self._set_combo_text_by_data(self.range_mode_combo, [
+                    (self._tr('plot_range_default'), 'default'), (self._tr('plot_range_manual'), 'manual')
+                ])
+            if getattr(self, 'file_select_combo', None):
+                current = self.file_select_combo.currentData()
+                self.file_select_combo.blockSignals(True)
+                if self.file_select_combo.count() > 0:
+                    self.file_select_combo.setItemText(0, self._tr('plot_all'))
+                    self.file_select_combo.setItemData(0, '__all__')
+                idx = self.file_select_combo.findData(current)
+                if idx >= 0:
+                    self.file_select_combo.setCurrentIndex(idx)
+                self.file_select_combo.blockSignals(False)
+
+            if getattr(self, 'sample_no_spin', None):
+                self.sample_no_spin.setToolTip(self._tr('plot_sample_tip'))
+            if getattr(self, 'range_setup_btn', None):
+                self.range_setup_btn.setToolTip(self._tr('plot_ranges_tip'))
+            if getattr(self, 'spec_setup_btn', None):
+                self.spec_setup_btn.setToolTip(self._tr('plot_specs_tip'))
+            if getattr(self, 'calibration_btn', None):
+                self.calibration_btn.setToolTip(self._tr('plot_calibration_tip'))
+            if getattr(self, 'csv_browse_btn', None):
+                self.csv_browse_btn.setToolTip(self._tr('plot_browse_csv_tip'))
+            if getattr(self, 'report_browse_btn', None):
+                self.report_browse_btn.setToolTip(self._tr('plot_browse_report_tip'))
+            if getattr(self, 'summary_report_browse_btn', None):
+                self.summary_report_browse_btn.setToolTip(self._tr('plot_browse_summary_tip'))
+            if getattr(self, 'remark_edit', None):
+                self.remark_edit.setPlaceholderText(self._tr('plot_remark_placeholder'))
+            if getattr(self, 'test_purpose_other_edit', None):
+                self.test_purpose_other_edit.setPlaceholderText(self._tr('plot_purpose_placeholder'))
+            if getattr(self, 'file_label', None) and not getattr(self, 'file_path', ''):
+                self.file_label.setText(self._tr('plot_no_file_loaded'))
+            self.on_plot_mode_changed()
+            self.update_average()
+        except Exception:
+            pass
+
     def apply_theme(self, dark: bool):
         """Apply Light/Dark theme from the main application to the analysis tab."""
         self._is_dark_theme = bool(dark)
@@ -1843,7 +2008,7 @@ class TorquePlotViewer(QMainWindow):
                 }
                 self.samples.append(sample)
                 # add to selector and legend; legend shows sample number -> PART NO (from UI)
-                self.file_select_combo.addItem(name)
+                self.file_select_combo.addItem(name, name)
                 sample_idx = len(self.samples)
                 # Build an item widget with checkbox + color square + label so user can select and reorder
                 item_w = QWidget()
@@ -1942,7 +2107,7 @@ class TorquePlotViewer(QMainWindow):
                 }
                 self.samples.append(sample)
                 # Add to selector and legend; legend shows sample number -> PART NO
-                self.file_select_combo.addItem(name)
+                self.file_select_combo.addItem(name, name)
                 color = self._colors[(len(self.samples)-1) % len(self._colors)]
                 sample_idx = len(self.samples)
                 item_w = QWidget()
@@ -2042,7 +2207,7 @@ class TorquePlotViewer(QMainWindow):
             }
             self.samples.append(sample)
             # Add to selector and legend
-            self.file_select_combo.addItem(name)
+            self.file_select_combo.addItem(name, name)
             # Keep selection on 'All' (index 0) or update correctly
             self.file_select_combo.setCurrentIndex(0)
             
@@ -2322,7 +2487,7 @@ class TorquePlotViewer(QMainWindow):
             cb.deleteLater()
         self.cycle_checkboxes = []
 
-        sel = self.file_select_combo.currentText()
+        sel = self._combo_data(self.file_select_combo, '__all__')
         all_possible_cycles = set()
         for s in self.samples:
             all_possible_cycles.update(s.get('cycle', []))
@@ -2331,7 +2496,7 @@ class TorquePlotViewer(QMainWindow):
             all_possible_cycles = {1}
             
         target_s = None
-        if sel != 'All':
+        if sel != '__all__':
             target_s = next((x for x in self.samples if x['name'] == sel), None)
             visible_cycles = sorted(list(set(target_s.get('cycle', [])))) if target_s else sorted(list(all_possible_cycles))
         else:
@@ -2357,14 +2522,14 @@ class TorquePlotViewer(QMainWindow):
     def on_cycle_toggled(self, state):
         """Save selected cycles back to samples and refresh display."""
         try:
-            sel = self.file_select_combo.currentText()
+            sel = self._combo_data(self.file_select_combo, '__all__')
             # If nothing imported, skip
             if not self.samples:
                 return
 
             checked_nums = [cb.property('cycle') for cb in self.cycle_checkboxes if cb.isChecked()]
             
-            if sel == 'All':
+            if sel == '__all__':
                 # Global adjustment: apply filter to all samples
                 for s in self.samples:
                     possible = set(s.get('cycle', []))
@@ -2550,9 +2715,8 @@ class TorquePlotViewer(QMainWindow):
                 except: pass
 
             # Update Ranges and Refresh Plot if in Default mode
-            if getattr(self, 'range_mode_combo', None) and self.range_mode_combo.currentText() == 'Default':
-                plot_mode = self.plot_mode_combo.currentText()
-                is_angle = (plot_mode == "Angle vs Torque")
+            if getattr(self, 'range_mode_combo', None) and self._range_mode_key() == 'default':
+                is_angle = self._is_angle_mode()
                 
                 ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
                 part_ranges = ranges.get(part_name, {})
@@ -2598,14 +2762,14 @@ class TorquePlotViewer(QMainWindow):
         - Hide them when Default is selected and apply saved part ranges if present.
         """
         try:
-            mode = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
+            mode = self._range_mode_key()
         except Exception:
-            mode = 'Default'
+            mode = 'default'
 
         # If manual widgets are present, show/hide them
         try:
             if self.start_time_spin and self.end_time_spin:
-                show_manual = (mode == 'Manual')
+                show_manual = (mode == 'manual')
                 
                 self.start_time_spin.setVisible(show_manual)
                 self.end_time_spin.setVisible(show_manual)
@@ -2619,11 +2783,10 @@ class TorquePlotViewer(QMainWindow):
 
         # If switching to Default, and there is a configured range for current part/item, apply it
         try:
-            if mode == 'Default' and getattr(self, 'part_name_combo', None):
+            if mode == 'default' and getattr(self, 'part_name_combo', None):
                 pname = self.part_name_combo.currentText()
                 item_name = self.test_item_combo.currentText()
-                plot_mode = self.plot_mode_combo.currentText()
-                is_angle = (plot_mode == "Angle vs Torque")
+                is_angle = self._is_angle_mode()
                 
                 ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
                 part_ranges = ranges.get(pname, {})
@@ -2800,10 +2963,10 @@ class TorquePlotViewer(QMainWindow):
     def remove_selected(self):
         """Remove the currently selected imported sample (not 'All')."""
         try:
-            sel = self.file_select_combo.currentText()
+            sel = self._combo_data(self.file_select_combo, '__all__')
         except Exception:
-            sel = 'All'
-        if sel == 'All':
+            sel = '__all__'
+        if sel == '__all__':
             QMessageBox.information(self, "Remove", "Please select a specific file to remove (not 'All').")
             return
         idx = self.file_select_combo.currentIndex()
@@ -2979,7 +3142,7 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
         try:
-            # remove combo entry (offset by 1 because 'All' at index 0)
+            # remove combo entry (offset by 1 because '__all__' at index 0)
             if self.file_select_combo.count() > idx + 1:
                 self.file_select_combo.removeItem(idx + 1)
         except Exception:
@@ -3019,7 +3182,7 @@ class TorquePlotViewer(QMainWindow):
             self.samples.clear()
         except Exception:
             self.samples = []
-        # clear combo box items except 'All'
+        # clear combo box items except '__all__'
         try:
             while self.file_select_combo.count() > 1:
                 self.file_select_combo.removeItem(1)
@@ -3129,13 +3292,13 @@ class TorquePlotViewer(QMainWindow):
         self.ax.clear()
         # If samples present, plot each CHECKED sample with its own color
         if self.samples:
-            sel = self.file_select_combo.currentText() if hasattr(self, 'file_select_combo') else 'All'
+            sel = self._combo_data(self.file_select_combo, '__all__') if hasattr(self, 'file_select_combo') else '__all__'
             # Determine current mode and whether selection is time-based or index-based for plotting
             mode = self.plot_mode_combo.currentText() if getattr(self, 'plot_mode_combo', None) else ''
-            is_angle = (mode == "Angle vs Torque")
+            is_angle = self._is_angle_mode()
             use_range = False
             try:
-                if getattr(self, 'range_mode_combo', None) and self.range_mode_combo.currentText() == 'Manual':
+                if getattr(self, 'range_mode_combo', None) and self._range_mode_key() == 'manual':
                     # Manual range is explicit user filtering.
                     if not is_angle and getattr(self, 'start_time_spin', None) is not None:
                         use_range = True
@@ -3215,7 +3378,7 @@ class TorquePlotViewer(QMainWindow):
                          plot_y = trqs
 
                 else:
-                    if sel == 'All' or sel == s['name']:
+                    if sel == '__all__' or sel == s['name']:
                          # No specific range, full data (or index based if that was filtered, but we moved to Filter Logic)
                          # Here we just use full data for simplicity if not in range mode?
                          # The original code had index start/end for 'Default' without parts.
@@ -3237,7 +3400,7 @@ class TorquePlotViewer(QMainWindow):
 
                 if len(plot_x) > 0 and len(plot_y) > 0:
                     lw = 1.6 if sel == s['name'] else 0.9
-                    alpha = 1.0 if (sel == 'All' or sel == s['name']) else 0.5
+                    alpha = 1.0 if (sel == '__all__' or sel == s['name']) else 0.5
                     lbl = f"{orig_i+1}"
                     # If Filtering by Angle resulted in gaps, plotting with '-' will define lines across gaps.
                     # It's better to use '.' or accept the lines.
@@ -3305,16 +3468,16 @@ class TorquePlotViewer(QMainWindow):
              pass
 
         mode = self.plot_mode_combo.currentText()
-        is_angle = (mode == "Angle vs Torque")
+        is_angle = self._is_angle_mode()
 
         if is_angle:
-             self.ax.set_xlabel("Angle (deg)", fontsize=10)
-             self.ax.set_title("Torque vs Angle", fontsize=12, fontweight='bold')
+             self.ax.set_xlabel(self._tr('plot_axis_angle'), fontsize=10)
+             self.ax.set_title(self._tr('plot_title_angle'), fontsize=12, fontweight='bold')
         else:
-             self.ax.set_xlabel("Time (s)", fontsize=10)
-             self.ax.set_title("Torque vs Time", fontsize=12, fontweight='bold')
+             self.ax.set_xlabel(self._tr('plot_axis_time'), fontsize=10)
+             self.ax.set_title(self._tr('plot_title_time'), fontsize=12, fontweight='bold')
              
-        self.ax.set_ylabel("Torque (N·m)", fontsize=12)
+        self.ax.set_ylabel(self._tr('plot_axis_torque'), fontsize=12)
         self.ax.grid(True, alpha=0.3)
         try:
             # Y-axis ticks to match X-axis count for cleaner look
@@ -3342,7 +3505,7 @@ class TorquePlotViewer(QMainWindow):
 
         # If multiple samples loaded, compute average across selected dataset(s)
         if self.samples:
-            sel = self.file_select_combo.currentText() if hasattr(self, 'file_select_combo') else 'All'
+            sel = self._combo_data(self.file_select_combo, '__all__') if hasattr(self, 'file_select_combo') else '__all__'
             total_vals = []
             # Helper to compute subset indices or time-sliced values
             def _slice_vals(vals, times=None):
@@ -3387,9 +3550,9 @@ class TorquePlotViewer(QMainWindow):
                 end_idx = max(start_idx + 1, min(self.end_spin.value(), len(vals)))
                 return vals[start_idx:end_idx]
 
-            if sel == 'All':
+            if sel == '__all__':
                 if hasattr(self, 'source_label'):
-                    self.source_label.setText("Target: All Samples")
+                    self.source_label.setText(f"{self._tr('plot_target') } {self._tr('plot_all')}")
                 # apply start/end per file and concatenate across all samples
                 import numpy as np
                 all_subsets = []
@@ -3609,7 +3772,7 @@ class TorquePlotViewer(QMainWindow):
         ax2 = fig2.add_subplot(111)
         
         mode = self.plot_mode_combo.currentText()
-        is_angle = (mode == "Angle vs Torque")
+        is_angle = self._is_angle_mode()
 
         if is_angle:
              ax2.set_xlabel('Angle (deg)', fontsize=10)
@@ -3651,7 +3814,7 @@ class TorquePlotViewer(QMainWindow):
         #      ax2.axhline(y=spec_max, color='red', linestyle='--', linewidth=1, alpha=0.7, label='Max Spec')
 
         if self.samples:
-            sel = self.file_select_combo.currentText() if hasattr(self, 'file_select_combo') else 'All'
+            sel = self._combo_data(self.file_select_combo, '__all__') if hasattr(self, 'file_select_combo') else '__all__'
             import numpy as np
 
             for orig_i, s in enumerate(self.samples):
@@ -3716,7 +3879,7 @@ class TorquePlotViewer(QMainWindow):
                         plot_x = x_data
                         plot_y = trqs
                 else:
-                    if sel == 'All' or sel == s['name']:
+                    if sel == '__all__' or sel == s['name']:
                         # If no configured range, try using spinbox values as indices or fall back to full
                          try:
                              start_idx = max(0, min(self.start_spin.value() - 1, len(trqs)-1))
@@ -3739,7 +3902,7 @@ class TorquePlotViewer(QMainWindow):
 
                 if len(plot_x) > 0 and len(plot_y) > 0:
                     lw = 1.6 if sel == s['name'] else 0.9
-                    alpha = 1.0 if (sel == 'All' or sel == s['name']) else 0.5
+                    alpha = 1.0 if (sel == '__all__' or sel == s['name']) else 0.5
                     lbl = f"{orig_i+1}"
                     ax2.plot(plot_x, plot_y, marker='.', linestyle='-' , color=color, linewidth=lw, markersize=3, alpha=alpha, label=lbl)
                     # annotate sample number
@@ -3779,9 +3942,9 @@ class TorquePlotViewer(QMainWindow):
         try:
             if len(ax2.get_lines()) == 0:
                 if self.samples:
-                    sel = self.file_select_combo.currentText() if hasattr(self, 'file_select_combo') else 'All'
+                    sel = self._combo_data(self.file_select_combo, '__all__') if hasattr(self, 'file_select_combo') else '__all__'
                     sample = None
-                    if sel != 'All':
+                    if sel != '__all__':
                         sample = next((x for x in self.samples if x.get('name') == sel), None)
                     if sample is None:
                         sample = self.samples[0]
@@ -4019,8 +4182,8 @@ class TorquePlotViewer(QMainWindow):
             # 3) Fallback: map STT index spins to values using selected sample
             if start_val is None or end_val is None:
                 try:
-                    sel = self.file_select_combo.currentText() if hasattr(self, 'file_select_combo') else 'All'
-                    if sel != 'All' and self.samples:
+                    sel = self._combo_data(self.file_select_combo, '__all__') if hasattr(self, 'file_select_combo') else '__all__'
+                    if sel != '__all__' and self.samples:
                         s = next((x for x in self.samples if x['name'] == sel), None)
                         if s:
                             data_list = s.get('angle', []) if is_angle_mode else s.get('time', [])
@@ -4031,7 +4194,7 @@ class TorquePlotViewer(QMainWindow):
                                 ei = max(si + 1, min(self.end_spin.value(), len(data_list)))
                                 start_val = float(data_list[si])
                                 end_val = float(data_list[ei-1])
-                    elif self.samples and sel == 'All':
+                    elif self.samples and sel == '__all__':
                         firsts = []
                         lasts = []
                         for s in self.samples:
