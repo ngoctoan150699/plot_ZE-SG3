@@ -2243,23 +2243,11 @@ class MainWindow(QMainWindow):
         motor_rpm = float(profile.speed)
         output_deg_s = motor_rpm * 0.3  # gearbox 1/20: output deg/s = motor rpm * 360 / 60 / 20
 
-        pos_angle = float(profile.positive_angle)
-        neg_angle = float(profile.negative_angle)
-        if is_breakaway:
-            # Breakaway dùng một phía đo:
-            # - Chiều dương: D102=+góc, D103=0.
-            # - Chiều âm: D102=0, D103=-góc (signed), giống quy ước Operating.
-            # PLC MAIN.csv sẽ chọn D103 khi D102=0 để chạy một pha âm rồi về 0.
-            pos_angle_x100 = angle_to_x100(pos_angle)
-            neg_angle_x100 = angle_to_x100(neg_angle)
-        else:
-            pos_angle_x100 = angle_to_x100(pos_angle)
-            neg_angle_x100 = angle_to_x100(neg_angle)
-
         config = PlcTestConfig(
             mode=1 if is_breakaway else 2,
-            pos_angle_x100=pos_angle_x100,
-            neg_angle_x100=neg_angle_x100,
+            pos_angle_x100=angle_to_x100(profile.positive_angle),
+            # D103 gửi xuống PLC là độ lớn góc nghịch dương; PLC tự đổi dấu khi chạy chiều nghịch.
+            neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
             speed_x100=speed_to_x100(output_deg_s),
             cycle_set=1 if is_breakaway else getattr(profile, 'cycles', 3),
             # Ghi thô lấy toàn bộ hành trình; vùng 80% giữa hành trình để Plot Draw/tính toán xử lý sau.
