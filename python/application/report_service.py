@@ -81,26 +81,66 @@ class ReportService:
 
     def save_raw_csv(self, session: RecordingSession, csv_dir: str, filename: str) -> str:
         """
-        Lưu file CSV gốc (chứa toàn bộ dữ liệu mẫu ban đầu gồm tất cả các cycle).
-        Định dạng 3 cột: Time (s), Angle (deg), Torque (Nm).
+        Lưu file CSV gốc theo CTR DATA FORMAT #1 giống file máy chuẩn.
+        Cột dữ liệu: Save, State, Cycle, Time, Command, Angle, Torque.
         """
         if not os.path.exists(csv_dir):
             os.makedirs(csv_dir, exist_ok=True)
 
         full_path = os.path.join(csv_dir, filename)
-        
+        rows = []
+        for s in session.samples:
+            rows.append([
+                1.0,
+                3.0,
+                float(s.cycle),
+                float(s.time_s),
+                0.0,
+                float(s.angle_deg),
+                float(s.torque_Nm),
+            ])
+
+        if not rows:
+            rows = [[1.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+
+        cols = list(zip(*rows))
+        col_max = [max(c) for c in cols]
+        col_min = [min(c) for c in cols]
+        col_start = rows[0]
+        col_stop = rows[-1]
+        interval_s = max(0.0, float(session.sample_interval_ms or 0) / 1000.0)
+        col_delta = [interval_s] * 7
+        n = len(rows)
+
         try:
             with open(full_path, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(['Time (s)', 'Angle (deg)', 'Torque (Nm)', 'Cycle'])
-                for s in session.samples:
-                    writer.writerow([
-                        f"{s.time_s:.6f}",
-                        f"{s.angle_deg:.6f}",
-                        f"{s.torque_Nm:.6f}",
-                        int(s.cycle)
-                    ])
-            logger.info(f"ReportService: Đã lưu raw CSV thành công → {full_path}")
+                f.write("%===============================================================\n")
+                f.write("%     CTR DATA FORMAT #1 (Revision 2019.06.27)\n")
+                f.write("%     TITLE : ZE-SG3 Torque Test Data File\n")
+                f.write("%===============================================================\n")
+                f.write("BEGIN_OF_HEADER\n")
+                f.write(f"SAVED_DATE = {datetime.now().strftime('%m/%d/%Y %I:%M:%S %p')}\n")
+                f.write("SAMPLE INFO = ///ZE-SG3/\n")
+                f.write("TEST FUNCTION = TRIANGULAR\n")
+                f.write("TEST FREQUENCY =0.000000\n")
+                f.write(f"TEST CYCLE ={max((row[2] for row in rows), default=0.0):.6f}\n")
+                f.write("NUMBER_OF_COLUMNS = 7\n")
+                f.write("COLUMN_NAME = [Save,State,Cycle,Time,Command,Angle,Torque]\n")
+                f.write("COLUMN_UNIT = [NA,NA,Cycle,sec,Dgree,Dgree,N*m]\n")
+                f.write(f"COLUMN_LENGTH = [{','.join([str(n)] * 7)}]\n")
+                f.write(f"COLUMN_MAXIMUM = [{','.join(f'{v:.6f}' for v in col_max)}]\n")
+                f.write(f"COLUMN_MINIMUM = [{','.join(f'{v:.6f}' for v in col_min)}]\n")
+                f.write(f"COLUMN_START = [{','.join(f'{v:.6f}' for v in col_start)}]\n")
+                f.write(f"COLUMN_STOP = [{','.join(f'{v:.6f}' for v in col_stop)}]\n")
+                f.write(f"COLUMN_DELTA = [{','.join(f'{v:.6f}' for v in col_delta)}]\n")
+                f.write("COLUMN_DELTA_UNIT = [sec,sec,sec,sec,sec,sec,sec]\n")
+                f.write("END_OF_HEADER\n")
+                for row in rows:
+                    f.write(
+                        f"{row[0]:.6f},{row[1]:.6f},{row[2]:.6f},"
+                        f"{row[3]:.6f},{row[4]:.6f},{row[5]:.6f},{row[6]:.6f}\n"
+                    )
+            logger.info(f"ReportService: Đã lưu raw CSV CTR Format #1 thành công → {full_path}")
             return full_path
         except Exception as e:
             logger.error(f"ReportService: Lỗi lưu raw CSV: {e}")

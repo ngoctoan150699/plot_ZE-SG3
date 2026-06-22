@@ -3739,7 +3739,7 @@ class TorquePlotViewer(QMainWindow):
         return f"{prefix}-{seq:02d}.xlsx"
 
 
-    def export_xlsx(self):
+    def export_xlsx(self, output_path: str | None = None, show_message: bool = True):
         """Export Excel TEST REPORT khổ A4.
         Layout theo sample_report.pdf:
         - Title merge A1:F2
@@ -3753,7 +3753,7 @@ class TorquePlotViewer(QMainWindow):
         # Require either a single-loaded dataset (`time_data`) or imported `samples`
         if not self.time_data and not self.samples:
             QMessageBox.warning(self, "No data", "No data to export. Import or add at least one CSV file.")
-            return
+            return None
 
         try:
             from openpyxl import Workbook
@@ -3765,7 +3765,7 @@ class TorquePlotViewer(QMainWindow):
                 self, "Missing dependency",
                 "Please install required packages:\npython -m pip install openpyxl pillow"
             )
-            return
+            return None
 
         # Default suggested filename: yymmdd-Test item-Part No-Purpose-Team-Sample No-sequence.
         report_dir = ''
@@ -3775,11 +3775,15 @@ class TorquePlotViewer(QMainWindow):
             report_dir = getattr(self, 'report_dir', '') or ''
         if not report_dir:
             report_dir = os.path.dirname(self.file_path) if self.file_path else os.getcwd()
-        suggested_name = self._build_export_xlsx_filename(report_dir)
-        suggested = os.path.join(report_dir, suggested_name)
-        path, _ = QFileDialog.getSaveFileName(self, "Save Excel Report", suggested, "Excel Files (*.xlsx)")
-        if not path:
-            return
+
+        if output_path:
+            path = output_path
+        else:
+            suggested_name = self._build_export_xlsx_filename(report_dir)
+            suggested = os.path.join(report_dir, suggested_name)
+            path, _ = QFileDialog.getSaveFileName(self, "Save Excel Report", suggested, "Excel Files (*.xlsx)")
+            if not path:
+                return None
 
         # Render a fixed-size figure to a temporary PNG so export is independent of UI/window size.
         tmp_png = None
@@ -4741,9 +4745,12 @@ class TorquePlotViewer(QMainWindow):
         # ========== SAVE ==========
         try:
             wb.save(path)
-            QMessageBox.information(self, "Saved", f"Excel report saved to:\n{path}")
+            if show_message:
+                QMessageBox.information(self, "Saved", f"Excel report saved to:\n{path}")
+            return path
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save Excel:\n{e}")
+            return None
         finally:
             if tmp_png and os.path.exists(tmp_png):
                 try:
@@ -4944,12 +4951,14 @@ class TorquePlotViewer(QMainWindow):
         start_dir = ""
         if hasattr(self, 'summary_report_path_edit'):
             current = self.summary_report_path_edit.text().strip()
-            start_dir = os.path.dirname(current) if current else self.report_path_edit.text().strip()
-        path, _ = QFileDialog.getSaveFileName(self, "Select Summary Excel Report", start_dir, "Excel Files (*.xlsx)")
-        if path and hasattr(self, 'summary_report_path_edit'):
-            if not path.lower().endswith('.xlsx'):
-                path += '.xlsx'
-            self.summary_report_path_edit.setText(path)
+            if current:
+                start_dir = current if os.path.isdir(current) else os.path.dirname(current)
+            if not start_dir:
+                start_dir = self.report_path_edit.text().strip()
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Summary Report Directory", start_dir)
+        if dir_path and hasattr(self, 'summary_report_path_edit'):
+            summary_path = os.path.join(dir_path, "summary report.xlsx")
+            self.summary_report_path_edit.setText(summary_path)
 
     def _append_summary_report(self, summary_path: str, metadata, filename: str, raw_path: str, report_path: str):
         """Append one measurement row to an Excel Summary file formatted as a Table."""
@@ -5190,25 +5199,29 @@ class TorquePlotViewer(QMainWindow):
         report_svc = ReportService()
 
         try:
-            filename = report_svc.generate_filename(metadata, csv_dir)
+            xlsx_name = self._build_export_xlsx_filename(report_dir)
+            report_base, _ = os.path.splitext(xlsx_name)
+            filename = f"{report_base}.csv"
+
             raw_path = report_svc.save_raw_csv(raw_session, csv_dir, filename)
-            report_path = report_svc.save_ctr_report(
-                trimmed_samples=trimmed_samples,
-                report_dir=report_dir,
-                filename=filename,
-                session_interval_ms=interval_ms,
-                metadata=metadata
-            )
+
+            xlsx_path = os.path.join(report_dir, xlsx_name)
+            report_path = self.export_xlsx(output_path=xlsx_path, show_message=False)
+            if not report_path:
+                raise RuntimeError("Could not create Excel report file.")
 
             summary_path = ''
             if hasattr(self, 'summary_report_path_edit'):
                 summary_path = self.summary_report_path_edit.text().strip()
+                if summary_path and os.path.isdir(summary_path):
+                    summary_path = os.path.join(summary_path, "summary report.xlsx")
+                    self.summary_report_path_edit.setText(summary_path)
             summary_saved_path = self._append_summary_report(summary_path, metadata, filename, raw_path, report_path) if summary_path else None
             summary_msg = f"\n3. Summary Report: {summary_saved_path}" if summary_saved_path else ""
 
             QMessageBox.information(
                 self, "Report Saved",
-                f"Successfully saved reports:\n\n1. Raw CSV: {raw_path}\n2. CTR Report: {report_path}{summary_msg}"
+                f"Successfully saved reports:\n\n1. Raw CSV: {raw_path}\n2. Excel Report: {report_path}{summary_msg}"
             )
 
             self.csv_dir = csv_dir
