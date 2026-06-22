@@ -4972,13 +4972,14 @@ class TorquePlotViewer(QMainWindow):
                 "Average Nm", "Min Nm", "Max Nm", "Judgment", "Remark",
                 "Filename", "Raw CSV", "CTR Report",
             ]
-            if ws.max_row == 1 and all(ws.cell(row=1, column=c).value is None for c in range(1, len(headers) + 1)):
+            existing_headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+            has_existing_headers = any(value not in (None, '') for value in existing_headers)
+            if not has_existing_headers:
                 for col, header in enumerate(headers, start=1):
                     ws.cell(row=1, column=col, value=header)
+                active_headers = headers
             else:
-                for col, header in enumerate(headers, start=1):
-                    if ws.cell(row=1, column=col).value != header:
-                        ws.cell(row=1, column=col, value=header)
+                active_headers = [str(value).strip() if value is not None else '' for value in existing_headers]
 
             def _float_from_label(label):
                 try:
@@ -4989,40 +4990,50 @@ class TorquePlotViewer(QMainWindow):
 
             spec_min = float(self.spec_min_spin.value()) if getattr(self, 'spec_min_spin', None) else None
             spec_max = float(self.spec_max_spin.value()) if getattr(self, 'spec_max_spin', None) else None
-            row = [
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                getattr(metadata, 'date', ''),
-                getattr(metadata, 'test_item', ''),
-                getattr(metadata, 'part_name', ''),
-                getattr(metadata, 'part_no', ''),
-                int(getattr(metadata, 'sample_no', 1)),
-                getattr(metadata, 'test_purpose', ''),
-                getattr(metadata, 'team', ''),
-                getattr(metadata, 'line_no', ''),
-                getattr(metadata, 'tester', ''),
-                spec_min,
-                spec_max,
-                _float_from_label(self.avg_label) if hasattr(self, 'avg_label') else None,
-                _float_from_label(self.min_label) if hasattr(self, 'min_label') else None,
-                _float_from_label(self.max_label) if hasattr(self, 'max_label') else None,
-                self.judgment_label.text().strip() if hasattr(self, 'judgment_label') else '',
-                getattr(metadata, 'remark', ''),
-                filename,
-                raw_path,
-                report_path,
-            ]
+            avg_value = _float_from_label(self.avg_label) if hasattr(self, 'avg_label') else None
+            values_by_header = {
+                'saved at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'date': getattr(metadata, 'date', ''),
+                'test item': getattr(metadata, 'test_item', ''),
+                'part name': getattr(metadata, 'part_name', ''),
+                'part no': getattr(metadata, 'part_no', ''),
+                'sample no': int(getattr(metadata, 'sample_no', 1)),
+                'test purpose': getattr(metadata, 'test_purpose', ''),
+                'purpose': getattr(metadata, 'test_purpose', ''),
+                'team': getattr(metadata, 'team', ''),
+                'testing team': getattr(metadata, 'team', ''),
+                'line no': getattr(metadata, 'line_no', ''),
+                'tester': getattr(metadata, 'tester', ''),
+                'spec min': spec_min,
+                'specification min (nm)': spec_min,
+                'spec max': spec_max,
+                'specification max (nm)': spec_max,
+                'average nm': avg_value,
+                'actual value (nm)': avg_value,
+                'min nm': _float_from_label(self.min_label) if hasattr(self, 'min_label') else None,
+                'max nm': _float_from_label(self.max_label) if hasattr(self, 'max_label') else None,
+                'judgment': self.judgment_label.text().strip() if hasattr(self, 'judgment_label') else '',
+                'remark': getattr(metadata, 'remark', ''),
+                'filename': filename,
+                'raw csv': raw_path,
+                'ctr report': report_path,
+            }
+            row = []
+            for header in active_headers:
+                key = str(header or '').strip().lower()
+                row.append(values_by_header.get(key, ''))
             ws.append(row)
 
             # Recreate table range to include the appended row.
             for tbl_name in list(ws.tables.keys()):
                 del ws.tables[tbl_name]
-            end_col = get_column_letter(len(headers))
+            end_col = get_column_letter(len(active_headers))
             table = Table(displayName="TorqueSummary", ref=f"A1:{end_col}{ws.max_row}")
             style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
                                    showLastColumn=False, showRowStripes=True, showColumnStripes=False)
             table.tableStyleInfo = style
             ws.add_table(table)
-            for col in range(1, len(headers) + 1):
+            for col in range(1, len(active_headers) + 1):
                 ws.column_dimensions[get_column_letter(col)].width = min(45, max(12, len(str(ws.cell(row=1, column=col).value)) + 2))
             wb.save(summary_path)
             return summary_path
@@ -5043,8 +5054,11 @@ class TorquePlotViewer(QMainWindow):
             active_sample = next((x for x in self.samples if x['name'] == sel), None)
 
         if not active_sample:
-            QMessageBox.warning(self, "No Data", "Active sample not found.")
-            return
+            active_sample = self.samples[0]
+            try:
+                self.file_select_combo.setCurrentText(active_sample.get('name', ''))
+            except Exception:
+                pass
 
         csv_dir = self.csv_path_edit.text().strip()
         report_dir = self.report_path_edit.text().strip()
