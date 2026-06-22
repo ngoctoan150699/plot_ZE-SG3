@@ -1104,19 +1104,19 @@ class TorquePlotViewer(QMainWindow):
 
         # Setup buttons for part time ranges (compact)
         self.range_setup_btn = QPushButton(self._tr('plot_ranges'))
-        self.range_setup_btn.setMaximumWidth(80)
+        self.range_setup_btn.setMinimumWidth(96)
         self.range_setup_btn.setToolTip(self._tr('plot_ranges_tip'))
         self.range_setup_btn.clicked.connect(self.open_part_range_setup)
         bottom_h.addWidget(self.range_setup_btn)
 
         self.spec_setup_btn = QPushButton(self._tr('plot_specs'))
-        self.spec_setup_btn.setMaximumWidth(70)
+        self.spec_setup_btn.setMinimumWidth(100)
         self.spec_setup_btn.setToolTip(self._tr('plot_specs_tip'))
         self.spec_setup_btn.clicked.connect(self.open_test_item_spec_setup)
         bottom_h.addWidget(self.spec_setup_btn)
 
         self.calibration_btn = QPushButton(self._tr('plot_calibration'))
-        self.calibration_btn.setMaximumWidth(90)
+        self.calibration_btn.setMinimumWidth(110)
         self.calibration_btn.setToolTip(self._tr('plot_calibration_tip'))
         self.calibration_btn.clicked.connect(self.open_calibration_setup)
         bottom_h.addWidget(self.calibration_btn)
