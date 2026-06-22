@@ -565,9 +565,6 @@ class IntegratedSimulatorWindow(QMainWindow):
         if speed <= 0:
             self._fault(4, "Tốc độ đo không hợp lệ (nhỏ hơn hoặc bằng 0)")
             return
-        if not s.clamped:
-            self._fault(8, "Phôi chưa được kẹp (xi lanh chưa kẹp)")
-            return
         s.test_running = True
         s.record_enable = True
         s.data_valid = False

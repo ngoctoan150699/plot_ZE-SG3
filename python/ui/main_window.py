@@ -1521,6 +1521,21 @@ class MainWindow(QMainWindow):
         
         self.grp_recording.setLayout(rg); lay.addWidget(self.grp_recording)
 
+
+        # --- Import to Plot Viewer ---
+        if _HAS_PLOT_VIEWER:
+            self.grp_import_tools = QGroupBox("📥 Import dữ liệu sang công cụ khác")
+            ig = QVBoxLayout()
+            ig.setContentsMargins(6, 8, 6, 6)
+            ig.setSpacing(6)
+
+            self.btn_import_plot = QPushButton("📊 Import to Plot Viewer")
+            self.btn_import_plot.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+            self.btn_import_plot.clicked.connect(self._import_to_plot_viewer)
+            ig.addWidget(self.btn_import_plot)
+
+            self.grp_import_tools.setLayout(ig); lay.addWidget(self.grp_import_tools)
+
         self.grp_export = QGroupBox("💾 Xuất dữ liệu")
         eg = QVBoxLayout()
         eg.setContentsMargins(6, 8, 6, 6)
@@ -1537,20 +1552,6 @@ class MainWindow(QMainWindow):
             self.exporter_buttons[exp] = btn
 
         self.grp_export.setLayout(eg); lay.addWidget(self.grp_export)
-
-        # --- Import to Plot Viewer ---
-        if _HAS_PLOT_VIEWER:
-            self.grp_import_tools = QGroupBox("📥 Import dữ liệu sang công cụ khác")
-            ig = QVBoxLayout()
-            ig.setContentsMargins(6, 8, 6, 6)
-            ig.setSpacing(6)
-
-            self.btn_import_plot = QPushButton("📊 Import to Plot Viewer")
-            self.btn_import_plot.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
-            self.btn_import_plot.clicked.connect(self._import_to_plot_viewer)
-            ig.addWidget(self.btn_import_plot)
-
-            self.grp_import_tools.setLayout(ig); lay.addWidget(self.grp_import_tools)
 
         self._apply_acquisition_draw_plot_skin()
 
@@ -2632,6 +2633,8 @@ class MainWindow(QMainWindow):
                     self._start_plc_polling()
                     
             self._save_settings_from_ui()
+            if hasattr(self, 'tabs'):
+                self.tabs.setCurrentIndex(2)  # Chuyển sang tab Acquisition sau khi connect thành công.
             self._log(f"✅ Kết nối thành công (Cảm biến TCP/IP, PLC Modbus RTU)")
         except Exception as e:
             self._log(f"❌ Lỗi kết nối: {e}")
