@@ -3694,6 +3694,40 @@ class TorquePlotViewer(QMainWindow):
             pass
 
 
+    def _build_export_xlsx_filename(self, report_dir: str) -> str:
+        """Build default XLSX name: yymmdd-TestItem-PartNo-Purpose-Team-SampleNo-Seq."""
+        def _clean(value: str, max_len: int | None = None) -> str:
+            text = remove_diacritics_no_strip(str(value or '')).upper().strip()
+            text = ''.join(ch for ch in text if ch.isalnum())
+            return text[:max_len] if max_len else text
+
+        test_item = self.test_item_combo.currentText() if hasattr(self, 'test_item_combo') else ''
+        test_code = 'B' if 'breakaway' in test_item.lower() or test_item.strip().upper() == 'B' else 'O'
+
+        part_no = _clean(self.part_no_edit.text() if hasattr(self, 'part_no_edit') else '', 7) or 'PARTNO'
+
+        purpose_text = self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else ''
+        purpose_code = ''
+        if '(' in purpose_text and ')' in purpose_text:
+            purpose_code = purpose_text.split('(')[-1].split(')')[0].strip()[:1]
+        if not purpose_code:
+            purpose_code = _clean(purpose_text, 1) or 'X'
+
+        team_code = _clean(self.team_combo.currentText() if hasattr(self, 'team_combo') else '') or 'TEAM'
+        sample_no = self.sample_no_spin.value() if hasattr(self, 'sample_no_spin') else 1
+        sample_code = f"{max(1, min(99, int(sample_no))):02d}"
+
+        prefix = f"{datetime.now().strftime('%y%m%d')}-{test_code}-{part_no}-{purpose_code}-{team_code}-{sample_code}"
+        seq = 1
+        try:
+            existing = set(os.listdir(report_dir)) if report_dir and os.path.isdir(report_dir) else set()
+            while f"{prefix}-{seq:02d}.xlsx" in existing:
+                seq += 1
+        except Exception:
+            pass
+        return f"{prefix}-{seq:02d}.xlsx"
+
+
     def export_xlsx(self):
         """Export Excel TEST REPORT khổ A4.
         Layout theo sample_report.pdf:
@@ -3722,12 +3756,7 @@ class TorquePlotViewer(QMainWindow):
             )
             return
 
-        # Default suggested filename: use Report File path directory, not the imported CSV directory.
-        timestr = datetime.now().strftime('%Y%m%d_%H%M%S')
-        if self.file_path:
-            suggested_name = os.path.splitext(os.path.basename(self.file_path))[0] + '.xlsx'
-        else:
-            suggested_name = f'report_{timestr}.xlsx'
+        # Default suggested filename: yymmdd-Test item-Part No-Purpose-Team-Sample No-sequence.
         report_dir = ''
         try:
             report_dir = self.report_path_edit.text().strip()
@@ -3735,6 +3764,7 @@ class TorquePlotViewer(QMainWindow):
             report_dir = getattr(self, 'report_dir', '') or ''
         if not report_dir:
             report_dir = os.path.dirname(self.file_path) if self.file_path else os.getcwd()
+        suggested_name = self._build_export_xlsx_filename(report_dir)
         suggested = os.path.join(report_dir, suggested_name)
         path, _ = QFileDialog.getSaveFileName(self, "Save Excel Report", suggested, "Excel Files (*.xlsx)")
         if not path:
