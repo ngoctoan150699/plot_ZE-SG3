@@ -3098,7 +3098,11 @@ class MainWindow(QMainWindow):
 
     def _import_to_plot_viewer(self):
         """Export session CSV -> load vào Plot Viewer -> nhảy sang tab."""
-        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+        if not _HAS_PLOT_VIEWER:
+            self._log("⚠️ Plot Viewer chưa sẵn sàng"); return
+        if not hasattr(self, '_plot_viewer'):
+            self._on_main_tab_changed(1)
+        if not hasattr(self, '_plot_viewer'):
             self._log("⚠️ Plot Viewer chưa sẵn sàng"); return
         if not self._session.samples:
             self._log("⚠️ Không có dữ liệu để import"); return
@@ -3112,6 +3116,16 @@ class MainWindow(QMainWindow):
         
         if hasattr(self, 'combo_part_name'):
             self._plot_viewer.part_name_combo.setCurrentText(self.combo_part_name.currentText())
+
+        # Plot Viewer mặc định đang ở Angle vs Torque. Nếu phiên ghi không có dữ liệu góc
+        # (ví dụ chưa kết nối PLC/servo encoder), tự chuyển sang Torque-Time để vẫn import được.
+        angles = [float(getattr(sample, 'angle_deg', 0.0) or 0.0) for sample in self._session.samples]
+        has_angle_data = bool(angles) and (max(angles) - min(angles) > 1e-9 or any(abs(a) > 1e-9 for a in angles))
+        if hasattr(self._plot_viewer, 'plot_mode_combo'):
+            target_mode = 'angle' if has_angle_data else 'time'
+            idx = self._plot_viewer.plot_mode_combo.findData(target_mode)
+            if idx >= 0:
+                self._plot_viewer.plot_mode_combo.setCurrentIndex(idx)
 
         ok = self._plot_viewer.load_file_from_path(tmp)
         if ok:
