@@ -3499,6 +3499,56 @@ class TorquePlotViewer(QMainWindow):
             except Exception:
                 pass
     
+    def _is_breakaway_test_item(self) -> bool:
+        try:
+            text = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else ''
+            return 'breakaway' in text.strip().lower()
+        except Exception:
+            return False
+
+    def _apply_result_display(self, values, calculated_result):
+        """Display result according to test item to avoid operator confusion."""
+        try:
+            count = len(values) if values is not None else 0
+            self.total_label.setText(f"Pts: {count}")
+            if count <= 0 or calculated_result is None:
+                self.avg_label.setText("-")
+                self.min_label.setText("-")
+                self.max_label.setText("-")
+                self.avg_label_kgf.setText("-")
+                self.min_label_kgf.setText("-")
+                self.max_label_kgf.setText("-")
+                return
+
+            if self._is_breakaway_test_item():
+                # Breakaway: result is maximum torque in the configured angle range.
+                self.avg_label.setText("-")
+                self.min_label.setText("-")
+                self.max_label.setText(f"{calculated_result:.6f}")
+                self.avg_label_kgf.setText("-")
+                self.min_label_kgf.setText("-")
+                self.max_label_kgf.setText(f"{calculated_result * 10.1972:.6f}")
+            else:
+                # Operating/Oscillating: result is average torque in the configured angle range.
+                self.avg_label.setText(f"{calculated_result:.6f}")
+                self.min_label.setText("-")
+                self.max_label.setText("-")
+                self.avg_label_kgf.setText(f"{calculated_result * 10.1972:.6f}")
+                self.min_label_kgf.setText("-")
+                self.max_label_kgf.setText("-")
+        except Exception:
+            pass
+
+    def _calculate_result_value(self, values):
+        """Calculate displayed/judged result from already range-filtered torque values."""
+        if values is None or len(values) == 0:
+            return None
+        import numpy as np
+        abs_values = np.abs(values)
+        if self._is_breakaway_test_item():
+            return float(np.max(abs_values))
+        return float(np.mean(abs_values))
+
     def update_average(self):
         """Calculate and display average torque in range"""
         # Track the calculated average for validity judgment
@@ -3564,22 +3614,9 @@ class TorquePlotViewer(QMainWindow):
                 
                 if all_subsets:
                     total_vals_arr = np.concatenate(all_subsets)
-                    # Convert to absolute values for calculation
-                    total_vals_abs = np.abs(total_vals_arr)
-                    avg = np.mean(total_vals_abs)
-                    calculated_average = avg
-                    self.avg_label.setText(f"{avg:.6f}")
-                    # Update Data Info labels
-                    self.total_label.setText(f"Pts: {len(total_vals_arr)}")
-                    min_val = np.min(total_vals_arr)
-                    max_val = np.max(total_vals_arr)
-                    self.min_label.setText(f"{min_val:.6f}")
-                    self.max_label.setText(f"{max_val:.6f}")
-                    
-                    # Convert to Kgf.cm (1 Nm = 10.1972 Kgf.cm)
-                    self.avg_label_kgf.setText(f"{avg * 10.1972:.6f}")
-                    self.min_label_kgf.setText(f"{min_val * 10.1972:.6f}")
-                    self.max_label_kgf.setText(f"{max_val * 10.1972:.6f}")
+                    result = self._calculate_result_value(total_vals_arr)
+                    calculated_average = result
+                    self._apply_result_display(total_vals_arr, result)
                 else:
                     self.avg_label.setText("-")
                     self.total_label.setText("Pts: 0")
@@ -3603,22 +3640,9 @@ class TorquePlotViewer(QMainWindow):
                 else:
                     subset = self.get_current_range_values(s)
                     if len(subset) > 0:
-                        import numpy as np
-                        # Convert to absolute values for calculation
-                        subset_abs = np.abs(subset)
-                        avg = np.mean(subset_abs)
-                        calculated_average = avg
-                        self.avg_label.setText(f"{avg:.6f}")
-                        self.total_label.setText(f"Pts: {len(subset)}")
-                        min_val = np.min(subset)
-                        max_val = np.max(subset)
-                        self.min_label.setText(f"{min_val:.6f}")
-                        self.max_label.setText(f"{max_val:.6f}")
-                        
-                        # Convert to Kgf.cm
-                        self.avg_label_kgf.setText(f"{avg * 10.1972:.6f}")
-                        self.min_label_kgf.setText(f"{min_val * 10.1972:.6f}")
-                        self.max_label_kgf.setText(f"{max_val * 10.1972:.6f}")
+                        result = self._calculate_result_value(subset)
+                        calculated_average = result
+                        self._apply_result_display(subset, result)
                     else:
                         self.avg_label.setText("-")
                         self.total_label.setText("Pts: 0")
@@ -3646,22 +3670,9 @@ class TorquePlotViewer(QMainWindow):
             except: pass
             
             if subset:
-                # Convert to absolute values for calculation
-                subset_abs = [abs(v) for v in subset]
-                avg = sum(subset_abs) / len(subset_abs)
-                calculated_average = avg
-                self.avg_label.setText(f"{avg:.6f}")
-                # Update Data Info labels for single dataset
-                self.total_label.setText(f"Pts: {len(subset)}")
-                min_val = min(subset)
-                max_val = max(subset)
-                self.min_label.setText(f"{min_val:.6f}")
-                self.max_label.setText(f"{max_val:.6f}")
-                
-                # Convert to Kgf.cm
-                self.avg_label_kgf.setText(f"{avg * 10.1972:.6f}")
-                self.min_label_kgf.setText(f"{min_val * 10.1972:.6f}")
-                self.max_label_kgf.setText(f"{max_val * 10.1972:.6f}")
+                result = self._calculate_result_value(subset)
+                calculated_average = result
+                self._apply_result_display(subset, result)
             else:
                 self.avg_label.setText("-")
                 self.total_label.setText("Pts: 0")
@@ -3802,15 +3813,12 @@ class TorquePlotViewer(QMainWindow):
         fig2 = Figure(figsize=(fig_w_in, fig_h_in), dpi=DPI)
         ax2 = fig2.add_subplot(111)
         
+        # XLSX report must always export Torque vs Angle, regardless of on-screen plot mode.
         mode = self.plot_mode_combo.currentText()
-        is_angle = self._is_angle_mode()
+        is_angle = True
 
-        if is_angle:
-             ax2.set_xlabel('Angle (deg)', fontsize=10)
-             ax2.set_title('Angle vs Torque', fontsize=12, fontweight='bold')
-        else:
-             ax2.set_xlabel('Time (s)', fontsize=10)
-             ax2.set_title('Time vs Torque', fontsize=12, fontweight='bold')
+        ax2.set_xlabel('Angle (deg)', fontsize=10)
+        ax2.set_title('Angle vs Torque', fontsize=12, fontweight='bold')
 
         ax2.set_ylabel('Torque (N·m)', fontsize=10)
         ax2.grid(True, alpha=0.3)
@@ -3979,14 +3987,10 @@ class TorquePlotViewer(QMainWindow):
                         sample = next((x for x in self.samples if x.get('name') == sel), None)
                     if sample is None:
                         sample = self.samples[0]
-                    x_vals = sample.get('angle', []) if is_angle else sample.get('time', [])
+                    x_vals = sample.get('angle', [])
                     y_vals = sample.get('torque', [])
-                    if is_angle and (not x_vals or len(x_vals) != len(y_vals)):
-                        x_vals = sample.get('time', [])
-                    if len(x_vals) > 0 and len(y_vals) > 0:
+                    if len(x_vals) > 0 and len(x_vals) == len(y_vals) and len(y_vals) > 0:
                         ax2.plot(x_vals, y_vals, 'b.-', linewidth=0.9, markersize=3, label='1')
-                elif len(self.time_data) > 0 and len(self.torque_data) > 0:
-                    ax2.plot(self.time_data, self.torque_data, 'b.-', linewidth=0.9, markersize=3, label='1')
         except Exception:
             pass
 
