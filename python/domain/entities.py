@@ -117,6 +117,7 @@ class ServoProfile:
     speed: float          = 10.0  # Tốc độ (rpm)
     jog_speed: float      = 10.0  # Tốc độ JOG (rpm)
     cycles: int           = 3     # Số chu kỳ đo (mặc định 3, có thể thay đổi)
+    safety_torque_limit_Nm: float = 30.0  # Ngưỡng dừng khẩn theo torque; 0 = tắt
 
 
 

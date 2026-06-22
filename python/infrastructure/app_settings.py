@@ -166,14 +166,14 @@ class AppSettings(ISettingsRepository):
         profiles = {}
         # Cấu hình mặc định cho các tổ hợp Part_TestItem
         default_profiles = {
-            'ITR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 1},
-            'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 3},
-            'B/Joint_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 1},
-            'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 3},
-            'OTR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 1},
-            'OTR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 3},
-            'S/Link_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 1},
-            'S/Link_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'cycles': 3},
+            'ITR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'B/Joint_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'OTR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'OTR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'S/Link_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'S/Link_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
         }
         for key, default in default_profiles.items():
             raw = profiles_raw.get(key, default)
@@ -182,7 +182,8 @@ class AppSettings(ISettingsRepository):
                 positive_angle=float(raw.get('positive_angle', default['positive_angle'])),
                 speed=float(raw.get('speed', default['speed'])),
                 jog_speed=float(raw.get('jog_speed', default.get('jog_speed', 10.0))),
-                cycles=int(raw.get('cycles', default.get('cycles', 3)))
+                cycles=int(raw.get('cycles', default.get('cycles', 3))),
+                safety_torque_limit_Nm=float(raw.get('safety_torque_limit_Nm', default.get('safety_torque_limit_Nm', 30.0)))
             )
         return profiles
 
@@ -194,7 +195,8 @@ class AppSettings(ISettingsRepository):
                 'positive_angle': p.positive_angle,
                 'speed': p.speed,
                 'jog_speed': p.jog_speed,
-                'cycles': p.cycles
+                'cycles': p.cycles,
+                'safety_torque_limit_Nm': getattr(p, 'safety_torque_limit_Nm', 30.0)
             }
         self._data['servo_profiles'] = profiles_raw
         self._save_raw()

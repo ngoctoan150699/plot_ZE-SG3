@@ -454,12 +454,21 @@ class ServoSetupDialog(QDialog):
         self.spin_cycles.setValue(getattr(profile, 'cycles', 3))
         self.spin_cycles.setSuffix(" chu kỳ" if self.i18n.current_language == 'vi' else " cycles")
 
+        # Safety torque limit (0 = disabled)
+        self.spin_safety_torque = QDoubleSpinBox()
+        self.spin_safety_torque.setRange(0.0, 9999.0)
+        self.spin_safety_torque.setDecimals(1)
+        self.spin_safety_torque.setValue(getattr(profile, 'safety_torque_limit_Nm', 30.0))
+        self.spin_safety_torque.setSuffix(" Nm")
+        self.spin_safety_torque.setToolTip("Dừng khẩn nếu |Torque| vượt ngưỡng này; 0 = tắt")
+
         _make_spinboxes_text_edit_friendly(
             self.spin_speed,
             self.spin_jog_speed,
             self.spin_pos,
             self.spin_neg,
             self.spin_cycles,
+            self.spin_safety_torque,
         )
         
         # Hàm cập nhật số xung hiển thị
@@ -481,6 +490,7 @@ class ServoSetupDialog(QDialog):
         self.lbl_pos = QLabel("Gốc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
         self.lbl_neg = QLabel("Gốc nghịch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
         self.lbl_cycles = QLabel("Số chu kỳ:" if self.i18n.current_language == 'vi' else "Cycles:")
+        self.lbl_safety_torque = QLabel("Giới hạn lực an toàn:" if self.i18n.current_language == 'vi' else "Safety torque limit:")
         
         form.addRow(self.lbl_speed, self.spin_speed)
         form.addRow("", self.lbl_converted_speed)
@@ -491,6 +501,7 @@ class ServoSetupDialog(QDialog):
         form.addRow(self.lbl_neg, self.spin_neg)
         form.addRow("", self.lbl_neg_pulses)
         form.addRow(self.lbl_cycles, self.spin_cycles)
+        form.addRow(self.lbl_safety_torque, self.spin_safety_torque)
         layout.addLayout(form)
         
         # Buttons
@@ -508,7 +519,8 @@ class ServoSetupDialog(QDialog):
             'jog_speed': round(self.spin_jog_speed.value(), 2),
             'positive_angle': self.spin_pos.value(),
             'negative_angle': self.spin_neg.value(),
-            'cycles': self.spin_cycles.value()
+            'cycles': self.spin_cycles.value(),
+            'safety_torque_limit_Nm': round(self.spin_safety_torque.value(), 2)
         }
 
 
@@ -812,6 +824,8 @@ class MainWindow(QMainWindow):
         self._plc_angle_interval_s = 0.15
         self._plc_command_running = False
         self._plc_running = False
+        self._safety_torque_limit_Nm = 30.0
+        self._safety_abort_triggered = False
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
@@ -2228,11 +2242,24 @@ class MainWindow(QMainWindow):
         part_select = max(1, self.combo_part_name.currentIndex() + 1) if hasattr(self, 'combo_part_name') else 1
         motor_rpm = float(profile.speed)
         output_deg_s = motor_rpm * 0.3  # gearbox 1/20: output deg/s = motor rpm * 360 / 60 / 20
+
+        pos_angle = float(profile.positive_angle)
+        neg_angle = float(profile.negative_angle)
+        if is_breakaway:
+            # Breakaway dùng một phía đo:
+            # - Chiều dương: D102=+góc, D103=0.
+            # - Chiều âm: D102=0, D103=-góc (signed), giống quy ước Operating.
+            # PLC MAIN.csv sẽ chọn D103 khi D102=0 để chạy một pha âm rồi về 0.
+            pos_angle_x100 = angle_to_x100(pos_angle)
+            neg_angle_x100 = angle_to_x100(neg_angle)
+        else:
+            pos_angle_x100 = angle_to_x100(pos_angle)
+            neg_angle_x100 = angle_to_x100(neg_angle)
+
         config = PlcTestConfig(
             mode=1 if is_breakaway else 2,
-            pos_angle_x100=angle_to_x100(profile.positive_angle),
-            # D103 gửi xuống PLC là độ lớn góc nghịch dương; PLC tự đổi dấu khi chạy chiều nghịch.
-            neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
+            pos_angle_x100=pos_angle_x100,
+            neg_angle_x100=neg_angle_x100,
             speed_x100=speed_to_x100(output_deg_s),
             cycle_set=1 if is_breakaway else getattr(profile, 'cycles', 3),
             # Ghi thô lấy toàn bộ hành trình; vùng 80% giữa hành trình để Plot Draw/tính toán xử lý sau.
@@ -2712,6 +2739,7 @@ class MainWindow(QMainWindow):
             color = "#FF9800" if not self._is_dark else "#f9e2af"
             self.lbl_stable.setStyleSheet(f"color: {color};")
 
+        self._check_safety_torque_limit(status)
 
         # Chart update (nếu không đang PAUSE)
         if not self._chart_paused:
@@ -2919,6 +2947,35 @@ class MainWindow(QMainWindow):
     # RECORDING
     # ===========================================================
 
+    def _trigger_safety_abort(self, torque_value: float, limit: float) -> None:
+        """Dừng khẩn phần mềm khi torque vượt ngưỡng an toàn."""
+        if self._safety_abort_triggered:
+            return
+        self._safety_abort_triggered = True
+        self._log(f"🛑 DỪNG KHẨN: |Torque|={abs(torque_value):.3f} Nm vượt ngưỡng ±{limit:.3f} Nm")
+        if self._plc_svc and self._plc_svc.is_connected():
+            if self._plc_svc.abort():
+                self._log("🛑 Đã gửi ABORT D100.b6 tới PLC")
+            elif self._plc_svc.stop_record():
+                self._log("🛑 ABORT thất bại, đã gửi STOP_RECORD tới PLC")
+            else:
+                self._log("⚠️ Không gửi được ABORT/STOP_RECORD tới PLC")
+        if self._servo_svc and self._servo_svc.is_running():
+            self._servo_svc.stop()
+            self._log("🛑 Đã dừng ServoService")
+        if self._recording:
+            self._stop_recording()
+
+    def _check_safety_torque_limit(self, status: DeviceStatus) -> None:
+        if not self._recording or self._safety_abort_triggered:
+            return
+        limit = float(getattr(self, '_safety_torque_limit_Nm', 0.0) or 0.0)
+        if limit <= 0:
+            return
+        torque = float(status.net_weight)
+        if abs(torque) > limit:
+            self._trigger_safety_abort(torque, limit)
+
     def _start_recording(self):
         # R2 Upgrade: prepare Servo/PLC profile before enabling local recording.
         part_name = self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else 'ITR'
@@ -2959,6 +3016,8 @@ class MainWindow(QMainWindow):
         now_mono = time.monotonic()
         self._session.start_time = now_mono
         self._start_time = now_mono
+        self._safety_torque_limit_Nm = float(getattr(profile, 'safety_torque_limit_Nm', 30.0) or 0.0)
+        self._safety_abort_triggered = False
         self._recording = True
         self.btn_rec_start.setEnabled(False)
         self.btn_rec_stop.setEnabled(True)
@@ -2970,7 +3029,8 @@ class MainWindow(QMainWindow):
             self.angle_plot.clear()
         if self._bus_scheduler:
             self._bus_scheduler.set_recording_active(True)
-        self._log("▶️ Bắt đầu ghi dữ liệu")
+        safety_msg = "tắt" if self._safety_torque_limit_Nm <= 0 else f"{self._safety_torque_limit_Nm:.1f} Nm"
+        self._log(f"▶️ Bắt đầu ghi dữ liệu (giới hạn an toàn: {safety_msg})")
 
         if self._servo_svc and (not self._plc_svc or not self._plc_svc.is_connected()):
             if is_breakaway:
@@ -3111,11 +3171,12 @@ class MainWindow(QMainWindow):
                 positive_angle=vals['positive_angle'],
                 speed=vals['speed'],
                 jog_speed=vals['jog_speed'],
-                cycles=vals['cycles']
+                cycles=vals['cycles'],
+                safety_torque_limit_Nm=vals['safety_torque_limit_Nm']
             )
             self._settings.save_servo_profiles(profiles)
             
-            self._log(f"✅ Đã cập nhật cấu hình cho {profile_key}: Speed={vals['speed']} rpm, JOG Speed={vals['jog_speed']} rpm, Pos={vals['positive_angle']}°, Neg={vals['negative_angle']}°")
+            self._log(f"✅ Đã cập nhật cấu hình cho {profile_key}: Speed={vals['speed']} rpm, JOG Speed={vals['jog_speed']} rpm, Pos={vals['positive_angle']}°, Neg={vals['negative_angle']}°, Safety={vals['safety_torque_limit_Nm']} Nm")
             
             # Cập nhật ô JOG speed trên UI chính
             if hasattr(self, 'spin_plc_jog_speed'):
