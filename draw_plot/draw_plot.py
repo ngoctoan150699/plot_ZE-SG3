@@ -3729,14 +3729,7 @@ class TorquePlotViewer(QMainWindow):
         sample_code = f"{max(1, min(99, int(sample_no))):02d}"
 
         prefix = f"{datetime.now().strftime('%y%m%d')}-{test_code}-{part_no}-{purpose_code}-{team_code}-{sample_code}"
-        seq = 1
-        try:
-            existing = set(os.listdir(report_dir)) if report_dir and os.path.isdir(report_dir) else set()
-            while f"{prefix}-{seq:02d}.xlsx" in existing:
-                seq += 1
-        except Exception:
-            pass
-        return f"{prefix}-{seq:02d}.xlsx"
+        return f"{prefix}.xlsx"
 
 
     def export_xlsx(self, output_path: str | None = None, show_message: bool = True):

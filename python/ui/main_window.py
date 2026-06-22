@@ -3015,11 +3015,44 @@ class MainWindow(QMainWindow):
     # EXPORT
     # ===========================================================
 
+    def _build_standard_csv_filename(self, output_dir: str = "") -> str:
+        """Build CSV name theo mẫu: yymmdd-TestItem-PartNo-Purpose-Team-SampleNo.csv."""
+        def _clean(value: str, max_len: int | None = None) -> str:
+            text = str(value or "").upper().strip()
+            text = "".join(ch for ch in text if ch.isalnum())
+            return text[:max_len] if max_len else text
+
+        test_item = ""
+        if hasattr(self, 'combo_test_item'):
+            test_item = self.combo_test_item.currentText()
+        elif getattr(self._session, 'test_item', ''):
+            test_item = self._session.test_item
+        test_code = 'B' if 'breakaway' in test_item.lower() or test_item.strip().upper() == 'B' else 'O'
+
+        part_no = 'UNKNOWN'
+        purpose_code = 'S'
+        team_code = 'QM'
+        sample_code = '01'
+
+        prefix = f"{datetime.now().strftime('%y%m%d')}-{test_code}-{part_no}-{purpose_code}-{team_code}-{sample_code}"
+        if not output_dir or not os.path.isdir(output_dir):
+            return f"{prefix}.csv"
+
+        candidate = f"{prefix}.csv"
+        if not os.path.exists(os.path.join(output_dir, candidate)):
+            return candidate
+        seq = 2
+        while True:
+            candidate = f"{prefix}-{seq:02d}.csv"
+            if not os.path.exists(os.path.join(output_dir, candidate)):
+                return candidate
+            seq += 1
+
     def _export(self, exporter: IDataExporter):
         if not self._session.samples:
             self._log("⚠️ Không có dữ liệu"); return
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        default_name = f"torque_{ts}{exporter.file_extension}"
+        default_name = self._build_standard_csv_filename() if "CTR" in exporter.display_name else f"torque_{ts}{exporter.file_extension}"
         path, _ = QFileDialog.getSaveFileName(
             self, f"Lưu – {exporter.display_name}", default_name,
             f"Files (*{exporter.file_extension})"
@@ -3048,7 +3081,7 @@ class MainWindow(QMainWindow):
             return ""
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         tmp_dir = tempfile.gettempdir()
-        tmp_path = os.path.join(tmp_dir, f"ze_sg3_session_{ts}.csv")
+        tmp_path = os.path.join(tmp_dir, self._build_standard_csv_filename(tmp_dir))
         ok = ctr_exp.export(self._session, tmp_path)
         return tmp_path if ok else ""
 

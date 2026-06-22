@@ -47,11 +47,9 @@ class ReportService:
             elif 'Breakaway' in metadata.test_item or 'B' == metadata.test_item:
                 test_char = 'B'
 
-        # 3. Part No (lấy 7 ký tự đầu)
+        # 3. Part No (không có thì dùng UNKNOWN theo file mẫu)
         part_no_clean = (metadata.part_no or "").strip().upper()
         part_no_short = part_no_clean[:7] if part_no_clean else "UNKNOWN"
-        if len(part_no_short) < 7:
-            part_no_short = part_no_short.ljust(7, '_')
 
         # 4. Purpose (lấy chữ cái đầu tiên)
         purpose_clean = (metadata.test_purpose or "").strip()
@@ -88,59 +86,17 @@ class ReportService:
             os.makedirs(csv_dir, exist_ok=True)
 
         full_path = os.path.join(csv_dir, filename)
-        rows = []
-        for s in session.samples:
-            rows.append([
-                1.0,
-                3.0,
-                float(s.cycle),
-                float(s.time_s),
-                0.0,
-                float(s.angle_deg),
-                float(s.torque_Nm),
-            ])
-
-        if not rows:
-            rows = [[1.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
-
-        cols = list(zip(*rows))
-        col_max = [max(c) for c in cols]
-        col_min = [min(c) for c in cols]
-        col_start = rows[0]
-        col_stop = rows[-1]
-        interval_s = max(0.0, float(session.sample_interval_ms or 0) / 1000.0)
-        col_delta = [interval_s] * 7
-        n = len(rows)
 
         try:
             with open(full_path, 'w', newline='', encoding='utf-8') as f:
-                f.write("%===============================================================\n")
-                f.write("%     CTR DATA FORMAT #1 (Revision 2019.06.27)\n")
-                f.write("%     TITLE : ZE-SG3 Torque Test Data File\n")
-                f.write("%===============================================================\n")
-                f.write("BEGIN_OF_HEADER\n")
-                f.write(f"SAVED_DATE = {datetime.now().strftime('%m/%d/%Y %I:%M:%S %p')}\n")
-                f.write("SAMPLE INFO = ///ZE-SG3/\n")
-                f.write("TEST FUNCTION = TRIANGULAR\n")
-                f.write("TEST FREQUENCY =0.000000\n")
-                f.write(f"TEST CYCLE ={max((row[2] for row in rows), default=0.0):.6f}\n")
-                f.write("NUMBER_OF_COLUMNS = 7\n")
-                f.write("COLUMN_NAME = [Save,State,Cycle,Time,Command,Angle,Torque]\n")
-                f.write("COLUMN_UNIT = [NA,NA,Cycle,sec,Dgree,Dgree,N*m]\n")
-                f.write(f"COLUMN_LENGTH = [{','.join([str(n)] * 7)}]\n")
-                f.write(f"COLUMN_MAXIMUM = [{','.join(f'{v:.6f}' for v in col_max)}]\n")
-                f.write(f"COLUMN_MINIMUM = [{','.join(f'{v:.6f}' for v in col_min)}]\n")
-                f.write(f"COLUMN_START = [{','.join(f'{v:.6f}' for v in col_start)}]\n")
-                f.write(f"COLUMN_STOP = [{','.join(f'{v:.6f}' for v in col_stop)}]\n")
-                f.write(f"COLUMN_DELTA = [{','.join(f'{v:.6f}' for v in col_delta)}]\n")
-                f.write("COLUMN_DELTA_UNIT = [sec,sec,sec,sec,sec,sec,sec]\n")
-                f.write("END_OF_HEADER\n")
-                for row in rows:
+                f.write("Time (s),Angle (deg),Torque (Nm),Cycle\n")
+                for s in session.samples:
+                    cycle = s.cycle if s.cycle > 0 else 1
                     f.write(
-                        f"{row[0]:.6f},{row[1]:.6f},{row[2]:.6f},"
-                        f"{row[3]:.6f},{row[4]:.6f},{row[5]:.6f},{row[6]:.6f}\n"
+                        f"{float(s.time_s):.6f},{float(s.angle_deg):.6f},"
+                        f"{float(s.torque_Nm):.6f},{int(cycle)}\n"
                     )
-            logger.info(f"ReportService: Đã lưu raw CSV CTR Format #1 thành công → {full_path}")
+            logger.info(f"ReportService: Đã lưu raw CSV theo file mẫu thành công → {full_path}")
             return full_path
         except Exception as e:
             logger.error(f"ReportService: Lỗi lưu raw CSV: {e}")
