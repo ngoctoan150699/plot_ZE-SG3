@@ -2374,9 +2374,9 @@ class TorquePlotViewer(QMainWindow):
         
         # Update Manual Range Labels/Suffix
         if getattr(self, 'start_label_widget', None):
-            self.start_label_widget.setText("Angle Min:" if is_angle else "Start Time (s):")
+            self.start_label_widget.setText(self._tr('plot_angle_min') if is_angle else self._tr('plot_start_time'))
         if getattr(self, 'end_label_widget', None):
-            self.end_label_widget.setText("Angle Max:" if is_angle else "End Time (s):")
+            self.end_label_widget.setText(self._tr('plot_angle_max') if is_angle else self._tr('plot_end_time'))
             
         if getattr(self, 'start_time_spin', None):
             self.start_time_spin.setSuffix(" deg" if is_angle else " s")
@@ -2386,11 +2386,12 @@ class TorquePlotViewer(QMainWindow):
         # Update Plot Axis Labels and Title immediately
         if getattr(self, 'ax', None):
             if is_angle:
-                self.ax.set_xlabel("Angle (deg)", fontsize=10)
-                self.ax.set_title("Torque vs Angle", fontsize=12, fontweight='bold')
+                self.ax.set_xlabel(self._tr('plot_axis_angle'), fontsize=10)
+                self.ax.set_title(self._tr('plot_title_angle'), fontsize=12, fontweight='bold')
             else:
-                self.ax.set_xlabel("Time (s)", fontsize=10)
-                self.ax.set_title("Torque vs Time", fontsize=12, fontweight='bold')
+                self.ax.set_xlabel(self._tr('plot_axis_time'), fontsize=10)
+                self.ax.set_title(self._tr('plot_title_time'), fontsize=12, fontweight='bold')
+            self.ax.set_ylabel(self._tr('plot_axis_torque'), fontsize=12)
             
             # Redraw canvas to show changes
             try:
