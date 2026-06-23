@@ -3729,7 +3729,18 @@ class TorquePlotViewer(QMainWindow):
         sample_code = f"{max(1, min(99, int(sample_no))):02d}"
 
         prefix = f"{datetime.now().strftime('%y%m%d')}-{test_code}-{part_no}-{purpose_code}-{team_code}-{sample_code}"
-        return f"{prefix}.xlsx"
+
+        # Auto-increment the final measurement sequence when previous exports exist.
+        # Example: 260525-B-CBJ0001-S-QM-01-01.xlsx -> next 260525-...-02.xlsx
+        report_dir = report_dir or os.getcwd()
+        seq = 1
+        while seq <= 99:
+            candidate = f"{prefix}-{seq:02d}.xlsx"
+            if not os.path.exists(os.path.join(report_dir, candidate)):
+                return candidate
+            seq += 1
+
+        return f"{prefix}-{seq:02d}.xlsx"
 
 
     def export_xlsx(self, output_path: str | None = None, show_message: bool = True):
