@@ -44,7 +44,7 @@ class ModbusBusScheduler:
         self._plc_client = plc_client if plc_client is not None else sensor_client
         self._sensor_slave_id = sensor_slave_id
         self._plc_slave_id = plc_slave_id
-        self._sensor_interval_s = max(0.05, sensor_interval_ms / 1000.0)  # TCP cảm biến: tối thiểu 50ms
+        self._sensor_interval_s = max(0.001, sensor_interval_ms / 1000.0)  # Theo Sampling UI; tối thiểu 1ms
         self._plc_status_interval_s = max(0.10, plc_interval_ms / 1000.0)  # PLC RTU: khoảng 100ms
         self._plc_realtime_interval_s = 0.10
         self._recording_active = False
@@ -116,7 +116,7 @@ class ModbusBusScheduler:
         self._pending_clears.clear()
 
     def set_intervals(self, sensor_ms: int, plc_ms: int = 1000) -> None:
-        self._sensor_interval_s = max(0.05, int(sensor_ms) / 1000.0)  # TCP tối thiểu 50ms
+        self._sensor_interval_s = max(0.001, int(sensor_ms) / 1000.0)  # Theo Sampling UI; tối thiểu 1ms
         self._plc_status_interval_s = max(0.10, int(plc_ms) / 1000.0)  # RTU tối thiểu 100ms
         self._sensor_wake_event.set()
         self._plc_wake_event.set()

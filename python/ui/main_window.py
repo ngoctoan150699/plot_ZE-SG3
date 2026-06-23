@@ -2546,6 +2546,8 @@ class MainWindow(QMainWindow):
         
         # 1. Áp dụng ngay vào logic đang chạy
         self._collector.set_interval(interval)
+        if self._bus_scheduler:
+            self._bus_scheduler.set_intervals(interval, 100)
         self.plot.max_window_s = window
         if self._recording:
             self._session.sample_interval_ms = interval
