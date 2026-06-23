@@ -2737,6 +2737,45 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'angle_plot'):
                 self.angle_plot.add_point(self._current_angle, status.net_weight)
 
+        # Nếu đang chờ servo bắt đầu nhúc nhích, chỉ arm recording và chưa ghi dữ liệu.
+        # Mốc time=0 được đặt tại callback cảm biến đầu tiên có angle khác góc nền.
+        if getattr(self, '_pending_recording_start', False):
+            base_angle = float(getattr(self, '_recording_base_angle', self._current_angle))
+            if abs(float(self._current_angle) - base_angle) < 0.05:
+                return
+            self._pending_recording_start = False
+            self._recording = True
+            arm_time = float(getattr(self, '_recording_arm_time', time.monotonic()))
+            now_mono = time.monotonic()
+            first_actual_time = max(self._session.sample_interval_ms / 1000.0, now_mono - arm_time)
+            self._session.start_time = arm_time
+            self._start_time = arm_time
+            self._current_cycle = max(1, int(getattr(self, '_current_cycle', 1) or 1))
+
+            interval_s = self._session.sample_interval_ms / 1000.0
+            expected_samples = int(first_actual_time / interval_s)
+            base_torque = float(getattr(self, '_recording_base_torque', status.net_weight))
+            current_torque = float(status.net_weight)
+            current_angle = float(self._current_angle) - base_angle
+
+            self._session.samples.clear()
+            for idx in range(expected_samples + 1):
+                rec_time = idx * interval_s
+                ratio = max(0.0, min(1.0, rec_time / first_actual_time))
+                self._session.samples.append(SampleData(
+                    time_s=rec_time,
+                    torque_Nm=base_torque + (current_torque - base_torque) * ratio,
+                    stable=status.is_stable,
+                    timestamp=time.time(),
+                    angle_deg=current_angle * ratio,
+                    cycle=self._current_cycle,
+                ))
+
+            self._last_actual_sample_time_s = first_actual_time
+            self._last_actual_sample_torque = current_torque
+            self._last_actual_sample_angle = current_angle
+            self.lbl_count.setText(str(self._session.count))
+
         # Ghi session nếu đang recording
         if self._recording:
             elapsed_time = time.monotonic() - self._start_time
@@ -2744,28 +2783,41 @@ class MainWindow(QMainWindow):
             interval_s = self._session.sample_interval_ms / 1000.0
             expected_samples = int(elapsed_time / interval_s)
 
-            # Tự động sinh thêm các mẫu bị thiếu để đảm bảo đúng tần số yêu cầu.
-            # Khi polling Modbus chậm hơn sample interval, không được lặp nguyên góc hiện tại
-            # cho toàn bộ mẫu bù; nội suy tuyến tính từ mẫu cuối -> trạng thái hiện tại.
-            last_sample = self._session.samples[-1] if self._session.samples else None
-            prev_time = last_sample.time_s if last_sample else 0.0
-            prev_torque = last_sample.torque_Nm if last_sample else status.net_weight
-            prev_angle = last_sample.angle_deg if last_sample else self._current_angle
-            span = max(interval_s, elapsed_time - prev_time)
+            # Khi sampling nhỏ hơn tốc độ poll Modbus, không giữ nguyên mẫu cũ rồi nhảy thẳng đứng.
+            # Mỗi callback cảm biến là một điểm đo thật; nội suy lại toàn bộ mẫu giữa lần đo thật trước
+            # và lần đo thật hiện tại để đường cong liên tục, không bị bỏ qua dữ liệu trung gian.
+            prev_actual_time = float(getattr(self, '_last_actual_sample_time_s', 0.0))
+            prev_actual_torque = float(getattr(self, '_last_actual_sample_torque', status.net_weight))
+            prev_actual_angle = float(getattr(self, '_last_actual_sample_angle', self._current_angle))
+            span = max(1e-9, elapsed_time - prev_actual_time)
 
+            # Bảo đảm đủ số mẫu theo interval trước.
             while self._session.count <= expected_samples:
                 rec_time = self._session.count * interval_s
-                ratio = max(0.0, min(1.0, (rec_time - prev_time) / span))
-                sample = SampleData(
+                self._session.samples.append(SampleData(
                     time_s=rec_time,
-                    torque_Nm=prev_torque + (status.net_weight - prev_torque) * ratio,
+                    torque_Nm=status.net_weight,
                     stable=status.is_stable,
                     timestamp=time.time(),
-                    angle_deg=prev_angle + (self._current_angle - prev_angle) * ratio,
+                    angle_deg=self._current_angle,
                     cycle=self._current_cycle,
-                )
-                self._session.samples.append(sample)
-                
+                ))
+
+            start_idx = max(1, int(prev_actual_time / interval_s) + 1)
+            end_idx = min(expected_samples, self._session.count - 1)
+            for idx in range(start_idx, end_idx + 1):
+                sample = self._session.samples[idx]
+                ratio = max(0.0, min(1.0, (sample.time_s - prev_actual_time) / span))
+                sample.torque_Nm = prev_actual_torque + (status.net_weight - prev_actual_torque) * ratio
+                sample.angle_deg = prev_actual_angle + (self._current_angle - prev_actual_angle) * ratio
+                sample.stable = status.is_stable
+                sample.timestamp = time.time()
+                sample.cycle = self._current_cycle
+
+            self._last_actual_sample_time_s = elapsed_time
+            self._last_actual_sample_torque = float(status.net_weight)
+            self._last_actual_sample_angle = float(self._current_angle)
+
             self.lbl_count.setText(str(self._session.count))
             self.lbl_rectime.setText(f"{elapsed_time:.3f} s")
 
@@ -2995,43 +3047,31 @@ class MainWindow(QMainWindow):
                 self._bus_scheduler.set_recording_active(False)
             return
 
-        # PLC dùng T0/T1 khoảng 0.2s để nhả phanh trước khi servo thật sự chạy.
-        # Không ghi đoạn chờ này vào dữ liệu đo; đặt mốc 0 sau khi nhả phanh xong.
-        time.sleep(0.2)
-
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
         self._session.test_item = 'B' if is_breakaway else 'O'
         self._session.part_name = part_short
-        now_mono = time.monotonic()
-        self._session.start_time = now_mono
-        self._start_time = now_mono
+        self._session.start_time = 0.0
+        self._start_time = time.monotonic()
         self._safety_torque_limit_Nm = float(getattr(profile, 'safety_torque_limit_Nm', 30.0) or 0.0)
         self._safety_abort_triggered = False
-        initial_status = getattr(self, '_last_status', None)
-        initial_torque = float(getattr(initial_status, 'net_weight', 0.0) or 0.0)
-        initial_stable = bool(getattr(initial_status, 'is_stable', False)) if initial_status is not None else False
-        self._current_angle = 0.0
         self._current_cycle = 1
-        self._session.samples.append(SampleData(
-            time_s=0.0,
-            torque_Nm=initial_torque,
-            stable=initial_stable,
-            timestamp=time.time(),
-            angle_deg=0.0,
-            cycle=self._current_cycle,
-        ))
-        self._recording = True
+        self._recording_base_angle = float(getattr(self, '_current_angle', 0.0))
+        initial_status = getattr(self, '_last_status', None)
+        self._recording_base_torque = float(getattr(initial_status, 'net_weight', 0.0) or 0.0)
+        self._recording_arm_time = time.monotonic()
+        self._pending_recording_start = True
+        self._recording = False
         self.btn_rec_start.setEnabled(False)
         self.btn_rec_stop.setEnabled(True)
         self.btn_rec_clear.setEnabled(False)
-        self.lbl_count.setText(str(self._session.count))
+        self.lbl_count.setText("0")
         if hasattr(self, 'angle_plot'):
             self.angle_plot.clear()
         if self._bus_scheduler:
             self._bus_scheduler.set_recording_active(True)
 
         safety_msg = "tắt" if self._safety_torque_limit_Nm <= 0 else f"{self._safety_torque_limit_Nm:.1f} Nm"
-        self._log(f"▶️ Bắt đầu ghi dữ liệu (giới hạn an toàn: {safety_msg})")
+        self._log(f"▶️ Đã arm ghi dữ liệu, chờ servo bắt đầu chạy (giới hạn an toàn: {safety_msg})")
 
         if self._servo_svc and (not self._plc_svc or not self._plc_svc.is_connected()):
             if is_breakaway:

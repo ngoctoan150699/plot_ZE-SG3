@@ -3294,55 +3294,43 @@ class TorquePlotViewer(QMainWindow):
                     x_data = np.array([]) 
                 
                 color = self._colors[orig_i % len(self._colors)]
-                # Determine indices based on selection
-                # Only use range filtering if we have start/end spin logic active
-                if use_range:
-                    try:
-                        # Determine st/en based on range mode
-                        range_mode = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
-                        st = None
-                        en = None
-                        
-                        if range_mode == 'Manual' and self.start_time_spin and self.end_time_spin:
-                            # Manual mode: use spinboxes
-                            st = float(self.start_time_spin.value())
-                            en = float(self.end_time_spin.value())
-                        elif range_mode == 'Default':
-                            # Default mode: do not crop data (matches get_current_range_values)
-                            st = None
-                            en = None
-                        
-                        # Only apply mask if we have valid range
-                        if st is None or en is None:
-                            raise ValueError("No valid range")
-                        
-                        # Apply numpy mask for filtering
-                        import numpy as np
-                        arr_x = np.array(x_data)
-                        arr_y = np.array(trqs)
-                        
-                        mask = (arr_x >= st) & (arr_x <= en)
-                        
-                        plot_x = arr_x[mask]
-                        plot_y = arr_y[mask]
-                        
-                    except Exception:
-                         plot_x = x_data
-                         plot_y = trqs
 
-                else:
-                    if sel == '__all__' or sel == s['name']:
-                         # No specific range, full data (or index based if that was filtered, but we moved to Filter Logic)
-                         # Here we just use full data for simplicity if not in range mode?
-                         # The original code had index start/end for 'Default' without parts.
-                         start_idx = max(0, min(self.start_spin.value() - 1, len(trqs)-1))
-                         end_idx = max(start_idx + 1, min(self.end_spin.value(), len(trqs)))
-                         plot_x = x_data[start_idx:end_idx]
-                         plot_y = trqs[start_idx:end_idx]
-                    else:
-                        # plot full series but faded
+                # Apply configured calculation/display range to the plot.
+                # The mask axis is chosen by range_mode_combo (Time/Angle), while
+                # the displayed X axis still follows plot_mode_combo.
+                plot_x = x_data
+                plot_y = trqs
+                if sel == '__all__' or sel == s['name']:
+                    try:
+                        pname = self.part_name_combo.currentText() if getattr(self, 'part_name_combo', None) else None
+                        item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else None
+                        use_angle_range = self._is_angle_range_mode()
+                        ranges = self.test_item_angle_ranges if use_angle_range else self.test_item_time_ranges
+                        pr = (ranges.get(pname, {}) if pname else {}).get(item_name, {}) if item_name else {}
+                        if pr:
+                            st = float(pr.get('start', 0.0))
+                            en = float(pr.get('end', 0.0))
+                            if st > en:
+                                st, en = en, st
+                            mask_axis = angles if use_angle_range and len(angles) == len(trqs) else times
+                            arr_axis = np.array(mask_axis)
+                            arr_x = np.array(x_data)
+                            arr_y = np.array(trqs)
+                            mask = (arr_axis >= st) & (arr_axis <= en)
+                            plot_x = arr_x[mask]
+                            plot_y = arr_y[mask]
+                        else:
+                            start_idx = max(0, min(self.start_spin.value() - 1, len(trqs)-1))
+                            end_idx = max(start_idx + 1, min(self.end_spin.value(), len(trqs)))
+                            plot_x = x_data[start_idx:end_idx]
+                            plot_y = trqs[start_idx:end_idx]
+                    except Exception:
                         plot_x = x_data
                         plot_y = trqs
+                else:
+                    # plot full non-selected series but faded
+                    plot_x = x_data
+                    plot_y = trqs
                 
                 # Apply K factor
                 try:
