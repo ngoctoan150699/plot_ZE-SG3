@@ -2740,11 +2740,6 @@ class MainWindow(QMainWindow):
         # Ghi session nếu đang recording
         if self._recording:
             elapsed_time = time.monotonic() - self._start_time
-            if self._plc_svc and self._plc_svc.is_connected():
-                plc_status = self._last_plc_status
-                if plc_status is not None and not plc_status.should_record_sample:
-                    self.lbl_rectime.setText(f"{elapsed_time:.3f} s")
-                    return
 
             interval_s = self._session.sample_interval_ms / 1000.0
             expected_samples = int(elapsed_time / interval_s)
@@ -2995,6 +2990,15 @@ class MainWindow(QMainWindow):
                 speed=100.0
             )
 
+        if not self._prepare_plc_recording(profile, is_breakaway):
+            if self._bus_scheduler:
+                self._bus_scheduler.set_recording_active(False)
+            return
+
+        # PLC dùng T0/T1 khoảng 0.2s để nhả phanh trước khi servo thật sự chạy.
+        # Không ghi đoạn chờ này vào dữ liệu đo; đặt mốc 0 sau khi nhả phanh xong.
+        time.sleep(0.2)
+
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
         self._session.test_item = 'B' if is_breakaway else 'O'
         self._session.part_name = part_short
@@ -3003,26 +3007,28 @@ class MainWindow(QMainWindow):
         self._start_time = now_mono
         self._safety_torque_limit_Nm = float(getattr(profile, 'safety_torque_limit_Nm', 30.0) or 0.0)
         self._safety_abort_triggered = False
+        initial_status = getattr(self, '_last_status', None)
+        initial_torque = float(getattr(initial_status, 'net_weight', 0.0) or 0.0)
+        initial_stable = bool(getattr(initial_status, 'is_stable', False)) if initial_status is not None else False
+        self._current_angle = 0.0
+        self._current_cycle = 1
+        self._session.samples.append(SampleData(
+            time_s=0.0,
+            torque_Nm=initial_torque,
+            stable=initial_stable,
+            timestamp=time.time(),
+            angle_deg=0.0,
+            cycle=self._current_cycle,
+        ))
         self._recording = True
         self.btn_rec_start.setEnabled(False)
         self.btn_rec_stop.setEnabled(True)
         self.btn_rec_clear.setEnabled(False)
-        self.lbl_count.setText("0")
-        self._current_angle = 0.0
-        self._current_cycle = 1
+        self.lbl_count.setText(str(self._session.count))
         if hasattr(self, 'angle_plot'):
             self.angle_plot.clear()
         if self._bus_scheduler:
             self._bus_scheduler.set_recording_active(True)
-
-        if not self._prepare_plc_recording(profile, is_breakaway):
-            self._recording = False
-            if self._bus_scheduler:
-                self._bus_scheduler.set_recording_active(False)
-            self.btn_rec_start.setEnabled(True)
-            self.btn_rec_stop.setEnabled(False)
-            self.btn_rec_clear.setEnabled(True)
-            return
 
         safety_msg = "tắt" if self._safety_torque_limit_Nm <= 0 else f"{self._safety_torque_limit_Nm:.1f} Nm"
         self._log(f"▶️ Bắt đầu ghi dữ liệu (giới hạn an toàn: {safety_msg})")
