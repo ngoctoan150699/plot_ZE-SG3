@@ -972,12 +972,11 @@ class TorquePlotViewer(QMainWindow):
         self.end_spin.valueChanged.connect(self.update_average)
         # (end_spin not added to layout)
 
-        # Data range mode: Default / Manual (compact)
+        # Data range mode: keep Default only; manual time cropping is removed.
         self.range_label = QLabel(self._tr('plot_range_lbl'))
         bottom_h.addWidget(self.range_label)
         self.range_mode_combo = QComboBox()
         self.range_mode_combo.addItem(self._tr('plot_range_default'), 'default')
-        self.range_mode_combo.addItem(self._tr('plot_range_manual'), 'manual')
         self.range_mode_combo.setMaximumWidth(90)
         self.range_mode_combo.currentIndexChanged.connect(self.on_range_mode_changed)
         bottom_h.addWidget(self.range_mode_combo)
@@ -1102,12 +1101,21 @@ class TorquePlotViewer(QMainWindow):
             self.start_time_spin = None
             self.end_time_spin = None
 
-        # Setup buttons for part time ranges (compact)
-        self.range_setup_btn = QPushButton(self._tr('plot_ranges'))
-        self.range_setup_btn.setMinimumWidth(96)
-        self.range_setup_btn.setToolTip(self._tr('plot_ranges_tip'))
-        self.range_setup_btn.clicked.connect(self.open_part_range_setup)
-        bottom_h.addWidget(self.range_setup_btn)
+        # Setup buttons for Time and Angle ranges (compact)
+        self.time_range_setup_btn = QPushButton('Vùng Time')
+        self.time_range_setup_btn.setMinimumWidth(96)
+        self.time_range_setup_btn.setToolTip('Thiết lập vùng tính theo thời gian')
+        self.time_range_setup_btn.clicked.connect(lambda: self.open_part_range_setup(False))
+        bottom_h.addWidget(self.time_range_setup_btn)
+
+        self.angle_range_setup_btn = QPushButton('Vùng Angle')
+        self.angle_range_setup_btn.setMinimumWidth(96)
+        self.angle_range_setup_btn.setToolTip('Thiết lập vùng tính theo góc')
+        self.angle_range_setup_btn.clicked.connect(lambda: self.open_part_range_setup(True))
+        bottom_h.addWidget(self.angle_range_setup_btn)
+
+        # Backward-compatible alias for existing retranslation/profile code.
+        self.range_setup_btn = self.time_range_setup_btn
 
         self.spec_setup_btn = QPushButton(self._tr('plot_specs'))
         self.spec_setup_btn.setMinimumWidth(100)
@@ -1878,7 +1886,7 @@ class TorquePlotViewer(QMainWindow):
                 ])
             if getattr(self, 'range_mode_combo', None):
                 self._set_combo_text_by_data(self.range_mode_combo, [
-                    (self._tr('plot_range_default'), 'default'), (self._tr('plot_range_manual'), 'manual')
+                    (self._tr('plot_range_default'), 'default')
                 ])
             if getattr(self, 'file_select_combo', None):
                 current = self.file_select_combo.currentData()
@@ -2605,20 +2613,20 @@ class TorquePlotViewer(QMainWindow):
             cb.blockSignals(False)
         self.on_cycle_toggled(None)
 
-    def open_part_range_setup(self):
+    def open_part_range_setup(self, is_angle: bool | None = None):
         """Open the Part/Test Item Range configuration dialog."""
         parts = [self.part_name_combo.itemText(i) for i in range(self.part_name_combo.count())]
         test_items = [self.test_item_combo.itemText(i) for i in range(self.test_item_combo.count())]
-        
-        mode = self.plot_mode_combo.currentText()
-        is_angle = (mode == "Angle vs Torque")
-        
+
+        if is_angle is None:
+            is_angle = self._is_angle_mode()
+
         ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
         title = "Test Item Angle Range setup" if is_angle else "Test Item Time Range setup"
         labels = ("Start (deg)", "End (deg)") if is_angle else ("Start (s)", "End (s)")
-        
+
         dlg = TestItemRangeDialog(self, parts, test_items, ranges, title=title, labels=labels)
-        
+
         if dlg.exec_() == QDialog.Accepted:
             if is_angle:
                 self.test_item_angle_ranges = dlg.ranges or {}
@@ -2638,7 +2646,7 @@ class TorquePlotViewer(QMainWindow):
                         json.dump(self.test_item_time_ranges, f, indent=2)
                 except: pass
                 QMessageBox.information(self, 'Saved', 'Saved Test Item Time Ranges')
-            
+
             # Refresh UI
             try:
                 self.on_part_name_changed()
@@ -2757,55 +2765,19 @@ class TorquePlotViewer(QMainWindow):
             pass
 
     def on_range_mode_changed(self, index=None):
-        """Handle range mode switch between Default and Manual.
-
-        - Show manual time spinboxes when Manual is selected.
-        - Hide them when Default is selected and apply saved part ranges if present.
-        """
-        try:
-            mode = self._range_mode_key()
-        except Exception:
-            mode = 'default'
-
-        # If manual widgets are present, show/hide them
+        """Refresh range filtering; manual time cropping has been removed."""
         try:
             if self.start_time_spin and self.end_time_spin:
-                show_manual = (mode == 'manual')
-                
-                self.start_time_spin.setVisible(show_manual)
-                self.end_time_spin.setVisible(show_manual)
-                
+                self.start_time_spin.hide()
+                self.end_time_spin.hide()
                 if getattr(self, 'start_label_widget', None):
-                    self.start_label_widget.setVisible(show_manual)
+                    self.start_label_widget.hide()
                 if getattr(self, 'end_label_widget', None):
-                    self.end_label_widget.setVisible(show_manual)
+                    self.end_label_widget.hide()
         except Exception:
             pass
 
-        # If switching to Default, and there is a configured range for current part/item, apply it
-        try:
-            if mode == 'default' and getattr(self, 'part_name_combo', None):
-                pname = self.part_name_combo.currentText()
-                item_name = self.test_item_combo.currentText()
-                is_angle = self._is_angle_mode()
-                
-                ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
-                part_ranges = ranges.get(pname, {})
-                pr = part_ranges.get(item_name, {})
-                
-                if pr:
-                    try:
-                        # Only populate the time spin controls when in Time mode.
-                        if not is_angle and getattr(self, 'start_time_spin', None) and getattr(self, 'end_time_spin', None):
-                            self.start_time_spin.setValue(float(pr.get('start', 0.0)))
-                            self.end_time_spin.setValue(float(pr.get('end', 0.0)))
-                    except Exception:
-                        pass
-
-        except Exception:
-            pass
-
-        # Refresh averages/plot to reflect new mode
+        # Refresh averages/plot to reflect current configured range.
         try:
             self.update_average()
         except Exception:
