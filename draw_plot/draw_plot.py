@@ -972,11 +972,12 @@ class TorquePlotViewer(QMainWindow):
         self.end_spin.valueChanged.connect(self.update_average)
         # (end_spin not added to layout)
 
-        # Data range mode: keep Default only; manual time cropping is removed.
+        # Data range axis: choose explicitly whether calculation range uses Time or Angle.
         self.range_label = QLabel(self._tr('plot_range_lbl'))
         bottom_h.addWidget(self.range_label)
         self.range_mode_combo = QComboBox()
-        self.range_mode_combo.addItem(self._tr('plot_range_default'), 'default')
+        self.range_mode_combo.addItem('Time', 'time')
+        self.range_mode_combo.addItem('Angle', 'angle')
         self.range_mode_combo.setMaximumWidth(90)
         self.range_mode_combo.currentIndexChanged.connect(self.on_range_mode_changed)
         bottom_h.addWidget(self.range_mode_combo)
@@ -1820,7 +1821,12 @@ class TorquePlotViewer(QMainWindow):
         return self._combo_data(getattr(self, 'plot_mode_combo', None), 'time') == 'angle'
 
     def _range_mode_key(self) -> str:
-        return self._combo_data(getattr(self, 'range_mode_combo', None), 'default') or 'default'
+        # Explicit calculation range axis: 'time' or 'angle'.
+        key = self._combo_data(getattr(self, 'range_mode_combo', None), 'time') or 'time'
+        return 'angle' if key == 'angle' else 'time'
+
+    def _is_angle_range_mode(self) -> bool:
+        return self._range_mode_key() == 'angle'
 
     def _is_all_files_selected(self) -> bool:
         return self._combo_data(getattr(self, 'file_select_combo', None), '__all__') == '__all__'
@@ -1886,7 +1892,7 @@ class TorquePlotViewer(QMainWindow):
                 ])
             if getattr(self, 'range_mode_combo', None):
                 self._set_combo_text_by_data(self.range_mode_combo, [
-                    (self._tr('plot_range_default'), 'default')
+                    ('Time', 'time'), ('Angle', 'angle')
                 ])
             if getattr(self, 'file_select_combo', None):
                 current = self.file_select_combo.currentData()
@@ -2828,21 +2834,10 @@ class TorquePlotViewer(QMainWindow):
         if len(trqs) == 0:
             return []
 
-        # Determine whether current plot mode is Angle or Time
-        try:
-            mode_text = (self.plot_mode_combo.currentText() or '').strip().lower() if getattr(self, 'plot_mode_combo', None) else ''
-            is_angle_mode = mode_text.startswith('angle')
-        except Exception:
-            is_angle_mode = False
+        # Determine whether calculation range uses Angle or Time.
+        is_angle_mode = self._is_angle_range_mode()
 
-        # Determine range selection mode (Default/Manual)
-        range_mode = 'Default'
-        try:
-            if getattr(self, 'range_mode_combo', None):
-                range_mode = self.range_mode_combo.currentText()
-        except: pass
-
-        # Determine start/end values depending on mode (treat values as Angle when in Angle mode)
+        # Determine start/end values from the configured Time/Angle range.
         st = None
         en = None
 
@@ -2851,38 +2846,23 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pname = None
 
-        if range_mode == 'Manual':
-            # Manual: use the start/end spin controls as numeric bounds.
-            # If in Angle mode, interpret these as angle bounds; otherwise as time bounds.
-            if getattr(self, 'start_time_spin', None) and getattr(self, 'end_time_spin', None):
-                try:
-                    st = float(self.start_time_spin.value())
-                    en = float(self.end_time_spin.value())
-                except Exception:
-                    st = en = None
-        else:
-            # Default: apply configured range for the current Part/Test Item when available.
-            try:
-                item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else None
-                ranges = self.test_item_angle_ranges if is_angle_mode else self.test_item_time_ranges
-                pr = (ranges.get(pname, {}) if pname else {}).get(item_name, {}) if item_name else {}
-                if pr:
-                    st = float(pr.get('start', 0.0))
-                    en = float(pr.get('end', 0.0))
-            except Exception:
-                st = en = None
+        try:
+            item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else None
+            ranges = self.test_item_angle_ranges if is_angle_mode else self.test_item_time_ranges
+            pr = (ranges.get(pname, {}) if pname else {}).get(item_name, {}) if item_name else {}
+            if pr:
+                st = float(pr.get('start', 0.0))
+                en = float(pr.get('end', 0.0))
+        except Exception:
+            st = en = None
 
         if st is not None and en is not None and st > en:
             st, en = en, st
 
-        # If we have valid numeric bounds, select by the appropriate X-axis (angle or time)
+        # If we have valid numeric bounds, select by the chosen range axis.
         if st is not None and en is not None:
             try:
-                # Choose x-axis values: angle array when in Angle mode, otherwise times
-                if is_angle_mode:
-                    x_vals = angles if len(angles) > 0 else times
-                else:
-                    x_vals = times
+                x_vals = angles if is_angle_mode and len(angles) > 0 else times
 
                 # If no x_vals, fall back to index-based selection later
                 if len(x_vals) > 0:

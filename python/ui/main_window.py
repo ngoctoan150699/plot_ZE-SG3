@@ -2995,11 +2995,6 @@ class MainWindow(QMainWindow):
                 speed=100.0
             )
 
-        if not self._prepare_plc_recording(profile, is_breakaway):
-            if self._bus_scheduler:
-                self._bus_scheduler.set_recording_active(False)
-            return
-
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
         self._session.test_item = 'B' if is_breakaway else 'O'
         self._session.part_name = part_short
@@ -3019,6 +3014,16 @@ class MainWindow(QMainWindow):
             self.angle_plot.clear()
         if self._bus_scheduler:
             self._bus_scheduler.set_recording_active(True)
+
+        if not self._prepare_plc_recording(profile, is_breakaway):
+            self._recording = False
+            if self._bus_scheduler:
+                self._bus_scheduler.set_recording_active(False)
+            self.btn_rec_start.setEnabled(True)
+            self.btn_rec_stop.setEnabled(False)
+            self.btn_rec_clear.setEnabled(True)
+            return
+
         safety_msg = "tắt" if self._safety_torque_limit_Nm <= 0 else f"{self._safety_torque_limit_Nm:.1f} Nm"
         self._log(f"▶️ Bắt đầu ghi dữ liệu (giới hạn an toàn: {safety_msg})")
 
