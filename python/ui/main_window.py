@@ -2243,17 +2243,19 @@ class MainWindow(QMainWindow):
         motor_rpm = float(profile.speed)
         output_deg_s = motor_rpm * 0.3  # gearbox 1/20: output deg/s = motor rpm * 360 / 60 / 20
 
+        # PLC không cần phân biệt Breakaway/Operating. PC chỉ gửi biên góc âm/dương,
+        # tốc độ và số cycle; cách tính Breakaway/Operating vẫn do phần mềm xử lý sau.
         config = PlcTestConfig(
-            mode=1 if is_breakaway else 2,
+            mode=2,
             pos_angle_x100=angle_to_x100(profile.positive_angle),
             # D103 gửi xuống PLC là độ lớn góc nghịch dương; PLC tự đổi dấu khi chạy chiều nghịch.
             neg_angle_x100=angle_to_x100(abs(profile.negative_angle)),
             speed_x100=speed_to_x100(output_deg_s),
-            cycle_set=1 if is_breakaway else getattr(profile, 'cycles', 3),
+            cycle_set=max(1, int(getattr(profile, 'cycles', 1) or 1)),
             # Ghi thô lấy toàn bộ hành trình; vùng 80% giữa hành trình để Plot Draw/tính toán xử lý sau.
             window_percent=100,
             part_select=part_select,
-            torque_type=1 if is_breakaway else 2,
+            torque_type=0,
         )
         if not self._plc_svc.write_test_config(config):
             self._log("❌ Không ghi được PLC config D101..D108")
