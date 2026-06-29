@@ -2907,12 +2907,10 @@ class TorquePlotViewer(QMainWindow):
                             continue
 
                     if idxs:
-                        si = idxs[0]
-                        ei = idxs[-1] + 1
-                        # clamp
-                        si = max(0, min(si, len(trqs)-1))
-                        ei = max(si+1, min(ei, len(trqs)))
-                        sub_trqs = trqs[si:ei]
+                        # Lấy đúng các điểm thỏa điều kiện range, giống AVERAGEIFS trong Excel.
+                        # Không cắt nguyên đoạn idx đầu -> idx cuối vì dữ liệu angle theo chu kỳ
+                        # có thể đi qua vùng ngoài range giữa hai nhánh dương/âm.
+                        sub_trqs = trqs[idxs]
                         # Apply K factor
                         try:
                             k = self.k_factor
