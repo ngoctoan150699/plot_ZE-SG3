@@ -115,6 +115,35 @@ from PyQt5.QtWidgets import (
 
 from convert_may_gui import ConvertWidget
 
+
+class WheelSafeComboBox(QComboBox):
+    """Combobox không đổi lựa chọn bằng con lăn khi popup đã đóng."""
+
+    def wheelEvent(self, event):
+        if self.view().isVisible():
+            super().wheelEvent(event)
+            return
+        event.accept()
+
+
+class WheelSafeSpinBox(QSpinBox):
+    """Spinbox không tăng/giảm bằng con lăn chuột."""
+
+    def wheelEvent(self, event):
+        event.accept()
+
+
+class WheelSafeDoubleSpinBox(QDoubleSpinBox):
+    """Double spinbox không tăng/giảm bằng con lăn chuột."""
+
+    def wheelEvent(self, event):
+        event.accept()
+
+
+QComboBox = WheelSafeComboBox
+QSpinBox = WheelSafeSpinBox
+QDoubleSpinBox = WheelSafeDoubleSpinBox
+
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 import pathlib
 
@@ -986,7 +1015,6 @@ class TorquePlotViewer(QMainWindow):
         self.start_time_spin = None
         self.end_time_spin = None
         try:
-            from PyQt5.QtWidgets import QDoubleSpinBox
             self.start_time_spin = QDoubleSpinBox()
             self.start_time_spin.setDecimals(6)
             # Allow convenient fractional seconds entry (microsecond precision)

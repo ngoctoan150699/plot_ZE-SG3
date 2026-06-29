@@ -18,6 +18,35 @@ from PyQt5.QtWidgets import (QMainWindow, QApplication, QWidget, QLabel, QPushBu
                              QCheckBox, QScrollArea, QFrame, QGridLayout)
 from PyQt5.QtCore import Qt, pyqtSignal
 
+
+class WheelSafeComboBox(QComboBox):
+    """Combobox không đổi lựa chọn bằng con lăn khi popup đã đóng."""
+
+    def wheelEvent(self, event):
+        if self.view().isVisible():
+            super().wheelEvent(event)
+            return
+        event.accept()
+
+
+class WheelSafeSpinBox(QSpinBox):
+    """Spinbox không tăng/giảm bằng con lăn chuột."""
+
+    def wheelEvent(self, event):
+        event.accept()
+
+
+class WheelSafeDoubleSpinBox(QDoubleSpinBox):
+    """Double spinbox không tăng/giảm bằng con lăn chuột."""
+
+    def wheelEvent(self, event):
+        event.accept()
+
+
+QComboBox = WheelSafeComboBox
+QSpinBox = WheelSafeSpinBox
+QDoubleSpinBox = WheelSafeDoubleSpinBox
+
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 

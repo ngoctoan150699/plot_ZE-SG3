@@ -66,6 +66,36 @@ _HAS_PLOT_VIEWER = True
 
 logger = logging.getLogger(__name__)
 
+
+class WheelSafeComboBox(QComboBox):
+    """QComboBox không đổi giá trị khi người dùng cuộn trang."""
+
+    def wheelEvent(self, event):
+        if self.view().isVisible():
+            super().wheelEvent(event)
+            return
+        event.accept()
+
+
+class WheelSafeSpinBox(QSpinBox):
+    """QSpinBox không tăng/giảm bằng con lăn chuột."""
+
+    def wheelEvent(self, event):
+        event.accept()
+
+
+class WheelSafeDoubleSpinBox(QDoubleSpinBox):
+    """QDoubleSpinBox không tăng/giảm bằng con lăn chuột."""
+
+    def wheelEvent(self, event):
+        event.accept()
+
+
+# Áp dụng mặc định cho toàn bộ ô tuỳ chọn / ô số được tạo trong module này.
+QComboBox = WheelSafeComboBox
+QSpinBox = WheelSafeSpinBox
+QDoubleSpinBox = WheelSafeDoubleSpinBox
+
 # ===================== THEMES =====================
 DARK_STYLE = """
 QMainWindow, QWidget {
