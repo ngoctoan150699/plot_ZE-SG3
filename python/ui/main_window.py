@@ -2470,14 +2470,12 @@ class MainWindow(QMainWindow):
                 self._restore_combo_text(self.combo_test_item, ui['test_item'])
             if 'plc_jog_speed' in ui and hasattr(self, 'spin_plc_jog_speed'):
                 self.spin_plc_jog_speed.setValue(float(ui['plc_jog_speed']))
-            if 'left_tab_index' in ui and hasattr(self, 'tabs'):
-                idx = int(ui['left_tab_index'])
-                if 0 <= idx < self.tabs.count():
-                    self.tabs.setCurrentIndex(idx)
-            if 'main_tab_index' in ui and hasattr(self, 'main_tabs'):
-                idx = int(ui['main_tab_index'])
-                if 0 <= idx < self.main_tabs.count():
-                    self.main_tabs.setCurrentIndex(idx)
+            # Khi tắt/bật lại app, luôn mở Thu thập > Kết nối để người dùng
+            # kiểm tra/kết nối thiết bị trước. Không khôi phục tab cuối cùng.
+            if hasattr(self, 'tabs') and self.tabs.count() > 0:
+                self.tabs.setCurrentIndex(0)
+            if hasattr(self, 'main_tabs') and self.main_tabs.count() > 0:
+                self.main_tabs.setCurrentIndex(0)
         finally:
             self._restoring_ui_state = False
         
