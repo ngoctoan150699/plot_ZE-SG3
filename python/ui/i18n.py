@@ -37,6 +37,13 @@ TRANSLATIONS = {
         'status_unstable': '🟡 Chưa ổn định',
         'btn_scan_tooltip': 'Làm mới danh sách cổng COM',
         'msg_chart_cleared': '🗑️ Đã xóa biểu đồ',
+        'terminal_log_grp': '📝 Terminal Log',
+        'btn_clear_log': '🧹 Clear',
+        'btn_copy_log': '📋 Copy all',
+        'btn_save_log': '💾 Save log',
+        'msg_log_copied': '📋 Đã copy toàn bộ log',
+        'msg_log_saved': '💾 Đã lưu log',
+        'save_log_dialog_title': 'Lưu Terminal Log',
         
         # Config Tab
         'sensor_grp': '📊 Cảm biến & Hiệu chuẩn',
@@ -170,6 +177,13 @@ TRANSLATIONS = {
         'status_unstable': '🟡 Unstable',
         'btn_scan_tooltip': 'Refresh COM ports',
         'msg_chart_cleared': '🗑️ Chart cleared',
+        'terminal_log_grp': '📝 Terminal Log',
+        'btn_clear_log': '🧹 Clear',
+        'btn_copy_log': '📋 Copy all',
+        'btn_save_log': '💾 Save log',
+        'msg_log_copied': '📋 Copied all logs',
+        'msg_log_saved': '💾 Log saved',
+        'save_log_dialog_title': 'Save Terminal Log',
         
         # Config Tab
         'sensor_grp': '📊 Sensor & Calibration',

@@ -2000,7 +2000,10 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout()
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True)
         self.log_box.setMaximumHeight(140)
+        self.log_box.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.log_box.customContextMenuRequested.connect(self._show_log_context_menu)
         lay.addWidget(self.log_box)
+
         self.grp_log.setLayout(lay)
         return self.grp_log
 
@@ -3442,6 +3445,41 @@ class MainWindow(QMainWindow):
         self.log_box.append(f"[{ts}] {msg}")
         logger.info(msg)
 
+    def _show_log_context_menu(self, pos):
+        menu = self.log_box.createStandardContextMenu(pos)
+        menu.addSeparator()
+        copy_all_action = menu.addAction(self.i18n.t('btn_copy_log'))
+        save_action = menu.addAction(self.i18n.t('btn_save_log'))
+        clear_action = menu.addAction(self.i18n.t('btn_clear_log'))
+        copy_all_action.triggered.connect(self._copy_log_all)
+        save_action.triggered.connect(self._save_log_to_file)
+        clear_action.triggered.connect(self._clear_log)
+        menu.exec_(self.log_box.mapToGlobal(pos))
+
+    def _clear_log(self):
+        self.log_box.clear()
+
+    def _copy_log_all(self):
+        QApplication.clipboard().setText(self.log_box.toPlainText())
+        self._log(self.i18n.t('msg_log_copied') if hasattr(self, 'i18n') else "📋 Đã copy log")
+
+    def _save_log_to_file(self):
+        default_name = f"ze_sg3_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.i18n.t('save_log_dialog_title') if hasattr(self, 'i18n') else "Save Log",
+            default_name,
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(self.log_box.toPlainText())
+            self._log((self.i18n.t('msg_log_saved') if hasattr(self, 'i18n') else "💾 Đã lưu log") + f": {path}")
+        except Exception as exc:
+            QMessageBox.warning(self, self.i18n.t('msg_err'), f"Không thể lưu log:\n{exc}")
+
     def closeEvent(self, a0):
         """Tự động lưu cài đặt và ngắt kết nối khi đóng app."""
         self._save_settings_from_ui()
@@ -3701,7 +3739,7 @@ class MainWindow(QMainWindow):
 
         # 7. Log Group
         if hasattr(self, 'grp_log'):
-            self.grp_log.setTitle(self.i18n.t('display_grp') if self.i18n.current_language == 'en' else "📝 Terminal Log")
+            self.grp_log.setTitle(self.i18n.t('terminal_log_grp'))
 
     # === Servo callbacks ===
 
