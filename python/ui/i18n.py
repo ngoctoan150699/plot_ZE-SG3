@@ -108,6 +108,11 @@ TRANSLATIONS = {
         'axis_time': 'Thời gian (s)',
         'axis_angle': 'Góc (độ)',
         'axis_torque': 'Mô-men (Nm)',
+        'chart_display_mode_lbl': 'Hiển thị biểu đồ:',
+        'chart_display_both': 'Cả 2 biểu đồ',
+        'chart_display_time': 'Chỉ Mô-men – Thời gian',
+        'chart_display_angle': 'Chỉ Mô-men – Góc',
+        'btn_save_chart_display': '💾 Lưu hiển thị',
         
         # Calibration Setup
         'calibration_title': 'Calibration',
@@ -236,6 +241,11 @@ TRANSLATIONS = {
         'axis_time': 'Time (s)',
         'axis_angle': 'Angle (deg)',
         'axis_torque': 'Torque (Nm)',
+        'chart_display_mode_lbl': 'Chart display:',
+        'chart_display_both': 'Both charts',
+        'chart_display_time': 'Torque – Time only',
+        'chart_display_angle': 'Torque – Angle only',
+        'btn_save_chart_display': '💾 Save display',
         
         # Calibration Setup
         'calibration_title': 'Calibration',

@@ -1726,13 +1726,28 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(4)
 
+        # Chart display mode selector. Chỉ áp dụng/lưu khi nhấn Save.
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        self.lbl_chart_display_mode = QLabel(self.i18n.t('chart_display_mode_lbl'))
+        self.combo_chart_display_mode = QComboBox()
+        self.combo_chart_display_mode.addItem(self.i18n.t('chart_display_both'), 'both')
+        self.combo_chart_display_mode.addItem(self.i18n.t('chart_display_time'), 'time')
+        self.combo_chart_display_mode.addItem(self.i18n.t('chart_display_angle'), 'angle')
+        self.btn_save_chart_display = QPushButton(self.i18n.t('btn_save_chart_display'))
+        self.btn_save_chart_display.clicked.connect(self._save_chart_display_mode)
+        mode_row.addWidget(self.lbl_chart_display_mode)
+        mode_row.addWidget(self.combo_chart_display_mode, stretch=1)
+        mode_row.addWidget(self.btn_save_chart_display)
+        lay.addLayout(mode_row)
+
         # Splitter to display Time and Angle charts side-by-side
         self.chart_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.chart_splitter.setHandleWidth(8)
 
         # 1. Torque-Time Chart Container
-        time_container = QWidget()
-        time_lay = QVBoxLayout(time_container)
+        self.time_chart_container = QWidget()
+        time_lay = QVBoxLayout(self.time_chart_container)
         time_lay.setContentsMargins(0, 0, 0, 0)
         time_lay.setSpacing(2)
 
@@ -1745,11 +1760,11 @@ class MainWindow(QMainWindow):
         self.toolbar.setMaximumHeight(32)
         time_lay.addWidget(self.toolbar)
         time_lay.addWidget(self.plot)
-        self.chart_splitter.addWidget(time_container)
+        self.chart_splitter.addWidget(self.time_chart_container)
 
         # 2. Torque-Angle Chart Container
-        angle_container = QWidget()
-        angle_lay = QVBoxLayout(angle_container)
+        self.angle_chart_container = QWidget()
+        angle_lay = QVBoxLayout(self.angle_chart_container)
         angle_lay.setContentsMargins(0, 0, 0, 0)
         angle_lay.setSpacing(2)
 
@@ -1761,7 +1776,7 @@ class MainWindow(QMainWindow):
         self.angle_toolbar.setMaximumHeight(32)
         angle_lay.addWidget(self.angle_toolbar)
         angle_lay.addWidget(self.angle_plot)
-        self.chart_splitter.addWidget(angle_container)
+        self.chart_splitter.addWidget(self.angle_chart_container)
 
         # Set equal initial sizes
         self.chart_splitter.setSizes([500, 500])
@@ -1781,6 +1796,78 @@ class MainWindow(QMainWindow):
         lay.addLayout(btn_row)
         self.chart_group.setLayout(lay)
         return self.chart_group
+
+    def _get_chart_display_mode(self) -> str:
+        if hasattr(self, 'combo_chart_display_mode'):
+            mode = self.combo_chart_display_mode.currentData()
+            if mode in ('both', 'time', 'angle'):
+                return mode
+        return 'both'
+
+    def _set_chart_canvas_compact(self, canvas, compact: bool) -> None:
+        """Giảm khoảng trống trong FigureCanvas khi chỉ hiển thị 1 biểu đồ."""
+        try:
+            if compact:
+                # Fill sát vùng chart hơn: giảm lề trái/phải/dưới/trên của matplotlib axes.
+                canvas.fig.subplots_adjust(left=0.055, right=0.995, bottom=0.085, top=0.93)
+            else:
+                canvas.fig.tight_layout(pad=1.5)
+            if hasattr(canvas, '_bg'):
+                canvas._bg = None
+            canvas.draw_idle()
+        except Exception:
+            pass
+
+    def _apply_chart_display_mode(self, mode: Optional[str] = None) -> None:
+        mode = mode if mode in ('both', 'time', 'angle') else self._get_chart_display_mode()
+        show_time = mode in ('both', 'time')
+        show_angle = mode in ('both', 'angle')
+        compact = mode != 'both'
+        if hasattr(self, 'time_chart_container'):
+            self.time_chart_container.setVisible(show_time)
+            self.time_chart_container.setMinimumWidth(0)
+            self.time_chart_container.setMaximumWidth(16777215 if show_time else 0)
+        if hasattr(self, 'angle_chart_container'):
+            self.angle_chart_container.setVisible(show_angle)
+            self.angle_chart_container.setMinimumWidth(0)
+            self.angle_chart_container.setMaximumWidth(16777215 if show_angle else 0)
+        if hasattr(self, 'chart_splitter'):
+            self.chart_splitter.setCollapsible(0, True)
+            self.chart_splitter.setCollapsible(1, True)
+            if mode == 'both':
+                self.chart_splitter.setStretchFactor(0, 1)
+                self.chart_splitter.setStretchFactor(1, 1)
+                self.chart_splitter.setSizes([500, 500])
+            elif mode == 'time':
+                self.chart_splitter.setStretchFactor(0, 1)
+                self.chart_splitter.setStretchFactor(1, 0)
+                self.chart_splitter.setSizes([1000, 0])
+            else:
+                self.chart_splitter.setStretchFactor(0, 0)
+                self.chart_splitter.setStretchFactor(1, 1)
+                self.chart_splitter.setSizes([0, 1000])
+        if hasattr(self, 'plot'):
+            self._set_chart_canvas_compact(self.plot, compact and show_time)
+        if hasattr(self, 'angle_plot'):
+            self._set_chart_canvas_compact(self.angle_plot, compact and show_angle)
+        self._update_chart_group_title()
+
+    def _save_chart_display_mode(self) -> None:
+        mode = self._get_chart_display_mode()
+        self._apply_chart_display_mode(mode)
+        self._save_ui_state({'chart_display_mode': mode})
+        self._log(f"✅ Đã lưu chế độ hiển thị biểu đồ: {self.combo_chart_display_mode.currentText()}")
+
+    def _update_chart_group_title(self) -> None:
+        if not hasattr(self, 'chart_group'):
+            return
+        mode = self._get_chart_display_mode()
+        if mode == 'time':
+            self.chart_group.setTitle(self.i18n.t('chart_torque_time'))
+        elif mode == 'angle':
+            self.chart_group.setTitle(self.i18n.t('chart_torque_angle'))
+        else:
+            self.chart_group.setTitle(self.i18n.t('chart_torque_time') + " & " + self.i18n.t('chart_torque_angle'))
 
     def _toggle_pause_chart(self, checked: bool):
         self._chart_paused = checked
@@ -2328,6 +2415,8 @@ class MainWindow(QMainWindow):
             ui['test_item'] = self.combo_test_item.currentText()
         if hasattr(self, 'spin_plc_jog_speed'):
             ui['plc_jog_speed'] = self.spin_plc_jog_speed.value()
+        if hasattr(self, 'combo_chart_display_mode'):
+            ui['chart_display_mode'] = self._get_chart_display_mode()
         if hasattr(self, '_plot_viewer'):
             ui['plot_viewer'] = self._collect_plot_viewer_state()
         if extra:
@@ -2470,6 +2559,11 @@ class MainWindow(QMainWindow):
                 self._restore_combo_text(self.combo_test_item, ui['test_item'])
             if 'plc_jog_speed' in ui and hasattr(self, 'spin_plc_jog_speed'):
                 self.spin_plc_jog_speed.setValue(float(ui['plc_jog_speed']))
+            if hasattr(self, 'combo_chart_display_mode'):
+                mode = ui.get('chart_display_mode', 'both')
+                idx = self.combo_chart_display_mode.findData(mode)
+                self.combo_chart_display_mode.setCurrentIndex(idx if idx >= 0 else 0)
+                self._apply_chart_display_mode(mode)
             # Khi tắt/bật lại app, luôn mở Thu thập > Kết nối để người dùng
             # kiểm tra/kết nối thiết bị trước. Không khôi phục tab cuối cùng.
             if hasattr(self, 'tabs') and self.tabs.count() > 0:
@@ -3548,7 +3642,21 @@ class MainWindow(QMainWindow):
 
         # 6. Chart Group
         if hasattr(self, 'chart_group'):
-            self.chart_group.setTitle(self.i18n.t('chart_torque_time') + " & " + self.i18n.t('chart_torque_angle'))
+            self._update_chart_group_title()
+        if hasattr(self, 'lbl_chart_display_mode'):
+            self.lbl_chart_display_mode.setText(self.i18n.t('chart_display_mode_lbl'))
+        if hasattr(self, 'combo_chart_display_mode'):
+            current_data = self.combo_chart_display_mode.currentData()
+            self.combo_chart_display_mode.blockSignals(True)
+            for idx in range(self.combo_chart_display_mode.count()):
+                data = self.combo_chart_display_mode.itemData(idx)
+                self.combo_chart_display_mode.setItemText(idx, self.i18n.t(f'chart_display_{data}'))
+            idx = self.combo_chart_display_mode.findData(current_data)
+            if idx >= 0:
+                self.combo_chart_display_mode.setCurrentIndex(idx)
+            self.combo_chart_display_mode.blockSignals(False)
+        if hasattr(self, 'btn_save_chart_display'):
+            self.btn_save_chart_display.setText(self.i18n.t('btn_save_chart_display'))
         if hasattr(self, 'btn_pause_chart'):
             self.btn_pause_chart.setText(
                 self.i18n.t('btn_resume_chart') if self._chart_paused else self.i18n.t('btn_pause_chart')
