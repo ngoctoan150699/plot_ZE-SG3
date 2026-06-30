@@ -18,7 +18,7 @@ class CsvCtrExporter(IDataExporter):
 
     @property
     def display_name(self) -> str:
-        return "CTR Format #1 (Save/State/Cycle/Time/Cmd/Angle/Torque)"
+        return "CTR Format #1"
 
     @property
     def file_extension(self) -> str:
