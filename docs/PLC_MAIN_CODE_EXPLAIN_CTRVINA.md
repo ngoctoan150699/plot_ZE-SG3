@@ -4,7 +4,7 @@ Khách hàng: CÔNG TY CTR VINA
 
 Phiên bản tài liệu: 1.0
 
-Ngày biên soạn: 30/06/2026
+Ngày biên soạn: 01/07/2026
 
 Tài liệu này đọc lại từ file MAIN.csv mới nhất. Format giữ theo dạng giải thích cụm: sơ đồ ladder/text, ý nghĩa thanh ghi và tác dụng cụm.
 
@@ -593,10 +593,10 @@ Dòng/Step 257 - 264: Dừng chu trình đo và đưa hệ thống về trạng 
 
 ---
 
-## PHẦN 10: 07.1 Brake immediate control for measurement
+## PHẦN 10: 07.1 ?i?u khi?n phanh t?c th?i khi ?o
 
 ```text
-Dòng/Step 269 - 275: Nhả phanh servo ngay khi đo và khóa lại khi không đo.
+Dòng/Step 269 - 275: Cụm logic xử lý vận hành PLC trong MAIN.csv.
 ```
 
 ### Sơ đồ Ladder:
