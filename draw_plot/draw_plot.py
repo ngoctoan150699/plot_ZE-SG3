@@ -900,6 +900,25 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
 
+        self.graph_aspect_ratios = {
+            'breakaway': 0.75,
+            'operating': 0.75,
+            'oscillating': 0.75,
+        }
+        self.graph_aspect_ratio = 0.75
+        try:
+            cfg = get_config_file('ui_settings.json')
+            if cfg.exists():
+                with open(cfg, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                old_ratio = float(data.get('graph_aspect_ratio', 0.75))
+                saved = data.get('graph_aspect_ratios', {})
+                if isinstance(saved, dict):
+                    for key in self.graph_aspect_ratios:
+                        self.graph_aspect_ratios[key] = float(saved.get(key, old_ratio))
+        except Exception:
+            pass
+
         self.init_ui()
         # Ensure correct UI labels for default plot mode
         try:
@@ -1402,12 +1421,18 @@ class TorquePlotViewer(QMainWindow):
         ratio_qty_h.setContentsMargins(0, 0, 0, 0)
         
         self.aspect_ratio_spin = CommaDoubleSpinBox()
-        self.aspect_ratio_spin.setRange(0.1, 2.0)
+        self.aspect_ratio_spin.setRange(0.1, 10.0)
         self.aspect_ratio_spin.setDecimals(2)
         self.aspect_ratio_spin.setSingleStep(0.05)
-        self.aspect_ratio_spin.setValue(0.75)
+        self.aspect_ratio_spin.setValue(self._aspect_ratio_for_current_item())
         self.aspect_ratio_spin.setToolTip("Height to Width ratio for exported graph (0.75 = 3/4)")
         self.aspect_ratio_spin.setMaximumWidth(90)
+        self.aspect_ratio_spin.valueChanged.connect(lambda _v: (self._save_aspect_ratio(), self.update_plot()))
+        try:
+            self.aspect_ratio_spin.lineEdit().textChanged.connect(lambda _t: self.update_plot())
+            self.aspect_ratio_spin.editingFinished.connect(self._save_aspect_ratio)
+        except Exception:
+            pass
         ratio_qty_h.addWidget(self.aspect_ratio_spin)
         
         self.qty_label = QLabel(self._tr('plot_qty'))
@@ -2763,6 +2788,10 @@ class TorquePlotViewer(QMainWindow):
     def on_test_item_changed(self, index=None):
         """Load spec min/max when Test Item changes (dependent on Part Name)."""
         try:
+            self._load_aspect_ratio_for_current_item()
+        except Exception:
+            pass
+        try:
             item_name = self.test_item_combo.currentText()
             part_name = self.part_name_combo.currentText()
             
@@ -3478,6 +3507,10 @@ class TorquePlotViewer(QMainWindow):
         else:
              self.ax.set_xlabel(self._tr('plot_axis_time'), fontsize=10)
              self.ax.set_title(self._tr('plot_title_time'), fontsize=12, fontweight='bold')
+        try:
+             self.ax.set_box_aspect(self._current_aspect_ratio(0.75))
+        except Exception:
+             pass
              
         self.ax.set_ylabel(self._tr('plot_axis_torque'), fontsize=12)
         self.ax.grid(True, alpha=0.3)
@@ -3499,6 +3532,72 @@ class TorquePlotViewer(QMainWindow):
                 self.canvas.draw()
             except Exception:
                 pass
+
+    def _current_aspect_ratio(self, default=0.75) -> float:
+        try:
+            spin = getattr(self, 'aspect_ratio_spin', None)
+            if spin is None:
+                return default
+            text = spin.lineEdit().text().strip().replace(',', '.')
+            if text:
+                value = float(text)
+            else:
+                value = float(spin.value())
+            return max(float(spin.minimum()), min(float(spin.maximum()), value))
+        except Exception:
+            return default
+
+    def _aspect_ratio_key(self) -> str:
+        try:
+            text = self.test_item_combo.currentText().strip().lower() if getattr(self, 'test_item_combo', None) else ''
+            if 'operating' in text:
+                return 'operating'
+            if 'oscillating' in text:
+                return 'oscillating'
+        except Exception:
+            pass
+        return 'breakaway'
+
+    def _aspect_ratio_for_current_item(self) -> float:
+        try:
+            return float(self.graph_aspect_ratios.get(self._aspect_ratio_key(), 0.75))
+        except Exception:
+            return 0.75
+
+    def _load_aspect_ratio_for_current_item(self):
+        try:
+            spin = getattr(self, 'aspect_ratio_spin', None)
+            if spin is None:
+                return
+            spin.blockSignals(True)
+            spin.setValue(self._aspect_ratio_for_current_item())
+            spin.blockSignals(False)
+            self.update_plot()
+        except Exception:
+            try:
+                spin.blockSignals(False)
+            except Exception:
+                pass
+
+    def _save_aspect_ratio(self):
+        try:
+            self.graph_aspect_ratio = self._current_aspect_ratio(0.75)
+            key = self._aspect_ratio_key()
+            self.graph_aspect_ratios[key] = self.graph_aspect_ratio
+            cfg = get_config_file('ui_settings.json')
+            data = {}
+            if cfg.exists():
+                try:
+                    with open(cfg, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+            data['graph_aspect_ratio'] = self.graph_aspect_ratio
+            data['graph_aspect_ratios'] = self.graph_aspect_ratios
+            with open(cfg, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
     
     def _is_breakaway_test_item(self) -> bool:
         try:
@@ -3792,17 +3891,12 @@ class TorquePlotViewer(QMainWindow):
 
         # Render a fixed-size figure to a temporary PNG so export is independent of UI/window size.
         tmp_png = None
-        # Target image size in pixels (consistent for all exports)
-        # Dynamic ratio based on user input
-        ratio = 0.5
-        try:
-            ratio = self.aspect_ratio_spin.value()
-        except: pass
+        # Report image keeps a fixed vertical size; H/W only narrows the width.
+        ratio = self._current_aspect_ratio(0.75)
+        TARGET_H_PX = 650
+        TARGET_W_PX = max(320, min(1200, int(TARGET_H_PX / ratio)))
         
-        TARGET_W_PX = 1200
-        TARGET_H_PX = int(TARGET_W_PX * ratio)
-        
-        # Recalculate layout rows based on target height
+        # Recalculate layout rows from fixed target height so the report does not grow downward.
         # Assuming row height ~ 18 points = 24 pixels
         approx_row_h_px = 24
         graph_rows_needed = int(TARGET_H_PX / approx_row_h_px) + 2 # +2 for padding
@@ -3832,6 +3926,10 @@ class TorquePlotViewer(QMainWindow):
         else:
             ax2.set_xlabel('Time (s)', fontsize=10)
             ax2.set_title('Time vs Torque', fontsize=12, fontweight='bold')
+        try:
+            ax2.set_box_aspect(ratio)
+        except Exception:
+            pass
 
         ax2.set_ylabel('Torque (N·m)', fontsize=10)
         ax2.grid(True, alpha=0.3)
@@ -4388,8 +4486,10 @@ class TorquePlotViewer(QMainWindow):
                 except Exception:
                     last_col_px = 0
 
-                target_w = max(1, int(total_w_px - pad_w + IMAGE_EXPAND_PX_W + last_col_px))
-                target_h = max(1, int(total_h_px - pad_h + IMAGE_EXPAND_PX_H))
+                frame_w = max(1, int(total_w_px - pad_w + IMAGE_EXPAND_PX_W + last_col_px))
+                frame_h = max(1, int(total_h_px - pad_h + IMAGE_EXPAND_PX_H))
+                target_h = min(frame_h, TARGET_H_PX)
+                target_w = min(frame_w, max(1, int(target_h / ratio)))
 
                 # Render at higher resolution and downsample to make the image sharper
                 try:
@@ -4430,89 +4530,32 @@ class TorquePlotViewer(QMainWindow):
                         img.height = target_h
                     except Exception:
                         pass
-                    # Anchor image at the left column of the GRAPH merge and one row
-                    # below GRAPH_TOP so it sits inside the merged frame correctly.
+                    # Center image horizontally inside the GRAPH frame.
                     try:
-                        # Compute a half-column offset (in pixels) so the image is nudged
-                        # slightly right (about half of the left column width).
-                        try:
-                            col_dim0 = ws.column_dimensions.get(left_col_letters)
-                            col_w0 = col_dim0.width if col_dim0 and col_dim0.width is not None else 8.43
-                            col_px0 = int(col_w0 * 7 + 5)
-                        except Exception:
-                            col_px0 = 8
-
+                        from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
+                        from openpyxl.drawing.xdr import XDRPositiveSize2D
                         EMU_PER_PIXEL = IMAGE_EMU_PER_PIXEL
-                        try:
-                            # Support integer column shifts plus a fractional remainder.
-                            # e.g. IMAGE_HALF_COL_OFFSET_FRAC = 1.5 -> shift 1 whole
-                            # column and then 0.5 of the next column.
-                            frac = float(IMAGE_HALF_COL_OFFSET_FRAC)
-                            whole_cols = int(frac)
-                            remainder = max(0.0, frac - whole_cols)
-
-                            # Determine anchor column after whole-column shift
-                            anchor_col_index = min(end_col, start_col + whole_cols)
-
-                            if remainder > 0:
-                                # Compute fractional pixel offset based on the left-most column width
-                                frac_px = int(col_px0 * remainder)
-                                # Some environments ignore positive colOff. A more
-                                # compatible approach is to anchor at the next
-                                # column and apply a negative colOff so the image
-                                # shifts left into the previous column by
-                                # (col_px0 - frac_px) pixels (i.e. the requested
-                                # fractional gap).
-                                try:
-                                    # anchor one column to the right and move left
-                                    anchor_for_neg = min(end_col, anchor_col_index + 1)
-                                    img.anchor._from.col = anchor_for_neg - 1
-                                    img.anchor._from.row = top_row - 1
-                                    neg_px = int(col_px0 - frac_px)
-                                    img.anchor._from.colOff = -int(neg_px * EMU_PER_PIXEL)
-                                    img.anchor._from.rowOff = 0
-                                    ws.add_image(img)
-                                except Exception:
-                                    # Fallback to positive colOff at anchor_col_index
-                                    try:
-                                        img.anchor._from.col = anchor_col_index - 1
-                                        img.anchor._from.row = top_row - 1
-                                        img.anchor._from.colOff = int(frac_px * EMU_PER_PIXEL)
-                                        img.anchor._from.rowOff = 0
-                                        ws.add_image(img)
-                                    except Exception:
-                                        try:
-                                            anchor_cell = f"{get_column_letter(anchor_col_index)}{top_row}"
-                                        except Exception:
-                                            anchor_cell = IMAGE_ANCHOR
-                                        ws.add_image(img, anchor_cell)
-                            else:
-                                # No fractional remainder, anchor at the whole-column position
-                                try:
-                                    anchor_cell = f"{get_column_letter(anchor_col_index)}{top_row}"
-                                except Exception:
-                                    anchor_cell = IMAGE_ANCHOR
-                                ws.add_image(img, anchor_cell)
-                        except Exception:
-                            # Final fallback: place at GRAPH_TOP+1 with no offset
-                            try:
-                                anchor_col_index = min(end_col, start_col)
-                                anchor_col_letter = get_column_letter(anchor_col_index) if get_column_letter else left_col_letters
-                                anchor_cell = f"{anchor_col_letter}{GRAPH_TOP + 1}"
-                            except Exception:
-                                anchor_cell = IMAGE_ANCHOR
-                            try:
-                                ws.add_image(img, anchor_cell)
-                            except Exception:
-                                try:
-                                    ws.add_image(img)
-                                except Exception:
-                                    pass
+                        center_off_px = max(0, int((frame_w - target_w) / 2))
+                        marker = AnchorMarker(
+                            col=start_col - 1,
+                            row=top_row - 1,
+                            colOff=int(center_off_px * EMU_PER_PIXEL),
+                            rowOff=0,
+                        )
+                        img.anchor = OneCellAnchor(
+                            _from=marker,
+                            ext=XDRPositiveSize2D(
+                                cx=int(target_w * EMU_PER_PIXEL),
+                                cy=int(target_h * EMU_PER_PIXEL),
+                            ),
+                        )
+                        ws.add_image(img)
                     except Exception:
                         try:
-                            ws.add_image(img, IMAGE_ANCHOR)
+                            anchor_cell = f"{get_column_letter(start_col)}{top_row}"
                         except Exception:
-                            pass
+                            anchor_cell = IMAGE_ANCHOR
+                        ws.add_image(img, anchor_cell)
                 except Exception:
                     pass
             except Exception:

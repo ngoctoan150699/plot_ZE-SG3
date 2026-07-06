@@ -1104,6 +1104,8 @@ class MainWindow(QMainWindow):
                 self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
                 self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
             self._restore_plot_viewer_state()
+            if hasattr(self, 'combo_test_item') and hasattr(self._plot_viewer, 'test_item_combo'):
+                self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
             self._connect_plot_viewer_state_signals()
             if hasattr(self._plot_viewer, 'apply_theme'):
                 self._plot_viewer.apply_theme(self._is_dark)
@@ -2475,7 +2477,7 @@ class MainWindow(QMainWindow):
         try:
             for name, value in state.items():
                 widget = getattr(viewer, name, None)
-                if widget is None:
+                if widget is None or name == 'test_item_combo':
                     continue
                 if hasattr(widget, 'setCurrentText'):
                     self._restore_combo_text(widget, value)
@@ -3377,7 +3379,7 @@ class MainWindow(QMainWindow):
 
         # Đồng bộ hóa Test Item & Part Name trực tiếp từ UI Thu thập sang Plot Viewer
         if hasattr(self, 'combo_test_item'):
-            self._plot_viewer.test_item_combo.setCurrentText(self.combo_test_item.currentText())
+            self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
         
         if hasattr(self, 'combo_part_name'):
             self._plot_viewer.part_name_combo.setCurrentText(self.combo_part_name.currentText())
@@ -3412,6 +3414,10 @@ class MainWindow(QMainWindow):
         self._plot_viewer.test_item_combo.blockSignals(True)
         self._plot_viewer.test_item_combo.setCurrentText(text)
         self._plot_viewer.test_item_combo.blockSignals(False)
+        try:
+            self._plot_viewer.on_test_item_changed()
+        except Exception:
+            pass
 
     def _sync_part_name_to_acquisition(self, text: str):
         if not hasattr(self, 'combo_part_name'):
