@@ -3822,12 +3822,16 @@ class TorquePlotViewer(QMainWindow):
         fig2 = Figure(figsize=(fig_w_in, fig_h_in), dpi=DPI)
         ax2 = fig2.add_subplot(111)
         
-        # XLSX report must always export Torque vs Angle, regardless of on-screen plot mode.
-        mode = self.plot_mode_combo.currentText()
-        is_angle = True
+        # Respect the user's current plot mode selection for the XLSX report.
+        mode = self.plot_mode_combo.currentText() if getattr(self, 'plot_mode_combo', None) else ''
+        is_angle = mode.strip().lower().startswith('angle')
 
-        ax2.set_xlabel('Angle (deg)', fontsize=10)
-        ax2.set_title('Angle vs Torque', fontsize=12, fontweight='bold')
+        if is_angle:
+            ax2.set_xlabel('Angle (deg)', fontsize=10)
+            ax2.set_title('Angle vs Torque', fontsize=12, fontweight='bold')
+        else:
+            ax2.set_xlabel('Time (s)', fontsize=10)
+            ax2.set_title('Time vs Torque', fontsize=12, fontweight='bold')
 
         ax2.set_ylabel('Torque (N·m)', fontsize=10)
         ax2.grid(True, alpha=0.3)
@@ -3996,7 +4000,7 @@ class TorquePlotViewer(QMainWindow):
                         sample = next((x for x in self.samples if x.get('name') == sel), None)
                     if sample is None:
                         sample = self.samples[0]
-                    x_vals = sample.get('angle', [])
+                    x_vals = sample.get('angle', []) if is_angle else sample.get('time', [])
                     y_vals = sample.get('torque', [])
                     if len(x_vals) > 0 and len(x_vals) == len(y_vals) and len(y_vals) > 0:
                         ax2.plot(x_vals, y_vals, 'b.-', linewidth=0.9, markersize=3, label='1')
