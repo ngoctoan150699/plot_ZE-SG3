@@ -727,35 +727,39 @@ class PartConfigDialog(QDialog):
         self.accept()
 
 class CalibrationDialog(QDialog):
-    """Dialog to edit per-part K factor configuration."""
+    """Dialog to edit per-part/per-mode K factor configuration."""
+    _MODES = (
+        ('breakaway',   'Breakaway'),
+        ('operating',   'Operating'),
+        ('oscillating', 'Oscillating'),
+    )
+
     def __init__(self, parent, parts, calibration_data):
         super().__init__(parent)
         self.setWindowTitle('Calibration Setup')
-        self.resize(450, 400)
+        self.resize(720, 400)
         self.parts = parts
         self.calibration_data = calibration_data or {}
         layout = QVBoxLayout()
-        # Columns: Part Name, Calibration
-        self.table = QTableWidget(len(parts), 2)
-        self.table.setHorizontalHeaderLabels(['Part Name', 'Calibration'])
+        self.table = QTableWidget(len(parts), 1 + len(self._MODES))
+        self.table.setHorizontalHeaderLabels(
+            ['Part Name'] + [label for (_key, label) in self._MODES]
+        )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         for r, part_name in enumerate(parts):
-            # Part Name (Read Only)
             item = QTableWidgetItem(part_name)
             item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             self.table.setItem(r, 0, item)
             
-            # Factor K
-            # Use stripped part name for key lookup to avoid mismatch
             key = part_name.strip()
-            k_val = self.calibration_data.get(key, 1.0)
-            spin = CommaDoubleSpinBox()
-            spin.setRange(0.000001, 10000.0)
-            spin.setDecimals(6)
-            spin.setSingleStep(0.01)
-            spin.setValue(float(k_val))
-            self.table.setCellWidget(r, 1, spin)
+            for c, (mode_key, _mode_label) in enumerate(self._MODES, start=1):
+                spin = CommaDoubleSpinBox()
+                spin.setRange(0.000001, 10000.0)
+                spin.setDecimals(6)
+                spin.setSingleStep(0.01)
+                spin.setValue(self._factor_for(key, mode_key))
+                self.table.setCellWidget(r, c, spin)
             
         layout.addWidget(self.table)
         
@@ -769,20 +773,35 @@ class CalibrationDialog(QDialog):
         layout.addLayout(btn_h)
         self.setLayout(layout)
 
+    def _factor_for(self, part_name, mode_key):
+        """Get calibration factor, backward compatible with old format.
+        Old format: {part: float} or {part: {breakaway: x, operating: y}}
+        New format: {part: {breakaway: x, operating: y, oscillating: z}}
+        """
+        value = self.calibration_data.get(part_name, 1.0)
+        if isinstance(value, dict):
+            if mode_key in value:
+                return float(value[mode_key])
+            # Backward compat: oscillating falls back to operating
+            if mode_key == 'oscillating':
+                return float(value.get('operating', 1.0))
+            return float(value.get('operating', 1.0))
+        return float(value)
+
     def on_save(self):
         new_data = {}
         for r in range(self.table.rowCount()):
             part_item = self.table.item(r, 0)
             if not part_item: continue
             part_name = part_item.text().strip()
+            new_data[part_name] = {
+                mode_key: (self.table.cellWidget(r, c).value() if self.table.cellWidget(r, c) else 1.0)
+                for c, (mode_key, _mode_label) in enumerate(self._MODES, start=1)
+            }
             
-            spin = self.table.cellWidget(r, 1)
-            val = spin.value() if spin else 1.0
-            new_data[part_name] = val
-            
+        self.calibration_data.clear()
         self.calibration_data.update(new_data)
         
-        # Save to calibration.json
         try:
             cfg = get_config_file('calibration.json')
             with open(cfg, 'w', encoding='utf-8') as f:
@@ -2827,8 +2846,24 @@ class TorquePlotViewer(QMainWindow):
             
             # 1. Factor K (Calibration) - Update first so it's ready for plot refreshes
             try:
-                # Use stripped part name key
-                self.k_factor = float(self.calibration_data.get(pname.strip(), 1.0))
+                value = self.calibration_data.get(pname.strip(), 1.0)
+                if isinstance(value, dict):
+                    item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else ''
+                    if 'Breakaway' in item_name:
+                        mode_key = 'breakaway'
+                    elif 'Oscillating' in item_name:
+                        mode_key = 'oscillating'
+                    else:
+                        mode_key = 'operating'
+                    # Backward compat: oscillating falls back to operating
+                    if mode_key in value:
+                        self.k_factor = float(value[mode_key])
+                    elif mode_key == 'oscillating':
+                        self.k_factor = float(value.get('operating', 1.0))
+                    else:
+                        self.k_factor = float(value.get('operating', 1.0))
+                else:
+                    self.k_factor = float(value)
             except:
                 self.k_factor = 1.0
 
