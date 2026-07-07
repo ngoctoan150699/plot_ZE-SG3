@@ -3329,6 +3329,19 @@ class TorquePlotViewer(QMainWindow):
             # Show higher precision for torque values
             self.min_label.setText(f"{min(self.torque_data):.6f}")
             self.max_label.setText(f"{max(self.torque_data):.6f}")
+
+    def _pad_time_axis_for_short_plot(self, ax):
+        """Keep short Breakaway time plots visually wide enough."""
+        try:
+            if self._is_angle_mode():
+                return
+            left, right = ax.get_xlim()
+            width = right - left
+            if width <= 0 or width >= 5.0:
+                return
+            ax.set_xlim(left, left + 5.0)
+        except Exception:
+            pass
     
     def update_plot(self):
         """Update plot with current data"""
@@ -3514,6 +3527,10 @@ class TorquePlotViewer(QMainWindow):
              
         self.ax.set_ylabel(self._tr('plot_axis_torque'), fontsize=12)
         self.ax.grid(True, alpha=0.3)
+        try:
+            self._pad_time_axis_for_short_plot(self.ax)
+        except Exception:
+            pass
         try:
             # Y-axis ticks to match X-axis count for cleaner look
             x_ticks = self.ax.get_xticks()
@@ -3908,11 +3925,10 @@ class TorquePlotViewer(QMainWindow):
         if current_graph_bottom < GRAPH_TOP + 5:
             current_graph_bottom = GRAPH_TOP + 5
             
-        # Choose a DPI and figure size in inches
-        # Choose a DPI and figure size in inches
-        DPI = 150
-        fig_w_in = TARGET_W_PX / DPI
-        fig_h_in = TARGET_H_PX / DPI
+        # Render wide/high-DPI source; Excel will scale display size without distorting the PNG.
+        DPI = 200
+        fig_w_in = 8.0
+        fig_h_in = 3.25
         fig2 = Figure(figsize=(fig_w_in, fig_h_in), dpi=DPI)
         ax2 = fig2.add_subplot(111)
         
@@ -4006,23 +4022,29 @@ class TorquePlotViewer(QMainWindow):
                 # Determine range to filter (Start/End)
                 st = None
                 en = None
+                range_axis = x_data
                 try:
-                    range_mode = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
-                    if range_mode == 'Manual' and self.start_time_spin and self.end_time_spin:
-                         st = float(self.start_time_spin.value())
-                         en = float(self.end_time_spin.value())
-                    elif range_mode == 'Default':
-                         # Default mode: do not crop data (matches get_current_range_values)
-                         st = None
-                         en = None
+                    use_angle_range = self._is_angle_range_mode()
+                    pname = self.part_name_combo.currentText() if getattr(self, 'part_name_combo', None) else None
+                    item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else None
+                    ranges = self.test_item_angle_ranges if use_angle_range else self.test_item_time_ranges
+                    pr = (ranges.get(pname, {}) if pname else {}).get(item_name, {}) if item_name else {}
+                    if pr:
+                         st = float(pr.get('start', 0.0))
+                         en = float(pr.get('end', 0.0))
+                         range_axis = angles if use_angle_range and len(angles) == len(trqs) else times
                 except Exception:
                     st = en = None
+                    range_axis = x_data
 
                 if st is not None and en is not None:
                     try:
+                        if st > en:
+                            st, en = en, st
+                        arr_axis = np.array(range_axis)
                         arr_x = np.array(x_data)
                         arr_y = np.array(trqs)
-                        mask = (arr_x >= st) & (arr_x <= en)
+                        mask = (arr_axis >= st) & (arr_axis <= en)
                         plot_x = arr_x[mask]
                         plot_y = arr_y[mask]
                     except Exception:
@@ -4124,6 +4146,10 @@ class TorquePlotViewer(QMainWindow):
                  ax2.set_ylim(t_min, t_max)
         except Exception:
              pass
+        try:
+            self._pad_time_axis_for_short_plot(ax2)
+        except Exception:
+            pass
 
         # Add legend to export figure (shows sample number labels)
         try:
@@ -4142,14 +4168,6 @@ class TorquePlotViewer(QMainWindow):
                 fig2.savefig(tmp_png, format='png', dpi=DPI, bbox_inches='tight', pad_inches=IMAGE_PAD_INCHES)
             except Exception:
                 fig2.savefig(tmp_png, format='png', dpi=DPI)
-            # Ensure exact pixel dimensions by resizing with PIL
-            try:
-                from PIL import Image as PILImage
-                pil = PILImage.open(tmp_png)
-                pil2 = pil.resize((int(TARGET_W_PX), int(TARGET_H_PX)), PILImage.LANCZOS)
-                pil2.save(tmp_png, format='PNG')
-            except Exception:
-                pass
         except Exception:
             if tmp_png and os.path.exists(tmp_png):
                 try:
@@ -4513,13 +4531,8 @@ class TorquePlotViewer(QMainWindow):
                     except Exception:
                         pass
 
-                    # Finally downsample to exact target using high-quality resampling
-                    try:
-                        pil2 = pil.resize((target_w, target_h), PILImage.LANCZOS)
-                        pil2.save(tmp_png, format='PNG')
-                    except Exception:
-                        # fallback: keep original
-                        pass
+                    # Keep original high-DPI PNG; Excel display size is set below.
+                    # Do not clamp to source size, otherwise tight bbox can make the chart skinny.
                 except Exception:
                     pass
 
@@ -5186,31 +5199,21 @@ class TorquePlotViewer(QMainWindow):
             sample_interval_ms=interval_ms
         )
 
-        # 2. Get trimmed samples for CTR report
-        # Determine whether current plot mode is Angle or Time
-        try:
-            mode_text = (self.plot_mode_combo.currentText() or '').strip().lower() if getattr(self, 'plot_mode_combo', None) else ''
-            is_angle_mode = mode_text.startswith('angle')
-        except Exception:
-            is_angle_mode = False
-
-        range_mode = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
+        use_angle_range = self._is_angle_range_mode()
         st = None
         en = None
 
-        if range_mode == 'Manual':
-            if getattr(self, 'start_time_spin', None) and getattr(self, 'end_time_spin', None):
-                st = float(self.start_time_spin.value())
-                en = float(self.end_time_spin.value())
-        else:
+        try:
             pname = self.part_name_combo.currentText() if getattr(self, 'part_name_combo', None) else None
             item_name = self.test_item_combo.currentText()
-            ranges = self.test_item_angle_ranges if is_angle_mode else self.test_item_time_ranges
+            ranges = self.test_item_angle_ranges if use_angle_range else self.test_item_time_ranges
             part_ranges = ranges.get(pname, {})
             pr = part_ranges.get(item_name, {})
             if isinstance(pr, dict):
                 st = float(pr.get('start', 0.0))
                 en = float(pr.get('end', 0.0))
+        except Exception:
+            st = en = None
 
         if st is not None and en is not None and st > en:
             st, en = en, st
@@ -5223,13 +5226,19 @@ class TorquePlotViewer(QMainWindow):
                 continue
             # 2. Bound check
             if st is not None and en is not None:
-                x_val = s.angle_deg if is_angle_mode else s.time_s
+                x_val = s.angle_deg if use_angle_range else s.time_s
                 if x_val < st or x_val > en:
                     continue
             trimmed_samples.append(s)
 
         if not trimmed_samples:
-            trimmed_samples = raw_samples
+            QMessageBox.warning(self, "No Data", "No samples inside selected Time/Angle range.")
+            return
+
+        trimmed_session = RecordingSession(
+            samples=trimmed_samples,
+            sample_interval_ms=interval_ms
+        )
 
         # Create ReportMetadata
         metadata = ReportMetadata(
@@ -5255,7 +5264,7 @@ class TorquePlotViewer(QMainWindow):
             report_base, _ = os.path.splitext(xlsx_name)
             filename = f"{report_base}.csv"
 
-            raw_path = report_svc.save_raw_csv(raw_session, csv_dir, filename)
+            raw_path = report_svc.save_raw_csv(trimmed_session, csv_dir, filename)
 
             xlsx_path = os.path.join(report_dir, xlsx_name)
             report_path = self.export_xlsx(output_path=xlsx_path, show_message=False)
