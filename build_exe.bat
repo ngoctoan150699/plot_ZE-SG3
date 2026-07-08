@@ -8,7 +8,7 @@ set "PY=.\.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=G:\python\python.exe"
 "%PY%" --version >nul 2>&1
 if errorlevel 1 set "PY=G:\python\python.exe"
-set "APP_NAME=ZE-SG3 Torque Acquisition v2.0.0"
+set "APP_NAME=ZE-SG3 Torque Acquisition v2.0.3"
 set "ICON=python\app_icon.ico"
 
 echo [1/5] Cleaning build cache...
@@ -45,13 +45,30 @@ echo [4/5] Building EXE...
   python\main.py
 if errorlevel 1 goto :fail
 
-echo [5/5] Cleaning residual build cache...
+echo [5/6] Cleaning residual build cache...
 if exist build rmdir /s /q build
 for /d /r %%D in (__pycache__) do @if exist "%%D" rmdir /s /q "%%D"
 
+echo [6/6] Building installer with Inno Setup...
+set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+set "ISS=iss\ZE-SG3 Torque Acquisition2.0.3.iss"
+if exist "%ISCC%" goto :iscc_ok
+echo Inno Setup compiler not found
+echo %ISCC%
+goto :fail
+:iscc_ok
+if exist "%ISS%" goto :iss_ok
+echo Inno script not found
+echo %ISS%
+goto :fail
+:iss_ok
+"%ISCC%" "%ISS%"
+if errorlevel 1 goto :fail
+
 echo.
 echo BUILD SUCCESS
-echo Output: dist\%APP_NAME%.exe
+echo Output EXE: dist\%APP_NAME%.exe
+echo Output SETUP: iss\mysetupZE-SG3 Torque Acquisition v2.0.3.exe
 goto :end
 
 :fail

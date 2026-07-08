@@ -2909,6 +2909,20 @@ class MainWindow(QMainWindow):
         if self._recording:
             elapsed_time = time.monotonic() - self._start_time
 
+            if getattr(self, '_recording_is_breakaway', False):
+                # Breakaway cần raw peak thật: không resample/nội suy.
+                self._session.samples.append(SampleData(
+                    time_s=elapsed_time,
+                    torque_Nm=float(status.net_weight),
+                    stable=status.is_stable,
+                    timestamp=time.time(),
+                    angle_deg=float(self._current_angle),
+                    cycle=self._current_cycle,
+                ))
+                self.lbl_count.setText(str(self._session.count))
+                self.lbl_rectime.setText(f"{elapsed_time:.3f} s")
+                return
+
             interval_s = self._session.sample_interval_ms / 1000.0
             expected_samples = int(elapsed_time / interval_s)
 
@@ -3188,8 +3202,13 @@ class MainWindow(QMainWindow):
         initial_status = getattr(self, '_last_status', None)
         self._recording_base_torque = float(getattr(initial_status, 'net_weight', 0.0) or 0.0)
         self._recording_arm_time = time.monotonic()
-        self._pending_recording_start = True
-        self._recording = False
+        self._recording_is_breakaway = bool(is_breakaway)
+        self._pending_recording_start = not is_breakaway
+        self._recording = bool(is_breakaway)
+        if is_breakaway:
+            self._session.start_time = self._recording_arm_time
+            self._start_time = self._recording_arm_time
+            self.plot.clear()
         self.btn_rec_start.setEnabled(False)
         self.btn_rec_stop.setEnabled(True)
         self.btn_rec_clear.setEnabled(False)
