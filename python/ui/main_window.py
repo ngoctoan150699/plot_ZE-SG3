@@ -2167,6 +2167,17 @@ class MainWindow(QMainWindow):
             if self._plc_svc.write_speed(output_deg_s):
                 self._log(f"⚡ Đã ghi tốc độ JOG {output_deg_s:.1f}°/s xuống PLC (D104)")
 
+    def _restore_plc_jog_speed(self) -> None:
+        """Trả D104 về tốc độ JOG sau khi test dùng tốc độ chương trình."""
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            return
+        if not hasattr(self, 'spin_plc_jog_speed'):
+            return
+        jog_rpm = float(self.spin_plc_jog_speed.value())
+        output_deg_s = jog_rpm * 0.3
+        if self._plc_svc.write_speed(output_deg_s):
+            self._log(f"↩️ Khôi phục tốc độ JOG {output_deg_s:.1f}°/s xuống PLC (D104)")
+
     def _selected_plc_mode(self) -> int:
         """Return PLC mode matching the selected measurement mode in the app."""
         text = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else ''
@@ -3250,6 +3261,7 @@ class MainWindow(QMainWindow):
         if self._servo_svc and self._servo_svc.is_running():
             self._servo_svc.stop()
             self._log("⏹ Đã dừng chu trình Servo")
+        self._restore_plc_jog_speed()
 
     def _clear_samples(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
