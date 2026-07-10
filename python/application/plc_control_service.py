@@ -196,11 +196,11 @@ class PlcControlService:
         """Pulse Home command through D112 = 1 -> 0."""
         return self._write_pulse_register(PLC_D112_HOME_CMD, pulse_ms=pulse_ms)
 
-    def write_speed(self, speed_deg_s: float) -> bool:
+    def write_speed(self, speed_deg_s: float, force: bool = False) -> bool:
         """Write output speed in deg/s to D104 as PLC PLSY pulse/s."""
         try:
             value = speed_to_x100(speed_deg_s)
-            return self._write_if_changed(PLC_D104_SPEED_X100, value)
+            return self._write_register(PLC_D104_SPEED_X100, value) if force else self._write_if_changed(PLC_D104_SPEED_X100, value)
         except Exception as exc:
             logger.debug("PLC write_speed failed: %s", exc)
             return False
@@ -233,6 +233,10 @@ class PlcControlService:
         value = clamp_u16(value)
         if self._last_written.get(address) == value:
             return True
+        return self._write_register(address, value)
+
+    def _write_register(self, address: int, value: int) -> bool:
+        value = clamp_u16(value)
         ok = bool(self._client.write_register(address, value, self._slave_id))
         if ok:
             self._last_written[address] = value

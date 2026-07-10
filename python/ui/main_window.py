@@ -2176,7 +2176,7 @@ class MainWindow(QMainWindow):
             return
         jog_rpm = float(self.spin_plc_jog_speed.value())
         output_deg_s = jog_rpm * 0.3
-        if self._plc_svc.write_speed(output_deg_s):
+        if self._plc_svc.write_speed(output_deg_s, force=True):
             self._log(f"↩️ Khôi phục tốc độ JOG {output_deg_s:.1f}°/s xuống PLC (D104)")
 
     def _selected_plc_mode(self) -> int:
