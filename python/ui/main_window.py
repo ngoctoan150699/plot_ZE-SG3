@@ -2046,7 +2046,8 @@ class MainWindow(QMainWindow):
         if not self._plc_svc or not self._plc_svc.is_connected():
             self._log("⚠️ PLC chưa kết nối")
             return False
-        if self._plc_command_running:
+        allow_queued_release = action_name.startswith("Jog") and action_name.endswith("OFF")
+        if self._plc_command_running and not allow_queued_release:
             self._log(f"⏳ PLC đang xử lý lệnh trước, bỏ qua: {action_name}")
             return False
         self._plc_command_running = True
@@ -3415,12 +3416,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'combo_part_name'):
             self._plot_viewer.part_name_combo.setCurrentText(self.combo_part_name.currentText())
 
-        # Plot Viewer mặc định đang ở Angle vs Torque. Nếu phiên ghi không có dữ liệu góc
-        # (ví dụ chưa kết nối PLC/servo encoder), tự chuyển sang Torque-Time để vẫn import được.
-        angles = [float(getattr(sample, 'angle_deg', 0.0) or 0.0) for sample in self._session.samples]
-        has_angle_data = bool(angles) and (max(angles) - min(angles) > 1e-9 or any(abs(a) > 1e-9 for a in angles))
         if hasattr(self._plot_viewer, 'plot_mode_combo'):
-            target_mode = 'angle' if has_angle_data else 'time'
+            test_text = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else ''
+            target_mode = 'time' if 'breakaway' in test_text.lower() else 'angle'
             idx = self._plot_viewer.plot_mode_combo.findData(target_mode)
             if idx >= 0:
                 self._plot_viewer.plot_mode_combo.setCurrentIndex(idx)
@@ -3449,6 +3447,20 @@ class MainWindow(QMainWindow):
             self._plot_viewer.on_test_item_changed()
         except Exception:
             pass
+        self._sync_plot_viewer_mode_for_test_item(text)
+
+    def _sync_plot_viewer_mode_for_test_item(self, text: str):
+        """Breakaway dùng Time-Torque; Operating/Oscillating dùng Angle-Torque."""
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+            return
+        target_mode = 'time' if 'breakaway' in str(text).lower() else 'angle'
+        for combo_name in ('plot_mode_combo', 'range_mode_combo'):
+            combo = getattr(self._plot_viewer, combo_name, None)
+            if combo is None:
+                continue
+            idx = combo.findData(target_mode)
+            if idx >= 0 and combo.currentIndex() != idx:
+                combo.setCurrentIndex(idx)
 
     def _sync_part_name_to_acquisition(self, text: str):
         if not hasattr(self, 'combo_part_name'):

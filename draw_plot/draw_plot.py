@@ -2070,8 +2070,7 @@ class TorquePlotViewer(QMainWindow):
                     continue
                 
                 # Check Mode Restrictions
-                mode = self.plot_mode_combo.currentText()
-                is_angle = (mode == "Angle vs Torque")
+                is_angle = self._is_angle_mode()
                 if is_angle:
                      angle_range = max(alist) - min(alist) if alist else 0
                      if angle_range == 0.0 and all(a == 0.0 for a in alist):
@@ -2268,8 +2267,7 @@ class TorquePlotViewer(QMainWindow):
                 return False
             
             # Check Mode Restrictions
-            mode = self.plot_mode_combo.currentText()
-            is_angle = (mode == "Angle vs Torque")
+            is_angle = self._is_angle_mode()
             
             if is_angle:
                 # Check if angle data is present
@@ -2452,7 +2450,7 @@ class TorquePlotViewer(QMainWindow):
         """Handle switch between Time vs Torque and Angle vs Torque."""
         # Update UI Labels
         mode = self.plot_mode_combo.currentText()
-        is_angle = (mode == "Angle vs Torque")
+        is_angle = self._is_angle_mode()
         
         # Update Plot Group Box Title
         if getattr(self, 'plot_group', None):
@@ -2488,11 +2486,15 @@ class TorquePlotViewer(QMainWindow):
                 except:
                     pass
         
-        # Trigger update of ranges/plot with data if available
+        # Trigger full redraw with the selected X axis, not just label changes.
         try:
             self.on_part_name_changed()
-        except:
+        except Exception:
+            pass
+        try:
             self.update_plot()
+        except Exception:
+            pass
 
 
 
@@ -2789,6 +2791,18 @@ class TorquePlotViewer(QMainWindow):
         """Load spec min/max when Test Item changes (dependent on Part Name)."""
         try:
             self._load_aspect_ratio_for_current_item()
+        except Exception:
+            pass
+        try:
+            item_text = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else ''
+            target_mode = 'time' if 'breakaway' in item_text.lower() else 'angle'
+            for combo_name in ('plot_mode_combo', 'range_mode_combo'):
+                combo = getattr(self, combo_name, None)
+                if combo is None:
+                    continue
+                idx = combo.findData(target_mode)
+                if idx >= 0 and combo.currentIndex() != idx:
+                    combo.setCurrentIndex(idx)
         except Exception:
             pass
         try:
@@ -3478,7 +3492,12 @@ class TorquePlotViewer(QMainWindow):
                 start_idx = max(0, min(start_idx, len(self.time_data) - 1))
                 end_idx = max(start_idx + 1, min(end_idx, len(self.time_data)))
 
-                plot_time = self.time_data[start_idx:end_idx]
+                is_angle = self._is_angle_mode()
+                plot_x = []
+                if is_angle:
+                    plot_x = self.samples[0].get('angle', [])[start_idx:end_idx] if self.samples else []
+                if not plot_x:
+                    plot_x = self.time_data[start_idx:end_idx]
                 plot_torque = self.torque_data[start_idx:end_idx]
                 # Apply K factor
                 try:
@@ -3486,8 +3505,8 @@ class TorquePlotViewer(QMainWindow):
                     if k != 1.0 and plot_torque:
                          plot_torque = [t * k for t in plot_torque]
                 except: pass
-                if plot_time and plot_torque:
-                    self.ax.plot(plot_time, plot_torque, 'b.-', linewidth=0.9, markersize=3)
+                if plot_x and plot_torque:
+                    self.ax.plot(plot_x, plot_torque, 'b.-', linewidth=0.9, markersize=3)
                     self.ax.relim()
                     self.ax.autoscale_view()
         
@@ -3528,7 +3547,8 @@ class TorquePlotViewer(QMainWindow):
         self.ax.set_ylabel(self._tr('plot_axis_torque'), fontsize=12)
         self.ax.grid(True, alpha=0.3)
         try:
-            self._pad_time_axis_for_short_plot(self.ax)
+            if not self._is_angle_mode():
+                self._pad_time_axis_for_short_plot(self.ax)
         except Exception:
             pass
         try:
@@ -3683,8 +3703,7 @@ class TorquePlotViewer(QMainWindow):
                 # apply to time only when in Time mode (or if explicit time controls exist).
                 use_time = False
                 try:
-                    mode_text = (self.plot_mode_combo.currentText() or '').strip().lower() if getattr(self, 'plot_mode_combo', None) else ''
-                    is_angle_mode = mode_text.startswith('angle')
+                    is_angle_mode = self._is_angle_mode()
                     rm = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
                     if rm == 'Manual':
                         # Manual applies to time only when not in Angle mode (unless angle manual controls exist)
@@ -3932,9 +3951,8 @@ class TorquePlotViewer(QMainWindow):
         fig2 = Figure(figsize=(fig_w_in, fig_h_in), dpi=DPI)
         ax2 = fig2.add_subplot(111)
         
-        # Respect the user's current plot mode selection for the XLSX report.
-        mode = self.plot_mode_combo.currentText() if getattr(self, 'plot_mode_combo', None) else ''
-        is_angle = mode.strip().lower().startswith('angle')
+        # Respect the current plot mode selection for the XLSX report.
+        is_angle = self._combo_data(getattr(self, 'plot_mode_combo', None), 'time') == 'angle'
 
         if is_angle:
             ax2.set_xlabel('Angle (deg)', fontsize=10)
@@ -4096,7 +4114,13 @@ class TorquePlotViewer(QMainWindow):
                     end_idx = len(self.time_data)
                 start_idx = max(0, min(start_idx, len(self.time_data) - 1))
                 end_idx = max(start_idx + 1, min(end_idx, len(self.time_data)))
-                plot_time = self.time_data[start_idx:end_idx]
+                is_angle_single = self._is_angle_mode()
+                plot_x = []
+                if is_angle_single and self.samples:
+                    active = self.samples[0]
+                    plot_x = active.get('angle', [])[start_idx:end_idx]
+                elif not is_angle_single:
+                    plot_x = self.time_data[start_idx:end_idx]
                 plot_torque = self.torque_data[start_idx:end_idx]
                 
                 # Apply K factor
@@ -4106,8 +4130,8 @@ class TorquePlotViewer(QMainWindow):
                          plot_torque = [t * k for t in plot_torque]
                 except: pass
 
-                if len(plot_time) > 0 and len(plot_torque) > 0:
-                    ax2.plot(plot_time, plot_torque, 'b.-', linewidth=0.9, markersize=3, label='1')
+                if len(plot_x) > 0 and len(plot_x) == len(plot_torque) and len(plot_torque) > 0:
+                    ax2.plot(plot_x, plot_torque, 'b.-', linewidth=0.9, markersize=3, label='1')
 
         # Fallback: if range/cycle filters removed all lines, export the full active dataset
         # so the XLSX always contains a visible plot image.
@@ -4147,7 +4171,8 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
              pass
         try:
-            self._pad_time_axis_for_short_plot(ax2)
+            if not is_angle:
+                self._pad_time_axis_for_short_plot(ax2)
         except Exception:
             pass
 
@@ -4315,8 +4340,7 @@ class TorquePlotViewer(QMainWindow):
             start_val = None
             end_val = None
             try:
-                plot_mode_text = self.plot_mode_combo.currentText() if getattr(self, 'plot_mode_combo', None) else 'Time vs Torque'
-                is_angle_mode = (plot_mode_text == "Angle vs Torque")
+                is_angle_mode = self._is_angle_mode()
                 range_mode = self.range_mode_combo.currentText() if getattr(self, 'range_mode_combo', None) else 'Default'
                 pname = self.part_name_combo.currentText() if getattr(self, 'part_name_combo', None) else None
 
@@ -4682,9 +4706,7 @@ class TorquePlotViewer(QMainWindow):
 
         # ========== 10. SHEET "DATA" ==========
         data_sheet = wb.create_sheet('Data')
-        # Detect mode robustly (case-insensitive, allow variations)
-        mode_text = (self.plot_mode_combo.currentText() or '').strip().lower() if getattr(self, 'plot_mode_combo', None) else ''
-        is_angle = mode_text.startswith('angle')
+        is_angle = self._is_angle_mode()
         x_label = 'Angle (deg)' if is_angle else 'Time (s)'
         
         if self.samples:
