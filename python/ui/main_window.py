@@ -67,6 +67,37 @@ _HAS_PLOT_VIEWER = True
 logger = logging.getLogger(__name__)
 
 
+PART_NAME_CODES = {
+    'Inner Tie Rod': 'ITR',
+    'Ball Joint': 'B/Joint',
+    'Outer Tie Rod': 'OTR',
+    'Stabilizer Link': 'S/Link',
+    'ITR': 'ITR',
+    'B/Joint': 'B/Joint',
+    'OTR': 'OTR',
+    'S/Link': 'S/Link',
+}
+
+TEST_ITEM_CODES = {
+    'Breakaway Torque': 'breakaway',
+    'Operating Torque': 'operating',
+    'Oscillating Torque': 'oscillating',
+    'B': 'breakaway',
+    'O': 'operating',
+    'OSC': 'oscillating',
+}
+
+def servo_profile_key(part_name_or_code: str, test_item_or_code: str) -> str:
+    part_code = PART_NAME_CODES.get(str(part_name_or_code), str(part_name_or_code) or 'ITR')
+    test_code = TEST_ITEM_CODES.get(str(test_item_or_code), str(test_item_or_code).lower() or 'operating')
+    suffix = {'breakaway': 'B', 'operating': 'O', 'oscillating': 'OSC'}.get(test_code, 'O')
+    return f"{part_code}_{suffix}"
+
+def is_itr_oscillating(part_name_or_code: str, test_item_or_code: str) -> bool:
+    return (PART_NAME_CODES.get(str(part_name_or_code), str(part_name_or_code)) == 'ITR'
+            and TEST_ITEM_CODES.get(str(test_item_or_code), str(test_item_or_code).lower()) == 'oscillating')
+
+
 class WheelSafeComboBox(QComboBox):
     """QComboBox không đổi giá trị khi người dùng cuộn trang."""
 
@@ -378,14 +409,7 @@ class ServoSetupDialog(QDialog):
         form.setSpacing(8)
         
         # Load profile
-        part_map = {
-            'Inner Tie Rod': 'ITR', 'Ball Joint': 'B/Joint', 'Outer Tie Rod': 'OTR', 'Stabilizer Link': 'S/Link',
-            'ITR': 'ITR', 'B/Joint': 'B/Joint', 'OTR': 'OTR', 'S/Link': 'S/Link'
-        }
-        part_short = part_map.get(self._part_name, 'ITR')
-        is_breakaway = "Breakaway" in self._test_item or "B" == self._test_item
-        test_char = 'B' if is_breakaway else 'O'
-        self._profile_key = f"{part_short}_{test_char}"
+        self._profile_key = servo_profile_key(self._part_name, self._test_item)
         
         profiles = self._settings.load_servo_profiles()
         profile = profiles.get(self._profile_key)
@@ -1433,7 +1457,10 @@ class MainWindow(QMainWindow):
         self.combo_part_name = QComboBox()
         self.combo_part_name.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_part_name.setMinimumContentsLength(5)
-        self.combo_part_name.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
+        self.combo_part_name.addItem("Inner Tie Rod", "ITR")
+        self.combo_part_name.addItem("Ball Joint", "B/Joint")
+        self.combo_part_name.addItem("Outer Tie Rod", "OTR")
+        self.combo_part_name.addItem("Stabilizer Link", "S/Link")
         self.combo_part_name.currentTextChanged.connect(self._sync_part_name_to_plot_viewer)
         self.combo_part_name.currentTextChanged.connect(lambda _text: self._save_ui_state())
         self.combo_part_name.currentTextChanged.connect(lambda _text: self._update_jog_speed_from_profile())
@@ -1444,16 +1471,32 @@ class MainWindow(QMainWindow):
         self.combo_test_item = QComboBox()
         self.combo_test_item.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_test_item.setMinimumContentsLength(5)
-        self.combo_test_item.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
+        self.combo_test_item.addItem("Breakaway Torque", "breakaway")
+        self.combo_test_item.addItem("Operating Torque", "operating")
+        self.combo_test_item.addItem("Oscillating Torque", "oscillating")
         self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
         self.combo_test_item.currentTextChanged.connect(lambda _text: self._save_ui_state())
         self.combo_test_item.currentTextChanged.connect(lambda _text: self._update_jog_speed_from_profile())
         pg_lay.addWidget(self.combo_test_item, 1, 1)
-        
+
+        self.lbl_drawing_angle = QLabel(self.i18n.t('drawing_angle_lbl'))
+        pg_lay.addWidget(self.lbl_drawing_angle, 2, 0)
+        self.spin_drawing_angle = QDoubleSpinBox()
+        self.spin_drawing_angle.setRange(0.0, 360.0)
+        self.spin_drawing_angle.setDecimals(1)
+        self.spin_drawing_angle.setSuffix(" °")
+        self.spin_drawing_angle.setToolTip(self.i18n.t('drawing_angle_tooltip'))
+        self.spin_drawing_angle.valueChanged.connect(lambda _v: self._on_drawing_angle_changed())
+        pg_lay.addWidget(self.spin_drawing_angle, 2, 1)
+
+        self.combo_part_name.currentIndexChanged.connect(lambda _idx: self._update_drawing_angle_visibility())
+        self.combo_test_item.currentIndexChanged.connect(lambda _idx: self._update_drawing_angle_visibility())
+
         self.btn_servo_setup = QPushButton("⚙️ Thiết lập Servo")
         self.btn_servo_setup.clicked.connect(self._on_btn_servo_setup_clicked)
         self.btn_servo_setup.setStyleSheet("background-color: #313244; color: white; font-weight: bold; height: 26px;")
-        pg_lay.addWidget(self.btn_servo_setup, 2, 0, 1, 2)
+        pg_lay.addWidget(self.btn_servo_setup, 3, 0, 1, 2)
+        self._update_drawing_angle_visibility()
         
         self.grp_program.setLayout(pg_lay)
         lay.addWidget(self.grp_program)
@@ -2037,6 +2080,104 @@ class MainWindow(QMainWindow):
         self.btn_rec_clear.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
 
     # ===========================================================
+    def _current_part_code(self) -> str:
+        if not hasattr(self, 'combo_part_name'):
+            return 'ITR'
+        data = self.combo_part_name.currentData()
+        return str(data or PART_NAME_CODES.get(self.combo_part_name.currentText(), self.combo_part_name.currentText()))
+
+    def _current_test_item_code(self) -> str:
+        if not hasattr(self, 'combo_test_item'):
+            return 'operating'
+        data = self.combo_test_item.currentData()
+        return str(data or TEST_ITEM_CODES.get(self.combo_test_item.currentText(), self.combo_test_item.currentText().lower()))
+
+    def _is_itr_oscillating_selected(self) -> bool:
+        return self._current_part_code() == 'ITR' and self._current_test_item_code() == 'oscillating'
+
+    def _update_drawing_angle_visibility(self) -> None:
+        visible = self._is_itr_oscillating_selected()
+        for widget_name in ('lbl_drawing_angle', 'spin_drawing_angle'):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setVisible(visible)
+        if visible:
+            self._on_drawing_angle_changed()
+
+    def _on_drawing_angle_changed(self) -> None:
+        if not self._is_itr_oscillating_selected() or not hasattr(self, 'spin_drawing_angle'):
+            return
+        x = float(self.spin_drawing_angle.value())
+        if x <= 0:
+            return
+        self._apply_itr_oscillating_angle(x)
+
+    def _apply_itr_oscillating_angle(self, drawing_angle: float) -> None:
+        from domain.entities import ServoProfile
+        profile_key = servo_profile_key('ITR', 'oscillating')
+        profiles = self._settings.load_servo_profiles()
+        profile = profiles.get(profile_key) or ServoProfile(speed=100.0)
+        negative_angle = round(-drawing_angle * 0.8, 3)
+        positive_angle = round(drawing_angle * 0.8, 3)
+        start_angle = round(-drawing_angle * 0.64, 3)
+        end_angle = round(drawing_angle * 0.64, 3)
+        profile.negative_angle = negative_angle
+        profile.positive_angle = positive_angle
+        profiles[profile_key] = profile
+        self._settings.save_servo_profiles(profiles)
+        self._sync_oscillating_angle_range_to_plot_viewer(drawing_angle)
+        self._write_itr_oscillating_angles_to_plc(negative_angle, positive_angle)
+
+    def _write_itr_oscillating_angles_to_plc(self, negative_angle: float, positive_angle: float) -> None:
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            return
+        writer = getattr(self._plc_svc, 'write_oscillating_angles', None)
+        if callable(writer):
+            if writer(negative_angle, positive_angle):
+                self._log(
+                    f"📐 Đã ghi PLC góc Oscillating D102/D103: "
+                    f"{positive_angle:.2f}/{negative_angle:.2f}°"
+                )
+            else:
+                self._log("⚠️ Ghi PLC góc Oscillating D102/D103 thất bại")
+
+    def _sync_oscillating_angle_range_to_plot_viewer(self, drawing_angle: float) -> None:
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+            return
+        setter = getattr(self._plot_viewer, 'set_oscillating_angle_range', None)
+        if callable(setter):
+            setter(round(-drawing_angle * 0.64, 3), round(drawing_angle * 0.64, 3), part_name='Inner Tie Rod')
+
+    def _validate_itr_oscillating_angle_before_run(self) -> bool:
+        if not self._is_itr_oscillating_selected():
+            return True
+        angle = float(self.spin_drawing_angle.value()) if hasattr(self, 'spin_drawing_angle') else 0.0
+        if angle <= 0:
+            QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('msg_drawing_angle_required'))
+            self._log('⚠️ Vui lòng nhập Góc đo trên bản vẽ trước khi chạy Oscillating Torque')
+            return False
+        self._apply_itr_oscillating_angle(angle)
+        return True
+
+    def _clear_itr_oscillating_angles_after_run(self) -> None:
+        if not getattr(self, '_recording_was_itr_oscillating', False):
+            return
+        self._recording_was_itr_oscillating = False
+        if hasattr(self, 'spin_drawing_angle'):
+            self.spin_drawing_angle.blockSignals(True)
+            self.spin_drawing_angle.setValue(0.0)
+            self.spin_drawing_angle.blockSignals(False)
+        from domain.entities import ServoProfile
+        profile_key = servo_profile_key('ITR', 'oscillating')
+        profiles = self._settings.load_servo_profiles()
+        profile = profiles.get(profile_key) or ServoProfile(speed=100.0)
+        profile.negative_angle = 0.0
+        profile.positive_angle = 0.0
+        profiles[profile_key] = profile
+        self._settings.save_servo_profiles(profiles)
+        self._write_itr_oscillating_angles_to_plc(0.0, 0.0)
+        self._log(self.i18n.t('msg_osc_angle_cleared'))
+
     # ===========================================================
     # PLC / SERVO CONTROL PANEL
     # ===========================================================
@@ -2144,16 +2285,7 @@ class MainWindow(QMainWindow):
     def _update_jog_speed_from_profile(self):
         if not hasattr(self, 'spin_plc_jog_speed'):
             return
-        part_name = self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else 'ITR'
-        test_item = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else 'Operating'
-        part_map = {
-            'Inner Tie Rod': 'ITR', 'Ball Joint': 'B/Joint', 'Outer Tie Rod': 'OTR', 'Stabilizer Link': 'S/Link',
-            'ITR': 'ITR', 'B/Joint': 'B/Joint', 'OTR': 'OTR', 'S/Link': 'S/Link'
-        }
-        part_short = part_map.get(part_name, 'ITR')
-        is_breakaway = "Breakaway" in test_item
-        test_char = 'B' if is_breakaway else 'O'
-        profile_key = f"{part_short}_{test_char}"
+        profile_key = servo_profile_key(self._current_part_code(), self._current_test_item_code())
 
         profiles = self._settings.load_servo_profiles()
         profile = profiles.get(profile_key)
@@ -3170,22 +3302,15 @@ class MainWindow(QMainWindow):
 
     def _start_recording(self):
         # R2 Upgrade: prepare Servo/PLC profile before enabling local recording.
+        if not self._validate_itr_oscillating_angle_before_run():
+            return
         part_name = self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else 'ITR'
         test_item = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else 'Operating'
-        part_map = {
-            'Inner Tie Rod': 'ITR',
-            'Ball Joint': 'B/Joint',
-            'Outer Tie Rod': 'OTR',
-            'Stabilizer Link': 'S/Link',
-            'ITR': 'ITR',
-            'B/Joint': 'B/Joint',
-            'OTR': 'OTR',
-            'S/Link': 'S/Link'
-        }
-        part_short = part_map.get(part_name, 'ITR')
-        is_breakaway = "Breakaway" in test_item
-        test_char = 'B' if is_breakaway else 'O'
-        profile_key = f"{part_short}_{test_char}"
+        part_short = self._current_part_code()
+        test_code = self._current_test_item_code()
+        is_breakaway = test_code == 'breakaway'
+        profile_key = servo_profile_key(part_short, test_code)
+        self._recording_was_itr_oscillating = self._is_itr_oscillating_selected()
 
         profiles = self._settings.load_servo_profiles()
         profile = profiles.get(profile_key)
@@ -3203,7 +3328,7 @@ class MainWindow(QMainWindow):
             return
 
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
-        self._session.test_item = 'B' if is_breakaway else 'O'
+        self._session.test_item = 'B' if is_breakaway else ('OSC' if test_code == 'oscillating' else 'O')
         self._session.part_name = part_short
         self._session.start_time = 0.0
         self._start_time = time.monotonic()
@@ -3263,6 +3388,7 @@ class MainWindow(QMainWindow):
             self._servo_svc.stop()
             self._log("⏹ Đã dừng chu trình Servo")
         self._restore_plc_jog_speed()
+        self._clear_itr_oscillating_angles_after_run()
 
     def _clear_samples(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
@@ -3355,15 +3481,7 @@ class MainWindow(QMainWindow):
         if dialog.exec_() == QDialog.Accepted:
             vals = dialog.get_values()
             
-            # Map selected part and test type to profile key
-            part_map = {
-                'Inner Tie Rod': 'ITR', 'Ball Joint': 'B/Joint', 'Outer Tie Rod': 'OTR', 'Stabilizer Link': 'S/Link',
-                'ITR': 'ITR', 'B/Joint': 'B/Joint', 'OTR': 'OTR', 'S/Link': 'S/Link'
-            }
-            part_short = part_map.get(part, 'ITR')
-            is_breakaway = "Breakaway" in test or "B" == test
-            test_char = 'B' if is_breakaway else 'O'
-            profile_key = f"{part_short}_{test_char}"
+            profile_key = servo_profile_key(part, test)
             
             # Load, modify, and save
             profiles = self._settings.load_servo_profiles()
@@ -3679,6 +3797,10 @@ class MainWindow(QMainWindow):
             self.lbl_part_name.setText(self.i18n.t('part_name_lbl'))
         if hasattr(self, 'lbl_test_item'):
             self.lbl_test_item.setText(self.i18n.t('test_item_lbl'))
+        if hasattr(self, 'lbl_drawing_angle'):
+            self.lbl_drawing_angle.setText(self.i18n.t('drawing_angle_lbl'))
+        if hasattr(self, 'spin_drawing_angle'):
+            self.spin_drawing_angle.setToolTip(self.i18n.t('drawing_angle_tooltip'))
         if hasattr(self, 'btn_servo_setup'):
             self.btn_servo_setup.setText(self.i18n.t('btn_servo_setup'))
         if hasattr(self, 'grp_plc_control'):

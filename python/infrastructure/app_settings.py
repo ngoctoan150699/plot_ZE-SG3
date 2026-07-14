@@ -168,12 +168,16 @@ class AppSettings(ISettingsRepository):
         default_profiles = {
             'ITR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'ITR_OSC': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'B/Joint_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'B/Joint_OSC': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'OTR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'OTR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'OTR_OSC': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'S/Link_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'S/Link_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'S/Link_OSC': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
         }
         for key, default in default_profiles.items():
             raw = profiles_raw.get(key, default)

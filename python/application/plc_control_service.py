@@ -22,6 +22,8 @@ from domain.constants import (
     PLC_CONFIG_START_ADDRESS,
     PLC_D100_CMD_WORD,
     PLC_D101_MODE,
+    PLC_D102_POS_ANGLE_X100,
+    PLC_D103_NEG_ANGLE_X100,
     PLC_D104_SPEED_X100,
     PLC_D109_RESET_FAULT,
     PLC_D110_JOG_PLUS,
@@ -220,6 +222,27 @@ class PlcControlService:
             return self._write_if_changed(PLC_D124_CURRENT_ANGLE_X100, value)
         except Exception as exc:
             logger.debug("PLC write_current_angle failed: %s", exc)
+            return False
+
+
+    def write_oscillating_angles(self, negative_angle_deg: float, positive_angle_deg: float) -> bool:
+        """Write Oscillating servo limits to PLC D102..D103 only.
+
+        D102 = positive servo angle x100, D103 = negative servo angle x100.
+        Analysis start/end angles are software-only and are not written to PLC.
+        """
+        try:
+            values = [
+                encode_signed_16(angle_to_x100(positive_angle_deg)),
+                encode_signed_16(angle_to_x100(negative_angle_deg)),
+            ]
+            ok = bool(self._client.write_registers(PLC_D102_POS_ANGLE_X100, values, self._slave_id))
+            if ok:
+                self._last_written[PLC_D102_POS_ANGLE_X100] = values[0]
+                self._last_written[PLC_D103_NEG_ANGLE_X100] = values[1]
+            return ok
+        except Exception as exc:
+            logger.debug("PLC write_oscillating_angles failed: %s", exc)
             return False
 
     def _write_bool_register(self, address: int, active: bool) -> bool:

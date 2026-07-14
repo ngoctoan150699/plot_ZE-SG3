@@ -2693,6 +2693,40 @@ class TorquePlotViewer(QMainWindow):
             cb.blockSignals(False)
         self.on_cycle_toggled(None)
 
+    def _save_test_item_angle_ranges(self) -> None:
+        try:
+            cfg = get_config_file('test_item_angle_ranges.json')
+            with open(cfg, 'w', encoding='utf-8') as f:
+                json.dump(self.test_item_angle_ranges, f, indent=2)
+        except Exception:
+            pass
+
+    def set_oscillating_angle_range(self, start_deg: float, end_deg: float, part_name: str = 'Inner Tie Rod') -> None:
+        # Chỉ điền bảng Test Item Angle Range cho ITR/Oscillating.
+        # Không chỉnh Test Item Time Range.
+        angle_part_ranges = self.test_item_angle_ranges.setdefault(part_name, {})
+        angle_part_ranges['Oscillating Torque'] = {'start': float(start_deg), 'end': float(end_deg)}
+        self._save_test_item_angle_ranges()
+        try:
+            if hasattr(self, 'part_name_combo'):
+                self.part_name_combo.setCurrentText(part_name)
+            if hasattr(self, 'test_item_combo'):
+                self.test_item_combo.setCurrentText('Oscillating Torque')
+            self.update_average()
+        except Exception:
+            pass
+
+    def clear_oscillating_angle_range(self, part_name: str = 'Inner Tie Rod') -> None:
+        # Chỉ xóa bảng Test Item Angle Range cho ITR/Oscillating.
+        # Không chỉnh Test Item Time Range.
+        angle_part_ranges = self.test_item_angle_ranges.setdefault(part_name, {})
+        angle_part_ranges['Oscillating Torque'] = {'start': 0.0, 'end': 0.0}
+        self._save_test_item_angle_ranges()
+        try:
+            self.update_average()
+        except Exception:
+            pass
+
     def open_part_range_setup(self, is_angle: bool | None = None):
         """Open the Part/Test Item Range configuration dialog."""
         parts = [self.part_name_combo.itemText(i) for i in range(self.part_name_combo.count())]
@@ -2711,11 +2745,7 @@ class TorquePlotViewer(QMainWindow):
             if is_angle:
                 self.test_item_angle_ranges = dlg.ranges or {}
                 # Save Angle Ranges
-                try:
-                    cfg = get_config_file('test_item_angle_ranges.json')
-                    with open(cfg, 'w', encoding='utf-8') as f:
-                        json.dump(self.test_item_angle_ranges, f, indent=2)
-                except: pass
+                self._save_test_item_angle_ranges()
                 QMessageBox.information(self, 'Saved', 'Saved Test Item Angle Ranges')
             else:
                 self.test_item_time_ranges = dlg.ranges or {}
@@ -5320,6 +5350,8 @@ class TorquePlotViewer(QMainWindow):
                     }, f, indent=2)
             except:
                 pass
+            if metadata.part_name == 'Inner Tie Rod' and metadata.test_item == 'Oscillating Torque':
+                self.clear_oscillating_angle_range('Inner Tie Rod')
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save reports:\n{e}")
