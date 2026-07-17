@@ -1102,6 +1102,7 @@ class MainWindow(QMainWindow):
         if index == 0 and hasattr(self, '_plot_viewer'):
             try:
                 self._plot_viewer.clear_remark()
+                self._plot_viewer.clear_required_report_info()
             except Exception:
                 pass
         if index != 1 or getattr(self, '_plot_viewer_loaded', False):
@@ -1471,9 +1472,7 @@ class MainWindow(QMainWindow):
         self.combo_test_item = QComboBox()
         self.combo_test_item.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.combo_test_item.setMinimumContentsLength(5)
-        self.combo_test_item.addItem("Breakaway Torque", "breakaway")
-        self.combo_test_item.addItem("Operating Torque", "operating")
-        self.combo_test_item.addItem("Oscillating Torque", "oscillating")
+        self._populate_valid_test_items()
         self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
         self.combo_test_item.currentTextChanged.connect(lambda _text: self._save_ui_state())
         self.combo_test_item.currentTextChanged.connect(lambda _text: self._update_jog_speed_from_profile())
@@ -1482,13 +1481,14 @@ class MainWindow(QMainWindow):
         self.lbl_drawing_angle = QLabel(self.i18n.t('drawing_angle_lbl'))
         pg_lay.addWidget(self.lbl_drawing_angle, 2, 0)
         self.spin_drawing_angle = QDoubleSpinBox()
-        self.spin_drawing_angle.setRange(0.0, 360.0)
+        self.spin_drawing_angle.setRange(0.0, 35.0)
         self.spin_drawing_angle.setDecimals(1)
         self.spin_drawing_angle.setSuffix(" °")
         self.spin_drawing_angle.setToolTip(self.i18n.t('drawing_angle_tooltip'))
         self.spin_drawing_angle.valueChanged.connect(lambda _v: self._on_drawing_angle_changed())
         pg_lay.addWidget(self.spin_drawing_angle, 2, 1)
 
+        self.combo_part_name.currentIndexChanged.connect(lambda _idx: self._populate_valid_test_items())
         self.combo_part_name.currentIndexChanged.connect(lambda _idx: self._update_drawing_angle_visibility())
         self.combo_test_item.currentIndexChanged.connect(lambda _idx: self._update_drawing_angle_visibility())
 
@@ -2086,9 +2086,49 @@ class MainWindow(QMainWindow):
         data = self.combo_part_name.currentData()
         return str(data or PART_NAME_CODES.get(self.combo_part_name.currentText(), self.combo_part_name.currentText()))
 
+    def _populate_valid_test_items(self) -> None:
+        if not hasattr(self, 'combo_test_item'):
+            return
+        valid_items = {
+            'ITR': (
+                ('Breakaway Torque', 'breakaway'),
+                ('Oscillating Torque', 'oscillating'),
+            ),
+            'B/Joint': (
+                ('Breakaway Torque', 'breakaway'),
+                ('Operating Torque', 'operating'),
+            ),
+            'OTR': (
+                ('Breakaway Torque', 'breakaway'),
+                ('Operating Torque', 'operating'),
+            ),
+            'S/Link': (
+                ('Breakaway Torque', 'breakaway'),
+                ('Operating Torque', 'operating'),
+            ),
+        }
+        items = valid_items.get(self._current_part_code(), valid_items['ITR'])
+        previous_code = self._current_test_item_code()
+        valid_codes = {code for _label, code in items}
+        target_code = previous_code if previous_code in valid_codes else items[0][1]
+
+        self.combo_test_item.blockSignals(True)
+        self.combo_test_item.clear()
+        for label, code in items:
+            self.combo_test_item.addItem(label, code)
+        target_index = self.combo_test_item.findData(target_code)
+        self.combo_test_item.setCurrentIndex(target_index if target_index >= 0 else 0)
+        self.combo_test_item.blockSignals(False)
+
+        current_text = self.combo_test_item.currentText()
+        self._sync_test_item_to_plot_viewer(current_text)
+        self._update_jog_speed_from_profile()
+        self._update_drawing_angle_visibility()
+        self._save_ui_state()
+
     def _current_test_item_code(self) -> str:
         if not hasattr(self, 'combo_test_item'):
-            return 'operating'
+            return 'breakaway'
         data = self.combo_test_item.currentData()
         return str(data or TEST_ITEM_CODES.get(self.combo_test_item.currentText(), self.combo_test_item.currentText().lower()))
 
@@ -2152,9 +2192,9 @@ class MainWindow(QMainWindow):
         if not self._is_itr_oscillating_selected():
             return True
         angle = float(self.spin_drawing_angle.value()) if hasattr(self, 'spin_drawing_angle') else 0.0
-        if angle <= 0:
+        if not 0.0 < angle <= 35.0:
             QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('msg_drawing_angle_required'))
-            self._log('⚠️ Vui lòng nhập Góc đo trên bản vẽ trước khi chạy Oscillating Torque')
+            self._log(self.i18n.t('msg_drawing_angle_required'))
             return False
         self._apply_itr_oscillating_angle(angle)
         return True
@@ -2704,8 +2744,11 @@ class MainWindow(QMainWindow):
                 self.chk_fixed_y.setChecked(bool(ui['fixed_y']))
             if 'part_name' in ui and hasattr(self, 'combo_part_name'):
                 self._restore_combo_text(self.combo_part_name, ui['part_name'])
+                self._populate_valid_test_items()
             if 'test_item' in ui and hasattr(self, 'combo_test_item'):
-                self._restore_combo_text(self.combo_test_item, ui['test_item'])
+                saved_test_item = str(ui['test_item'])
+                if self.combo_test_item.findText(saved_test_item) >= 0:
+                    self._restore_combo_text(self.combo_test_item, saved_test_item)
             if 'plc_jog_speed' in ui and hasattr(self, 'spin_plc_jog_speed'):
                 self.spin_plc_jog_speed.setValue(float(ui['plc_jog_speed']))
             if hasattr(self, 'combo_chart_display_mode'):
@@ -3554,6 +3597,11 @@ class MainWindow(QMainWindow):
         self._plot_viewer.part_name_combo.blockSignals(True)
         self._plot_viewer.part_name_combo.setCurrentText(text)
         self._plot_viewer.part_name_combo.blockSignals(False)
+        try:
+            self._plot_viewer.set_valid_test_items(text, self.combo_test_item.currentText())
+            self._plot_viewer.on_part_name_changed()
+        except Exception:
+            pass
 
     def _sync_test_item_to_plot_viewer(self, text: str):
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
@@ -3562,6 +3610,10 @@ class MainWindow(QMainWindow):
         self._plot_viewer.test_item_combo.setCurrentText(text)
         self._plot_viewer.test_item_combo.blockSignals(False)
         try:
+            self._plot_viewer.set_valid_test_items(
+                self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else '',
+                text,
+            )
             self._plot_viewer.on_test_item_changed()
         except Exception:
             pass

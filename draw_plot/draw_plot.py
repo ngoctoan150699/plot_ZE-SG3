@@ -1390,6 +1390,7 @@ class TorquePlotViewer(QMainWindow):
             "other (O)"
         ])
         self.test_purpose_combo.setMaximumWidth(240)
+        self.test_purpose_combo.setCurrentIndex(-1)
         self.test_purpose_combo.currentIndexChanged.connect(self.on_test_purpose_changed)
         
         self.test_purpose_other_edit = QLineEdit("")
@@ -1452,6 +1453,7 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(self.team_label, 6, 2)
         self.team_combo = QComboBox()
         self.team_combo.addItems(TEAMS)
+        self.team_combo.setCurrentIndex(-1)
         self.team_combo.setMaximumWidth(180)
         meta_layout.addWidget(self.team_combo, 6, 3)
 
@@ -1484,6 +1486,7 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(self.line_no_label, 8, 2)
         self.line_no_combo = QComboBox()
         self.line_no_combo.addItems(LINE_NOS)
+        self.line_no_combo.setCurrentIndex(-1)
         self.line_no_combo.setMaximumWidth(180)
         meta_layout.addWidget(self.line_no_combo, 8, 3)
 
@@ -2890,6 +2893,65 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
 
+    def set_valid_test_items(self, part_name: str, preferred_item: str = '') -> None:
+        """Keep report test-item choices consistent with the selected product."""
+        combo = getattr(self, 'test_item_combo', None)
+        if combo is None:
+            return
+        items = (
+            ('Breakaway Torque', 'Oscillating Torque')
+            if part_name == 'Inner Tie Rod'
+            else ('Breakaway Torque', 'Operating Torque')
+        )
+        target = preferred_item if preferred_item in items else items[0]
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(items)
+        combo.setCurrentText(target)
+        combo.blockSignals(False)
+
+    def clear_required_report_info(self):
+        """Clear fields that operators must re-enter for each report."""
+        for edit_name in ('part_no_edit', 'tester_edit', 'test_purpose_other_edit'):
+            edit = getattr(self, edit_name, None)
+            if edit is not None:
+                edit.clear()
+        for combo_name in ('test_purpose_combo', 'team_combo', 'line_no_combo'):
+            combo = getattr(self, combo_name, None)
+            if combo is not None:
+                combo.setCurrentIndex(-1)
+        other_edit = getattr(self, 'test_purpose_other_edit', None)
+        if other_edit is not None:
+            other_edit.hide()
+
+    def _validate_required_report_info(self) -> bool:
+        purpose_combo = getattr(self, 'test_purpose_combo', None)
+        purpose = purpose_combo.currentText().strip() if purpose_combo is not None else ''
+        if purpose.lower() in ('other (o)', 'others'):
+            other_edit = getattr(self, 'test_purpose_other_edit', None)
+            purpose = other_edit.text().strip() if other_edit is not None else ''
+
+        required = (
+            (self._tr('plot_part_no').rstrip(':'), self.part_no_edit.text().strip(), self.part_no_edit),
+            (self._tr('plot_test_purpose').rstrip(':'), purpose, purpose_combo),
+            (self._tr('plot_tester').rstrip(':'), self.tester_edit.text().strip(), self.tester_edit),
+            (self._tr('plot_team').rstrip(':'), self.team_combo.currentText().strip(), self.team_combo),
+            (self._tr('plot_line_no').rstrip(':'), self.line_no_combo.currentText().strip(), self.line_no_combo),
+        )
+        missing = [(label, widget) for label, value, widget in required if not value]
+        if not missing:
+            return True
+        fields = '\n'.join(f'- {label}' for label, _widget in missing)
+        QMessageBox.warning(
+            self,
+            self._tr('plot_required_info_title'),
+            self._tr('plot_required_info_message').format(fields=fields),
+        )
+        first_widget = missing[0][1]
+        if first_widget is not None:
+            first_widget.setFocus()
+        return False
+
     def on_range_mode_changed(self, index=None):
         """Refresh range filtering; manual time cropping has been removed."""
         try:
@@ -3924,6 +3986,8 @@ class TorquePlotViewer(QMainWindow):
         if not self.time_data and not self.samples:
             QMessageBox.warning(self, "No data", "No data to export. Import or add at least one CSV file.")
             return None
+        if not self._validate_required_report_info():
+            return None
 
         try:
             from openpyxl import Workbook
@@ -4115,7 +4179,7 @@ class TorquePlotViewer(QMainWindow):
 
                 # Apply K factor
                 try:
-                    k = self.k_spin.value() if hasattr(self, 'k_spin') else 1.0
+                    k = getattr(self, 'k_factor', 1.0)
                     if k != 1.0 and len(plot_y) > 0:
                          plot_y = [t * k for t in plot_y]
                 except: pass
@@ -4155,7 +4219,7 @@ class TorquePlotViewer(QMainWindow):
                 
                 # Apply K factor
                 try:
-                    k = self.k_spin.value() if hasattr(self, 'k_spin') else 1.0
+                    k = getattr(self, 'k_factor', 1.0)
                     if k != 1.0 and len(plot_torque) > 0:
                          plot_torque = [t * k for t in plot_torque]
                 except: pass
@@ -4177,7 +4241,9 @@ class TorquePlotViewer(QMainWindow):
                     x_vals = sample.get('angle', []) if is_angle else sample.get('time', [])
                     y_vals = sample.get('torque', [])
                     if len(x_vals) > 0 and len(x_vals) == len(y_vals) and len(y_vals) > 0:
-                        ax2.plot(x_vals, y_vals, 'b.-', linewidth=0.9, markersize=3, label='1')
+                        k = getattr(self, 'k_factor', 1.0)
+                        calibrated_y = [value * k for value in y_vals] if k != 1.0 else y_vals
+                        ax2.plot(x_vals, calibrated_y, 'b.-', linewidth=0.9, markersize=3, label='1')
         except Exception:
             pass
 
@@ -5173,6 +5239,8 @@ class TorquePlotViewer(QMainWindow):
 
     def save_report(self):
         """Save both raw CSV and CTR report CSV using ReportService."""
+        if not self._validate_required_report_info():
+            return
         if not self.samples:
             QMessageBox.warning(self, "No Data", "No imported samples to save.")
             return

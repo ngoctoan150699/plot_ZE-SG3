@@ -76,10 +76,10 @@ TRANSLATIONS = {
         'test_item_lbl': 'Chế độ đo:',
         'btn_servo_setup': '⚙️ Thiết lập servo',
         'drawing_angle_lbl': 'Góc đo trên bản vẽ:',
-        'drawing_angle_tooltip': 'Nhập góc bản vẽ cho ITR Oscillating Torque',
+        'drawing_angle_tooltip': 'Nhập góc bản vẽ cho ITR Oscillating Torque (> 0° đến 35°)',
         'msg_osc_angle_applied': 'Đã tự tính góc Oscillating từ góc bản vẽ',
         'msg_osc_angle_cleared': 'Đã xóa góc bản vẽ và góc âm/dương sau khi chạy xong',
-        'msg_drawing_angle_required': 'Vui lòng nhập Góc đo trên bản vẽ trước khi chạy Oscillating Torque.',
+        'msg_drawing_angle_required': 'Vui lòng nhập Góc đo trên bản vẽ trong khoảng lớn hơn 0° đến 35° trước khi chạy Oscillating Torque.',
         'plc_control_grp': '🕹️ Điều khiển PLC / Servo',
         'btn_plc_run': '▶ CHẠY',
         'btn_plc_stop': 'Ⅱ DỪNG',
@@ -221,10 +221,10 @@ TRANSLATIONS = {
         'test_item_lbl': 'Test Item:',
         'btn_servo_setup': '⚙️ Servo Setup',
         'drawing_angle_lbl': 'Drawing angle:',
-        'drawing_angle_tooltip': 'Enter drawing angle for ITR Oscillating Torque',
+        'drawing_angle_tooltip': 'Enter the ITR Oscillating drawing angle (> 0° to 35°)',
         'msg_osc_angle_applied': 'Applied Oscillating angles from drawing angle',
         'msg_osc_angle_cleared': 'Cleared drawing and servo angles after run finished',
-        'msg_drawing_angle_required': 'Please enter the drawing angle before running Oscillating Torque.',
+        'msg_drawing_angle_required': 'Enter a drawing angle greater than 0° and up to 35° before running Oscillating Torque.',
         'plc_control_grp': '🕹️ PLC / Servo Control',
         'btn_plc_run': '▶ RUN',
         'btn_plc_stop': 'Ⅱ STOP',
@@ -377,6 +377,9 @@ TRANSLATIONS['vi'].update({
     'plot_browse_csv_tip': 'Chọn thư mục lưu CSV',
     'plot_browse_report_tip': 'Chọn thư mục lưu report',
     'plot_browse_summary_tip': 'Chọn file Excel summary report',
+    'plot_required_info_title': 'Thiếu thông tin báo cáo',
+    'plot_required_info_message': 'Vui lòng nhập/chọn đầy đủ các trường sau trước khi lưu báo cáo:\n{fields}',
+    'plot_select_required': 'Vui lòng chọn',
 })
 
 TRANSLATIONS['en'].update({
@@ -459,6 +462,9 @@ TRANSLATIONS['en'].update({
     'plot_browse_csv_tip': 'Browse CSV save directory',
     'plot_browse_report_tip': 'Browse report save directory',
     'plot_browse_summary_tip': 'Browse summary Excel report file',
+    'plot_required_info_title': 'Missing report information',
+    'plot_required_info_message': 'Enter/select all of the following fields before saving the report:\n{fields}',
+    'plot_select_required': 'Please select',
 })
 
 
