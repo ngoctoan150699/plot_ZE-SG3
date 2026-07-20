@@ -1490,6 +1490,15 @@ class TorquePlotViewer(QMainWindow):
         self.line_no_combo.setMaximumWidth(180)
         meta_layout.addWidget(self.line_no_combo, 8, 3)
 
+        # Highlight required report inputs until the operator fills them.
+        self.part_no_edit.textChanged.connect(self._refresh_required_report_highlights)
+        self.tester_edit.textChanged.connect(self._refresh_required_report_highlights)
+        self.test_purpose_combo.currentIndexChanged.connect(self._refresh_required_report_highlights)
+        self.test_purpose_other_edit.textChanged.connect(self._refresh_required_report_highlights)
+        self.team_combo.currentIndexChanged.connect(self._refresh_required_report_highlights)
+        self.line_no_combo.currentIndexChanged.connect(self._refresh_required_report_highlights)
+        self._refresh_required_report_highlights()
+
         # Profile save/load buttons (Row 9)
         prof_h = QHBoxLayout()
         prof_h.setSpacing(8)
@@ -2002,6 +2011,7 @@ class TorquePlotViewer(QMainWindow):
                 self.file_label.setText(self._tr('plot_no_file_loaded'))
             self.on_plot_mode_changed()
             self.update_average()
+            self._refresh_required_report_highlights()
         except Exception:
             pass
 
@@ -2043,6 +2053,8 @@ class TorquePlotViewer(QMainWindow):
             ax_color = '#ffffff'
             text_color = '#333333'
             grid_color = '#dddddd'
+
+        self._refresh_required_report_highlights()
 
         try:
             if hasattr(self, 'fig') and hasattr(self, 'ax'):
@@ -2877,19 +2889,44 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
 
-    def on_test_purpose_changed(self, index=None):
-        """Show/hide custom text input for Test Purpose and popup if Others."""
+    def _is_other_test_purpose(self) -> bool:
+        combo = getattr(self, 'test_purpose_combo', None)
+        text = combo.currentText().strip().lower() if combo is not None else ''
+        return text in ('other (o)', 'others')
+
+    def _set_required_input_highlight(self, widget, missing: bool) -> None:
+        if widget is None:
+            return
+        if missing:
+            # Local stylesheet intentionally overrides both light/dark themes.
+            widget.setStyleSheet(
+                "background-color: #fff3a3; color: #332b00; "
+                "border: 1px solid #d6a800;"
+            )
+        else:
+            widget.setStyleSheet("")
+
+    def _refresh_required_report_highlights(self, *_args) -> None:
+        """Mark only currently missing mandatory report inputs in yellow."""
         try:
-            txt = self.test_purpose_combo.currentText()
-            if txt == "Others":
-                current_val = self.test_purpose_other_edit.text()
-                text, ok = QInputDialog.getText(self, "Test Purpose", "Enter Other Purpose:", text=current_val)
-                if ok:
-                     self.test_purpose_other_edit.setText(text)
-                self.test_purpose_other_edit.show()
-            else:
-                self.test_purpose_other_edit.hide()
-                self.test_purpose_other_edit.clear()
+            is_other = self._is_other_test_purpose()
+            other_text = self.test_purpose_other_edit.text().strip()
+            purpose_missing = self.test_purpose_combo.currentIndex() < 0
+            self._set_required_input_highlight(self.part_no_edit, not self.part_no_edit.text().strip())
+            self._set_required_input_highlight(self.tester_edit, not self.tester_edit.text().strip())
+            self._set_required_input_highlight(self.test_purpose_combo, purpose_missing)
+            self._set_required_input_highlight(self.test_purpose_other_edit, False)
+            self._set_required_input_highlight(self.team_combo, self.team_combo.currentIndex() < 0)
+            self._set_required_input_highlight(self.line_no_combo, self.line_no_combo.currentIndex() < 0)
+        except Exception:
+            pass
+
+    def on_test_purpose_changed(self, index=None):
+        """Treat every selected purpose, including other (O), as complete."""
+        try:
+            self.test_purpose_other_edit.hide()
+            self.test_purpose_other_edit.clear()
+            self._refresh_required_report_highlights()
         except Exception:
             pass
 
@@ -2923,22 +2960,22 @@ class TorquePlotViewer(QMainWindow):
         other_edit = getattr(self, 'test_purpose_other_edit', None)
         if other_edit is not None:
             other_edit.hide()
+        self._refresh_required_report_highlights()
 
     def _validate_required_report_info(self) -> bool:
         purpose_combo = getattr(self, 'test_purpose_combo', None)
         purpose = purpose_combo.currentText().strip() if purpose_combo is not None else ''
-        if purpose.lower() in ('other (o)', 'others'):
-            other_edit = getattr(self, 'test_purpose_other_edit', None)
-            purpose = other_edit.text().strip() if other_edit is not None else ''
+        purpose_widget = purpose_combo
 
         required = (
             (self._tr('plot_part_no').rstrip(':'), self.part_no_edit.text().strip(), self.part_no_edit),
-            (self._tr('plot_test_purpose').rstrip(':'), purpose, purpose_combo),
+            (self._tr('plot_test_purpose').rstrip(':'), purpose, purpose_widget),
             (self._tr('plot_tester').rstrip(':'), self.tester_edit.text().strip(), self.tester_edit),
             (self._tr('plot_team').rstrip(':'), self.team_combo.currentText().strip(), self.team_combo),
             (self._tr('plot_line_no').rstrip(':'), self.line_no_combo.currentText().strip(), self.line_no_combo),
         )
         missing = [(label, widget) for label, value, widget in required if not value]
+        self._refresh_required_report_highlights()
         if not missing:
             return True
         fields = '\n'.join(f'- {label}' for label, _widget in missing)
