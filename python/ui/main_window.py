@@ -82,15 +82,18 @@ TEST_ITEM_CODES = {
     'Breakaway Torque': 'breakaway',
     'Operating Torque': 'operating',
     'Oscillating Torque': 'oscillating',
+    'Angle Measurement': 'angle',
+    'Đo góc': 'angle',
     'B': 'breakaway',
     'O': 'operating',
     'OSC': 'oscillating',
+    'ANGLE': 'angle',
 }
 
 def servo_profile_key(part_name_or_code: str, test_item_or_code: str) -> str:
     part_code = PART_NAME_CODES.get(str(part_name_or_code), str(part_name_or_code) or 'ITR')
     test_code = TEST_ITEM_CODES.get(str(test_item_or_code), str(test_item_or_code).lower() or 'operating')
-    suffix = {'breakaway': 'B', 'operating': 'O', 'oscillating': 'OSC'}.get(test_code, 'O')
+    suffix = {'breakaway': 'B', 'operating': 'O', 'oscillating': 'OSC', 'angle': 'ANGLE'}.get(test_code, 'O')
     return f"{part_code}_{suffix}"
 
 def is_itr_oscillating(part_name_or_code: str, test_item_or_code: str) -> bool:
@@ -538,24 +541,39 @@ class ServoSetupDialog(QDialog):
         update_pulses_labels()
             
 
-        # Update labels
         self.lbl_speed = QLabel("Vận tốc (speed):" if self.i18n.current_language == 'vi' else "Speed:")
         self.lbl_jog_speed = QLabel("Tốc độ JOG:" if self.i18n.current_language == 'vi' else "JOG Speed:")
         self.lbl_pos = QLabel("Gốc thuận (+):" if self.i18n.current_language == 'vi' else "Pos Angle (+):")
         self.lbl_neg = QLabel("Gốc nghịch (-):" if self.i18n.current_language == 'vi' else "Neg Angle (-):")
         self.lbl_cycles = QLabel("Số chu kỳ:" if self.i18n.current_language == 'vi' else "Cycles:")
         self.lbl_safety_torque = QLabel("Giới hạn lực an toàn:" if self.i18n.current_language == 'vi' else "Safety torque limit:")
+        self.spin_positive_torque = QDoubleSpinBox()
+        self.spin_positive_torque.setRange(0.01, 9999.0)
+        self.spin_positive_torque.setDecimals(2)
+        self.spin_positive_torque.setValue(getattr(profile, 'positive_torque_limit_Nm', 5.0))
+        self.spin_positive_torque.setSuffix(" Nm")
+        self.spin_negative_torque = QDoubleSpinBox()
+        self.spin_negative_torque.setRange(-9999.0, -0.01)
+        self.spin_negative_torque.setDecimals(2)
+        self.spin_negative_torque.setValue(getattr(profile, 'negative_torque_limit_Nm', -5.0))
+        self.spin_negative_torque.setSuffix(" Nm")
+        _make_spinboxes_text_edit_friendly(self.spin_positive_torque, self.spin_negative_torque)
+        is_angle = TEST_ITEM_CODES.get(str(self._test_item), str(self._test_item).lower()) == 'angle'
         
         form.addRow(self.lbl_speed, self.spin_speed)
         form.addRow("", self.lbl_converted_speed)
         form.addRow("Đơn vị tốc độ:" if self.i18n.current_language == "vi" else "Speed Unit:", self.combo_speed_unit)
-        form.addRow(self.lbl_jog_speed, self.spin_jog_speed)
-        form.addRow(self.lbl_pos, self.spin_pos)
-        form.addRow("", self.lbl_pos_pulses)
-        form.addRow(self.lbl_neg, self.spin_neg)
-        form.addRow("", self.lbl_neg_pulses)
-        form.addRow(self.lbl_cycles, self.spin_cycles)
-        form.addRow(self.lbl_safety_torque, self.spin_safety_torque)
+        if is_angle:
+            form.addRow(self.i18n.t('angle_positive_torque_lbl'), self.spin_positive_torque)
+            form.addRow(self.i18n.t('angle_negative_torque_lbl'), self.spin_negative_torque)
+        else:
+            form.addRow(self.lbl_jog_speed, self.spin_jog_speed)
+            form.addRow(self.lbl_pos, self.spin_pos)
+            form.addRow("", self.lbl_pos_pulses)
+            form.addRow(self.lbl_neg, self.spin_neg)
+            form.addRow("", self.lbl_neg_pulses)
+            form.addRow(self.lbl_cycles, self.spin_cycles)
+            form.addRow(self.lbl_safety_torque, self.spin_safety_torque)
         layout.addLayout(form)
         
         # Buttons
@@ -574,7 +592,9 @@ class ServoSetupDialog(QDialog):
             'positive_angle': self.spin_pos.value(),
             'negative_angle': self.spin_neg.value(),
             'cycles': self.spin_cycles.value(),
-            'safety_torque_limit_Nm': round(self.spin_safety_torque.value(), 2)
+            'safety_torque_limit_Nm': round(self.spin_safety_torque.value(), 2),
+            'positive_torque_limit_Nm': round(self.spin_positive_torque.value(), 2),
+            'negative_torque_limit_Nm': round(self.spin_negative_torque.value(), 2)
         }
 
 
@@ -880,6 +900,10 @@ class MainWindow(QMainWindow):
         self._plc_running = False
         self._safety_torque_limit_Nm = 30.0
         self._safety_abort_triggered = False
+        self._angle_state = 'IDLE'
+        self._angle_origin = 0.0
+        self._angle_profile = None
+        self._angle_return_timer = None
 
         # === Qt signals → UI callbacks ===
         self._sig_status.connect(self._on_status_received)
@@ -1101,8 +1125,10 @@ class MainWindow(QMainWindow):
         """Lazy-load Plot Viewer only when user opens the tab."""
         if index == 0 and hasattr(self, '_plot_viewer'):
             try:
-                self._plot_viewer.clear_remark()
-                self._plot_viewer.clear_required_report_info()
+                # Metadata chỉ xóa sau Operating/Oscillating; biểu đồ luôn giữ nguyên.
+                if self._current_test_item_code() in ('operating', 'oscillating'):
+                    self._plot_viewer.clear_remark()
+                    self._plot_viewer.clear_required_report_info()
             except Exception:
                 pass
         if index != 1 or getattr(self, '_plot_viewer_loaded', False):
@@ -2093,6 +2119,7 @@ class MainWindow(QMainWindow):
             'ITR': (
                 ('Breakaway Torque', 'breakaway'),
                 ('Oscillating Torque', 'oscillating'),
+                (self.i18n.t('test_item_angle'), 'angle'),
             ),
             'B/Joint': (
                 ('Breakaway Torque', 'breakaway'),
@@ -2497,6 +2524,7 @@ class MainWindow(QMainWindow):
         self._plc_status_error_logged = False
         if hasattr(status, 'current_angle_deg'):
             self._current_angle = status.current_angle_deg
+            self._check_angle_return_position(self._current_angle)
         if hasattr(status, 'current_cycle'):
             self._current_cycle = status.current_cycle
         if hasattr(self, 'lbl_plc_angle'):
@@ -3046,6 +3074,7 @@ class MainWindow(QMainWindow):
             self.lbl_stable.setStyleSheet(f"color: {color};")
 
         self._check_safety_torque_limit(status)
+        self._process_angle_torque(float(status.net_weight))
 
         # Chart update (nếu không đang PAUSE)
         if not self._chart_paused:
@@ -3343,7 +3372,161 @@ class MainWindow(QMainWindow):
         if abs(torque) > limit:
             self._trigger_safety_abort(torque, limit)
 
+    def _is_angle_selected(self) -> bool:
+        return self._current_part_code() == 'ITR' and self._current_test_item_code() == 'angle'
+
+    def _start_angle_program(self) -> None:
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('angle_plc_required'))
+            return
+        profile = self._settings.load_servo_profiles().get('ITR_ANGLE')
+        if profile is None or profile.positive_torque_limit_Nm <= 0 or profile.negative_torque_limit_Nm >= 0:
+            QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('angle_invalid_limits'))
+            return
+        self._angle_profile = profile
+        self._angle_origin = float(self._current_angle)
+        self._angle_state = 'SEEK_POSITIVE_LIMIT'
+        self._angle_previous_jog_rpm = float(self.spin_plc_jog_speed.value())
+        self.spin_plc_jog_speed.blockSignals(True)
+        self.spin_plc_jog_speed.setValue(float(profile.speed))
+        self.spin_plc_jog_speed.blockSignals(False)
+        self.btn_rec_start.setEnabled(False)
+        self.btn_rec_stop.setEnabled(True)
+        self._begin_plc_jog(1)
+        if not self._plc_svc.jog_plus(True):
+            self._abort_angle_program()
+            QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('angle_plc_required'))
+            return
+        self._log(self.i18n.t('angle_running_positive'))
+
+    def _process_angle_torque(self, torque: float) -> None:
+        profile = self._angle_profile
+        if profile is None:
+            return
+        if self._angle_state == 'SEEK_POSITIVE_LIMIT' and torque >= profile.positive_torque_limit_Nm:
+            self._plc_svc.jog_plus(False)
+            self._end_plc_jog()
+            self._angle_state = 'WAIT_ZERO_SET_CONFIRMATION'
+            self._show_angle_confirmation(True)
+        elif self._angle_state == 'SEEK_NEGATIVE_LIMIT' and torque <= profile.negative_torque_limit_Nm:
+            self._plc_svc.jog_minus(False)
+            self._end_plc_jog()
+            self._angle_state = 'WAIT_MEASUREMENT_CONFIRMATION'
+            self._show_angle_confirmation(False)
+
+    def _show_angle_confirmation(self, zero_step: bool) -> None:
+        msg = QMessageBox(self)
+        msg.setWindowTitle(self.i18n.t('angle_dialog_title'))
+        msg.setIcon(QMessageBox.Question)
+        msg.setText(self.i18n.t('angle_zero_question' if zero_step else 'angle_measure_question'))
+        button = msg.addButton(self.i18n.t('angle_done_btn' if zero_step else 'angle_complete_btn'), QMessageBox.AcceptRole)
+        msg.exec_()
+        if msg.clickedButton() != button:
+            self._abort_angle_program()
+            return
+        if zero_step:
+            self._angle_state = 'SEEK_NEGATIVE_LIMIT'
+            self._begin_plc_jog(-1)
+            if not self._plc_svc.jog_minus(True):
+                self._abort_angle_program()
+                return
+            self._log(self.i18n.t('angle_running_negative'))
+        else:
+            self._return_angle_to_origin()
+
+    def _return_angle_to_origin(self) -> None:
+        current = float(self._current_angle)
+        delta = self._angle_origin - current
+        if abs(delta) <= 0.15:
+            self._finish_angle_program()
+            return
+
+        # Quay về bằng đúng tốc độ đã cài cho chương trình Angle.
+        # Sai số cuối được kiểm soát bằng D124: dừng trong vùng tolerance hoặc
+        # ngay khi phát hiện đã giao qua mốc giữa hai lần polling.
+        return_rpm = max(0.1, float(self._angle_profile.speed)) if self._angle_profile else 0.1
+        self.spin_plc_jog_speed.blockSignals(True)
+        self.spin_plc_jog_speed.setValue(return_rpm)
+        self.spin_plc_jog_speed.blockSignals(False)
+
+        direction = 1 if delta > 0 else -1
+        self._angle_state = 'RETURN_TO_ORIGIN'
+        self._angle_return_direction = direction
+        self._angle_return_previous = current
+        self._angle_return_deadline = time.monotonic() + max(10.0, abs(delta) / max(0.03, return_rpm * 0.3) * 2.0 + 3.0)
+        self._begin_plc_jog(direction)
+        ok = self._plc_svc.jog_plus(True) if direction > 0 else self._plc_svc.jog_minus(True)
+        if not ok:
+            self._abort_angle_program()
+            return
+        self._log(self.i18n.t('angle_returning_origin'))
+
+    def _check_angle_return_position(self, current_angle: float) -> None:
+        """Dừng JOG khi D124 tới/giao qua mốc ban đầu, không dựa vào timer."""
+        if self._angle_state != 'RETURN_TO_ORIGIN' or not self._plc_svc:
+            return
+        origin = float(self._angle_origin)
+        previous = float(getattr(self, '_angle_return_previous', current_angle))
+        direction = int(getattr(self, '_angle_return_direction', 1))
+        within_tolerance = abs(current_angle - origin) <= 0.15
+        crossed_origin = ((direction > 0 and previous < origin <= current_angle)
+                          or (direction < 0 and previous > origin >= current_angle))
+        timed_out = time.monotonic() >= float(getattr(self, '_angle_return_deadline', 0.0))
+        self._angle_return_previous = current_angle
+        if within_tolerance or crossed_origin:
+            self._stop_angle_return()
+            self._finish_angle_program()
+        elif timed_out:
+            self._stop_angle_return()
+            self._log("⚠️ Angle return timeout; servo stopped safely")
+            self._abort_angle_program()
+
+    def _stop_angle_return(self) -> None:
+        """Nhả JOG nhưng giữ nguyên góc D124 phản hồi, không ghi ép về origin."""
+        if not self._plc_svc:
+            return
+        if getattr(self, '_angle_return_direction', 1) > 0:
+            self._plc_svc.jog_plus(False)
+        else:
+            self._plc_svc.jog_minus(False)
+        self._jog_active = False
+        self._jog_direction = 0
+        self._plc_svc.write_mode(self._selected_plc_mode())
+
+
+    def _restore_after_angle_program(self) -> None:
+        previous = getattr(self, '_angle_previous_jog_rpm', None)
+        if previous is not None and hasattr(self, 'spin_plc_jog_speed'):
+            self.spin_plc_jog_speed.blockSignals(True)
+            self.spin_plc_jog_speed.setValue(float(previous))
+            self.spin_plc_jog_speed.blockSignals(False)
+            delattr(self, '_angle_previous_jog_rpm')
+        self._restore_plc_jog_speed()
+
+    def _finish_angle_program(self) -> None:
+        self._angle_state = 'IDLE'
+        self._angle_profile = None
+        self.btn_rec_start.setEnabled(True)
+        self.btn_rec_stop.setEnabled(False)
+        self._restore_after_angle_program()
+        self._log(self.i18n.t('angle_completed'))
+
+    def _abort_angle_program(self) -> None:
+        if self._plc_svc and self._plc_svc.is_connected():
+            self._plc_svc.jog_plus(False)
+            self._plc_svc.jog_minus(False)
+        self._angle_state = 'IDLE'
+        self._angle_profile = None
+        self._restore_after_angle_program()
+        if hasattr(self, 'btn_rec_start'):
+            self.btn_rec_start.setEnabled(True)
+            self.btn_rec_stop.setEnabled(False)
+
     def _start_recording(self):
+        # Angle dùng nút bắt đầu hiện tại nhưng tuyệt đối không bật ghi mẫu.
+        if self._is_angle_selected():
+            self._start_angle_program()
+            return
         # R2 Upgrade: prepare Servo/PLC profile before enabling local recording.
         if not self._validate_itr_oscillating_angle_before_run():
             return
@@ -3412,6 +3595,10 @@ class MainWindow(QMainWindow):
                 self._log("❌ Không thể khởi chạy Servo sequence!")
 
     def _stop_recording(self):
+        if getattr(self, '_angle_state', 'IDLE') != 'IDLE':
+            self._abort_angle_program()
+            self._log("⏹ Angle program stopped")
+            return
         was_recording = self._recording
         self._session.end_time = time.monotonic()
         self._recording = False
@@ -3535,7 +3722,9 @@ class MainWindow(QMainWindow):
                 speed=vals['speed'],
                 jog_speed=vals['jog_speed'],
                 cycles=vals['cycles'],
-                safety_torque_limit_Nm=vals['safety_torque_limit_Nm']
+                safety_torque_limit_Nm=vals['safety_torque_limit_Nm'],
+                positive_torque_limit_Nm=vals['positive_torque_limit_Nm'],
+                negative_torque_limit_Nm=vals['negative_torque_limit_Nm']
             )
             self._settings.save_servo_profiles(profiles)
             

@@ -169,6 +169,7 @@ class AppSettings(ISettingsRepository):
             'ITR_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'ITR_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'ITR_OSC': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
+            'ITR_ANGLE': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 10.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0, 'positive_torque_limit_Nm': 5.0, 'negative_torque_limit_Nm': -5.0},
             'B/Joint_B': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'B/Joint_O': {'negative_angle': -36.0, 'positive_angle': 36.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
             'B/Joint_OSC': {'negative_angle': 0.0, 'positive_angle': 0.0, 'speed': 100.0, 'jog_speed': 10.0, 'safety_torque_limit_Nm': 30.0},
@@ -187,7 +188,9 @@ class AppSettings(ISettingsRepository):
                 speed=float(raw.get('speed', default['speed'])),
                 jog_speed=float(raw.get('jog_speed', default.get('jog_speed', 10.0))),
                 cycles=int(raw.get('cycles', default.get('cycles', 3))),
-                safety_torque_limit_Nm=float(raw.get('safety_torque_limit_Nm', default.get('safety_torque_limit_Nm', 30.0)))
+                safety_torque_limit_Nm=float(raw.get('safety_torque_limit_Nm', default.get('safety_torque_limit_Nm', 30.0))),
+                positive_torque_limit_Nm=float(raw.get('positive_torque_limit_Nm', default.get('positive_torque_limit_Nm', 5.0))),
+                negative_torque_limit_Nm=float(raw.get('negative_torque_limit_Nm', default.get('negative_torque_limit_Nm', -5.0)))
             )
         return profiles
 
@@ -200,7 +203,9 @@ class AppSettings(ISettingsRepository):
                 'speed': p.speed,
                 'jog_speed': p.jog_speed,
                 'cycles': p.cycles,
-                'safety_torque_limit_Nm': getattr(p, 'safety_torque_limit_Nm', 30.0)
+                'safety_torque_limit_Nm': getattr(p, 'safety_torque_limit_Nm', 30.0),
+                'positive_torque_limit_Nm': getattr(p, 'positive_torque_limit_Nm', 5.0),
+                'negative_torque_limit_Nm': getattr(p, 'negative_torque_limit_Nm', -5.0)
             }
         self._data['servo_profiles'] = profiles_raw
         self._save_raw()
