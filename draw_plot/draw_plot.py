@@ -3753,16 +3753,16 @@ class TorquePlotViewer(QMainWindow):
                 # Breakaway: result is maximum torque in the configured angle range.
                 self.avg_label.setText("-")
                 self.min_label.setText("-")
-                self.max_label.setText(f"{calculated_result:.6f}")
+                self.max_label.setText(f"{calculated_result:.2f}")
                 self.avg_label_kgf.setText("-")
                 self.min_label_kgf.setText("-")
-                self.max_label_kgf.setText(f"{calculated_result * 10.1972:.6f}")
+                self.max_label_kgf.setText(f"{calculated_result * 10.1972:.2f}")
             else:
                 # Operating/Oscillating: result is average torque in the configured angle range.
-                self.avg_label.setText(f"{calculated_result:.6f}")
+                self.avg_label.setText(f"{calculated_result:.2f}")
                 self.min_label.setText("-")
                 self.max_label.setText("-")
-                self.avg_label_kgf.setText(f"{calculated_result * 10.1972:.6f}")
+                self.avg_label_kgf.setText(f"{calculated_result * 10.1972:.2f}")
                 self.min_label_kgf.setText("-")
                 self.max_label_kgf.setText("-")
         except Exception:
@@ -4742,17 +4742,18 @@ class TorquePlotViewer(QMainWindow):
                 import numpy as np
                 # Convert to absolute values to match App calculation logic
                 vals_abs = np.abs(vals)
-                ravg = float(np.mean(vals_abs))
-                rmin = float(np.min(vals))
-                rmax = float(np.max(vals))
-                # Kgf.cm (1 Nm = 10.1972 Kgf.cm)
-                ravg_k = ravg * 10.1972
-                rmin_k = rmin * 10.1972
-                rmax_k = rmax * 10.1972
+                ravg = round(float(np.mean(vals_abs)), 2)
+                rmin = round(float(np.min(vals)), 2)
+                rmax = round(float(np.max(vals)), 2)
+                # Kgf.cm (1 Nm = 10.1972 Kgf.cm); round the converted
+                # report values independently to exactly two decimal places.
+                ravg_k = round(float(np.mean(vals_abs)) * 10.1972, 2)
+                rmin_k = round(float(np.min(vals)) * 10.1972, 2)
+                rmax_k = round(float(np.max(vals)) * 10.1972, 2)
             else:
                 ravg = rmin = rmax = ravg_k = rmin_k = rmax_k = None
 
-            # Write stats with high numeric precision format
+            # Write rounded stats with two-decimal numeric format.
             # Columns: 1=Sample, 2=PartNo, 3=Avg(Nm), 4=Avg(Kgf.cm), 5=Max(Nm), 6=Max(Kgf.cm), 7=Min(Nm), 8=Min(Kgf.cm)
             c3 = ws.cell(row=data_row, column=3, value=ravg)
             c4 = ws.cell(row=data_row, column=4, value=ravg_k)
@@ -4762,7 +4763,7 @@ class TorquePlotViewer(QMainWindow):
             c8 = ws.cell(row=data_row, column=8, value=rmin_k)
 
             try:
-                fmt = '0.00000000'
+                fmt = '0.00'
                 for cell in [c3, c4, c5, c6, c7, c8]:
                     if cell.value is not None:
                         cell.number_format = fmt
