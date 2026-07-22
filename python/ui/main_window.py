@@ -3349,6 +3349,10 @@ class MainWindow(QMainWindow):
             return
         self._safety_abort_triggered = True
         self._log(f"🛑 DỪNG KHẨN: |Torque|={abs(torque_value):.3f} Nm vượt ngưỡng ±{limit:.3f} Nm")
+        # Dừng angle program trước (nếu đang chạy) để nhả JOG ngay lập tức
+        if getattr(self, '_angle_state', 'IDLE') != 'IDLE':
+            self._abort_angle_program()
+            self._log("🛑 Đã abort Angle Program do vượt ngưỡng an toàn")
         if self._plc_svc and self._plc_svc.is_connected():
             if self._plc_svc.abort():
                 self._log("🛑 Đã gửi ABORT D100.b6 tới PLC")
@@ -3363,9 +3367,16 @@ class MainWindow(QMainWindow):
             self._stop_recording()
 
     def _check_safety_torque_limit(self, status: DeviceStatus) -> None:
-        if not self._recording or self._safety_abort_triggered:
+        # Kiểm tra cả khi recording lẫn khi angle program đang chạy
+        angle_running = getattr(self, '_angle_state', 'IDLE') != 'IDLE'
+        if (not self._recording and not angle_running) or self._safety_abort_triggered:
             return
         limit = float(getattr(self, '_safety_torque_limit_Nm', 0.0) or 0.0)
+        # Khi angle program: dùng safety_torque_limit từ angle profile nếu có
+        if angle_running and limit <= 0:
+            profile = getattr(self, '_angle_profile', None)
+            if profile:
+                limit = float(getattr(profile, 'safety_torque_limit_Nm', 0.0) or 0.0)
         if limit <= 0:
             return
         torque = float(status.net_weight)
@@ -3384,6 +3395,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('angle_invalid_limits'))
             return
         self._angle_profile = profile
+        self._safety_abort_triggered = False  # Reset để safety check hoạt động
+        self._safety_torque_limit_Nm = float(getattr(profile, 'safety_torque_limit_Nm', 30.0) or 0.0)
         self._angle_origin = float(self._current_angle)
         self._angle_state = 'SEEK_POSITIVE_LIMIT'
         self._angle_previous_jog_rpm = float(self.spin_plc_jog_speed.value())
@@ -3403,15 +3416,35 @@ class MainWindow(QMainWindow):
         profile = self._angle_profile
         if profile is None:
             return
+        # Safety check: nếu torque vượt quá 150% giới hạn, force abort ngay
+        # (trường hợp polling Modbus chậm, torque nhảy quá nhanh)
+        if self._angle_state in ('SEEK_POSITIVE_LIMIT', 'SEEK_NEGATIVE_LIMIT'):
+            safety_margin = 1.5  # 150%
+            if (self._angle_state == 'SEEK_POSITIVE_LIMIT'
+                    and torque >= profile.positive_torque_limit_Nm * safety_margin):
+                self._log(f"🛑 Torque vượt quá 150% giới hạn dương ({torque:.3f} Nm), ABORT!")
+                self._plc_svc.jog_plus(False)
+                self._end_plc_jog()
+                self._abort_angle_program()
+                return
+            if (self._angle_state == 'SEEK_NEGATIVE_LIMIT'
+                    and torque <= profile.negative_torque_limit_Nm * safety_margin):
+                self._log(f"🛑 Torque vượt quá 150% giới hạn âm ({torque:.3f} Nm), ABORT!")
+                self._plc_svc.jog_minus(False)
+                self._end_plc_jog()
+                self._abort_angle_program()
+                return
         if self._angle_state == 'SEEK_POSITIVE_LIMIT' and torque >= profile.positive_torque_limit_Nm:
             self._plc_svc.jog_plus(False)
             self._end_plc_jog()
             self._angle_state = 'WAIT_ZERO_SET_CONFIRMATION'
+            self._log(f"✅ Đạt giới hạn dương: {torque:.3f} Nm >= {profile.positive_torque_limit_Nm:.3f} Nm")
             self._show_angle_confirmation(True)
         elif self._angle_state == 'SEEK_NEGATIVE_LIMIT' and torque <= profile.negative_torque_limit_Nm:
             self._plc_svc.jog_minus(False)
             self._end_plc_jog()
             self._angle_state = 'WAIT_MEASUREMENT_CONFIRMATION'
+            self._log(f"✅ Đạt giới hạn âm: {torque:.3f} Nm <= {profile.negative_torque_limit_Nm:.3f} Nm")
             self._show_angle_confirmation(False)
 
     def _show_angle_confirmation(self, zero_step: bool) -> None:
@@ -3421,6 +3454,11 @@ class MainWindow(QMainWindow):
         msg.setText(self.i18n.t('angle_zero_question' if zero_step else 'angle_measure_question'))
         button = msg.addButton(self.i18n.t('angle_done_btn' if zero_step else 'angle_complete_btn'), QMessageBox.AcceptRole)
         msg.exec_()
+        # Trong khi dialog đang hiển thị, safety abort có thể đã reset state.
+        # Kiểm tra trước khi tiếp tục để tránh servo chạy vô hạn không có profile.
+        if self._angle_state == 'IDLE' or self._angle_profile is None:
+            self._log("⚠️ Angle program đã bị abort trong khi chờ xác nhận")
+            return
         if msg.clickedButton() != button:
             self._abort_angle_program()
             return
