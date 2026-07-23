@@ -566,6 +566,7 @@ class ServoSetupDialog(QDialog):
         if is_angle:
             form.addRow(self.i18n.t('angle_positive_torque_lbl'), self.spin_positive_torque)
             form.addRow(self.i18n.t('angle_negative_torque_lbl'), self.spin_negative_torque)
+            form.addRow(self.lbl_safety_torque, self.spin_safety_torque)
         else:
             form.addRow(self.lbl_jog_speed, self.spin_jog_speed)
             form.addRow(self.lbl_pos, self.spin_pos)
@@ -3371,12 +3372,18 @@ class MainWindow(QMainWindow):
         angle_running = getattr(self, '_angle_state', 'IDLE') != 'IDLE'
         if (not self._recording and not angle_running) or self._safety_abort_triggered:
             return
+        
         limit = float(getattr(self, '_safety_torque_limit_Nm', 0.0) or 0.0)
-        # Khi angle program: dùng safety_torque_limit từ angle profile nếu có
-        if angle_running and limit <= 0:
+        # Khi angle program: ưu tiên ngưỡng an toàn tính theo profile Angle (150% giới hạn cài đặt hoặc safety_torque_limit_Nm)
+        if angle_running:
             profile = getattr(self, '_angle_profile', None)
             if profile:
-                limit = float(getattr(profile, 'safety_torque_limit_Nm', 0.0) or 0.0)
+                target_limit = abs(float(getattr(profile, 'positive_torque_limit_Nm', 1.0) or 1.0))
+                profile_safety = float(getattr(profile, 'safety_torque_limit_Nm', 0.0) or 0.0)
+                if profile_safety > 0:
+                    limit = min(profile_safety, max(2.0, target_limit * 1.5))
+                else:
+                    limit = max(2.0, target_limit * 1.5)
         if limit <= 0:
             return
         torque = float(status.net_weight)
@@ -3394,9 +3401,19 @@ class MainWindow(QMainWindow):
         if profile is None or profile.positive_torque_limit_Nm <= 0 or profile.negative_torque_limit_Nm >= 0:
             QMessageBox.warning(self, self.i18n.t('msg_err'), self.i18n.t('angle_invalid_limits'))
             return
+        
+        # Tare cảm biến trước khi chạy Angle Program để mô-men xuất phát từ 0.0 Nm
+        if self._config_svc:
+            try:
+                self._config_svc.tare()
+                self._log("🔬 Đã Tare cảm biến về 0.000 Nm trước khi đo góc")
+            except Exception as exc:
+                self._log(f"⚠️ Tare cảm biến không thành công: {exc}")
+
         self._angle_profile = profile
         self._safety_abort_triggered = False  # Reset để safety check hoạt động
-        self._safety_torque_limit_Nm = float(getattr(profile, 'safety_torque_limit_Nm', 30.0) or 0.0)
+        pos_lim = abs(float(profile.positive_torque_limit_Nm))
+        self._safety_torque_limit_Nm = max(2.0, pos_lim * 1.5)
         self._angle_origin = float(self._current_angle)
         self._angle_state = 'SEEK_POSITIVE_LIMIT'
         self._angle_previous_jog_rpm = float(self.spin_plc_jog_speed.value())
@@ -3416,35 +3433,35 @@ class MainWindow(QMainWindow):
         profile = self._angle_profile
         if profile is None:
             return
-        # Safety check: nếu torque vượt quá 150% giới hạn, force abort ngay
-        # (trường hợp polling Modbus chậm, torque nhảy quá nhanh)
+        
+        abs_torque = abs(torque)
+        pos_limit = abs(float(profile.positive_torque_limit_Nm))
+        neg_limit = abs(float(profile.negative_torque_limit_Nm))
+
+        # Safety check 150%: kiểm tra độ lớn abs(torque) phòng trường hợp mô-men tăng quá nhanh hoặc bị ngược dấu
         if self._angle_state in ('SEEK_POSITIVE_LIMIT', 'SEEK_NEGATIVE_LIMIT'):
             safety_margin = 1.5  # 150%
-            if (self._angle_state == 'SEEK_POSITIVE_LIMIT'
-                    and torque >= profile.positive_torque_limit_Nm * safety_margin):
-                self._log(f"🛑 Torque vượt quá 150% giới hạn dương ({torque:.3f} Nm), ABORT!")
+            if self._angle_state == 'SEEK_POSITIVE_LIMIT' and abs_torque >= pos_limit * safety_margin:
+                self._log(f"🛑 Mô-men |Torque|={abs_torque:.3f} Nm vượt quá 150% giới hạn dương ({pos_limit * safety_margin:.3f} Nm), ABORT!")
                 self._plc_svc.jog_plus(False)
-                self._end_plc_jog()
                 self._abort_angle_program()
                 return
-            if (self._angle_state == 'SEEK_NEGATIVE_LIMIT'
-                    and torque <= profile.negative_torque_limit_Nm * safety_margin):
-                self._log(f"🛑 Torque vượt quá 150% giới hạn âm ({torque:.3f} Nm), ABORT!")
+            if self._angle_state == 'SEEK_NEGATIVE_LIMIT' and abs_torque >= neg_limit * safety_margin:
+                self._log(f"🛑 Mô-men |Torque|={abs_torque:.3f} Nm vượt quá 150% giới hạn âm ({neg_limit * safety_margin:.3f} Nm), ABORT!")
                 self._plc_svc.jog_minus(False)
-                self._end_plc_jog()
                 self._abort_angle_program()
                 return
-        if self._angle_state == 'SEEK_POSITIVE_LIMIT' and torque >= profile.positive_torque_limit_Nm:
+
+        # Kiểm tra ngưỡng dừng chính thức (dựa trên độ lớn abs(torque) hoặc giá trị có dấu)
+        if self._angle_state == 'SEEK_POSITIVE_LIMIT' and (abs_torque >= pos_limit or torque >= profile.positive_torque_limit_Nm):
             self._plc_svc.jog_plus(False)
-            self._end_plc_jog()
             self._angle_state = 'WAIT_ZERO_SET_CONFIRMATION'
-            self._log(f"✅ Đạt giới hạn dương: {torque:.3f} Nm >= {profile.positive_torque_limit_Nm:.3f} Nm")
+            self._log(f"✅ Đạt giới hạn mô-men dương: |Torque|={abs_torque:.3f} Nm >= {pos_limit:.3f} Nm")
             self._show_angle_confirmation(True)
-        elif self._angle_state == 'SEEK_NEGATIVE_LIMIT' and torque <= profile.negative_torque_limit_Nm:
+        elif self._angle_state == 'SEEK_NEGATIVE_LIMIT' and (abs_torque >= neg_limit or torque <= profile.negative_torque_limit_Nm):
             self._plc_svc.jog_minus(False)
-            self._end_plc_jog()
             self._angle_state = 'WAIT_MEASUREMENT_CONFIRMATION'
-            self._log(f"✅ Đạt giới hạn âm: {torque:.3f} Nm <= {profile.negative_torque_limit_Nm:.3f} Nm")
+            self._log(f"✅ Đạt giới hạn mô-men âm: |Torque|={abs_torque:.3f} Nm >= {neg_limit:.3f} Nm")
             self._show_angle_confirmation(False)
 
     def _show_angle_confirmation(self, zero_step: bool) -> None:
