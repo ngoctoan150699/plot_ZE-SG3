@@ -1073,7 +1073,7 @@ class MainWindow(QMainWindow):
 
         left_panel_lay.addWidget(conn_bottom_widget)
 
-        left_panel.setMinimumWidth(500)
+        left_panel.setMinimumWidth(380)
         left_panel.setMaximumWidth(16777215)
 
         # --- Right Panel ---
@@ -1103,7 +1103,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right)
-        splitter.setSizes([420, 860])
+        splitter.setSizes([400, 880])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
         splitter.setStretchFactor(0, 0)
@@ -1178,7 +1178,7 @@ class MainWindow(QMainWindow):
         super().showEvent(a0)
         try:
             total = max(800, self.width())
-            left_w = max(420, int(total * 0.35))
+            left_w = max(380, int(total * 0.30))
             right_w = max(300, total - left_w)
             # Apply sizes to splitter
             if hasattr(self, 'splitter'):
@@ -1405,7 +1405,11 @@ class MainWindow(QMainWindow):
         self.btn_quick_tare.clicked.connect(self._do_tare)
         self.btn_quick_restart  = QPushButton("🔄 Restart Device")
         self.btn_quick_restart.clicked.connect(self._do_restart)
-        cg.addWidget(self.btn_quick_tare); cg.addWidget(self.btn_quick_restart)
+        self.btn_sampling_settings = QPushButton(self.i18n.t('btn_sampling_settings'))
+        self.btn_sampling_settings.clicked.connect(self._open_sampling_settings)
+        cg.addWidget(self.btn_quick_tare)
+        cg.addWidget(self.btn_quick_restart)
+        cg.addWidget(self.btn_sampling_settings)
         self.grp_quick_cmd.setLayout(cg); main_lay.addWidget(self.grp_quick_cmd)
 
         main_lay.addStretch()
@@ -1429,13 +1433,8 @@ class MainWindow(QMainWindow):
 
         self.grp_sampling = QGroupBox("⏱️ Lấy mẫu")
         sg = QVBoxLayout()
-        sg.setContentsMargins(6, 8, 6, 6)
-        sg.setSpacing(6)
-
-        self.btn_sampling_settings = QPushButton(self.i18n.t('btn_sampling_settings'))
-        self.btn_sampling_settings.setMinimumHeight(34)
-        self.btn_sampling_settings.clicked.connect(self._open_sampling_settings)
-        sg.addWidget(self.btn_sampling_settings)
+        sg.setContentsMargins(0, 0, 0, 0)
+        sg.setSpacing(0)
 
         self.lbl_sampling_summary = QLabel()
         self.lbl_sampling_summary.setStyleSheet("color: #a6adc8; font-size: 9pt;")
@@ -1475,7 +1474,7 @@ class MainWindow(QMainWindow):
             hidden.setVisible(False)
 
         self.grp_sampling.setLayout(sg)
-        lay.addWidget(self.grp_sampling)
+        self.grp_sampling.setVisible(False)
 
         # Tiêu chuẩn sản phẩm theo mã hàng.
         self.grp_standard = QGroupBox(self.i18n.t('standard_grp'))
@@ -1584,54 +1583,38 @@ class MainWindow(QMainWindow):
         row_run.addWidget(self.btn_plc_run)
         pc_lay.addLayout(row_run)
 
-        row_cmd = QHBoxLayout()
-        row_cmd.setSpacing(6)
+        # Các widget PLC phụ vẫn tồn tại và giữ nguyên signal/handler nhưng không đưa vào layout.
+        self.grp_plc_control.setLayout(pc_lay)
+        lay.addWidget(self.grp_plc_control)
+
         self.btn_plc_reset = QPushButton(self.i18n.t('btn_plc_reset'))
         self.btn_plc_abort = QPushButton(self.i18n.t('btn_plc_abort'))
         self.btn_plc_home = QPushButton(self.i18n.t('btn_plc_home'))
         self.btn_plc_reset.clicked.connect(self._plc_reset_fault)
         self.btn_plc_abort.clicked.connect(self._plc_abort)
         self.btn_plc_home.clicked.connect(self._plc_home)
-        row_cmd.addWidget(self.btn_plc_reset)
-        row_cmd.addWidget(self.btn_plc_abort)
-        row_cmd.addWidget(self.btn_plc_home)
-        pc_lay.addLayout(row_cmd)
-
-        row_jog_speed = QHBoxLayout()
-        row_jog_speed.setSpacing(6)
         self.lbl_plc_jog_speed = QLabel(self.i18n.t('lbl_plc_jog_speed'))
         self.spin_plc_jog_speed = QDoubleSpinBox()
         self.spin_plc_jog_speed.setRange(0.1, 200.0)
         self.spin_plc_jog_speed.setValue(10.0)
         self.spin_plc_jog_speed.setSuffix(" rpm")
         self.spin_plc_jog_speed.valueChanged.connect(self._on_plc_jog_speed_changed)
-        row_jog_speed.addWidget(self.lbl_plc_jog_speed)
-        row_jog_speed.addWidget(self.spin_plc_jog_speed)
-        pc_lay.addLayout(row_jog_speed)
-
-        row_jog = QHBoxLayout()
-        row_jog.setSpacing(6)
         self.btn_plc_jog_minus = QPushButton(self.i18n.t('btn_plc_jog_minus'))
         self.btn_plc_jog_plus = QPushButton(self.i18n.t('btn_plc_jog_plus'))
         self.btn_plc_jog_minus.pressed.connect(lambda: self._plc_jog_minus(True))
         self.btn_plc_jog_minus.released.connect(lambda: self._plc_jog_minus(False))
         self.btn_plc_jog_plus.pressed.connect(lambda: self._plc_jog_plus(True))
         self.btn_plc_jog_plus.released.connect(lambda: self._plc_jog_plus(False))
+        row_jog = QHBoxLayout()
+        row_jog.setSpacing(6)
         row_jog.addWidget(self.btn_plc_jog_minus)
         row_jog.addWidget(self.btn_plc_jog_plus)
         pc_lay.addLayout(row_jog)
-
-        for btn in (
-            self.btn_plc_run,
-            self.btn_plc_reset, self.btn_plc_abort, self.btn_plc_home,
-            self.btn_plc_jog_minus, self.btn_plc_jog_plus,
-        ):
-            btn.setMinimumHeight(34)
+        for btn in (self.btn_plc_run, self.btn_plc_jog_minus, self.btn_plc_jog_plus):
+            btn.setMinimumHeight(30)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        self.grp_plc_control.setLayout(pc_lay)
-        lay.addWidget(self.grp_plc_control)
-
+        # --- Recording ---
         self.grp_recording = QGroupBox("🔴 Ghi dữ liệu")
         rg = QVBoxLayout()
         rg.setContentsMargins(6, 8, 6, 6)
@@ -1711,7 +1694,8 @@ class MainWindow(QMainWindow):
             eg.addWidget(btn)
             self.exporter_buttons[exp] = btn
 
-        self.grp_export.setLayout(eg); lay.addWidget(self.grp_export)
+        self.grp_export.setLayout(eg)
+        self.grp_export.setVisible(False)
 
         self._apply_acquisition_draw_plot_skin()
 
@@ -2162,21 +2146,20 @@ class MainWindow(QMainWindow):
             return
         valid_items = {
             'ITR': (
-                ('Breakaway Torque', 'breakaway'),
-                ('Oscillating Torque', 'oscillating'),
-                (self.i18n.t('test_item_angle'), 'angle'),
+                (self.i18n.t('test_item_breakaway'), 'breakaway'),
+                (self.i18n.t('test_item_oscillating'), 'oscillating'),
             ),
             'B/Joint': (
-                ('Breakaway Torque', 'breakaway'),
-                ('Operating Torque', 'operating'),
+                (self.i18n.t('test_item_breakaway'), 'breakaway'),
+                (self.i18n.t('test_item_operating'), 'operating'),
             ),
             'OTR': (
-                ('Breakaway Torque', 'breakaway'),
-                ('Operating Torque', 'operating'),
+                (self.i18n.t('test_item_breakaway'), 'breakaway'),
+                (self.i18n.t('test_item_operating'), 'operating'),
             ),
             'S/Link': (
-                ('Breakaway Torque', 'breakaway'),
-                ('Operating Torque', 'operating'),
+                (self.i18n.t('test_item_breakaway'), 'breakaway'),
+                (self.i18n.t('test_item_operating'), 'operating'),
             ),
         }
         items = valid_items.get(self._current_part_code(), valid_items['ITR'])
@@ -4214,6 +4197,8 @@ class MainWindow(QMainWindow):
             self.spin_drawing_angle.setToolTip(self.i18n.t('drawing_angle_tooltip'))
         if hasattr(self, 'btn_servo_setup'):
             self.btn_servo_setup.setText(self.i18n.t('btn_servo_setup'))
+        if hasattr(self, 'combo_test_item'):
+            self._populate_valid_test_items()
         if hasattr(self, 'grp_standard'):
             self.grp_standard.setTitle(self.i18n.t('standard_grp'))
             self.lbl_part_no.setText(self.i18n.t('part_no_lbl'))
