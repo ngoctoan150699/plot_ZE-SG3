@@ -24,7 +24,7 @@ from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QAbstractSpinBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
-    QGroupBox, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTabWidget, QTextEdit,
     QVBoxLayout, QWidget, QToolButton,
 )
@@ -45,7 +45,7 @@ from domain.constants import (
 )
 from domain.entities import (
     ConnectionConfig, DeviceConfig, DeviceStatus,
-    RecordingSession, SampleData,
+    RecordingSession, SampleData, StandardRecord,
 )
 from domain.plc_protocol import PlcTestConfig, angle_to_x100, speed_to_x100
 from ui.widgets.realtime_plot import RealTimePlot
@@ -847,6 +847,7 @@ class MainWindow(QMainWindow):
         measurement_svc: Optional[Any] = None,
         report_svc: Optional[Any] = None,
         bus_scheduler: Optional[Any] = None,
+        standard_svc: Optional[Any] = None,
     ):
         super().__init__()
         # === Inject dependencies ===
@@ -861,6 +862,8 @@ class MainWindow(QMainWindow):
         self._measurement_svc = measurement_svc
         self._report_svc  = report_svc
         self._bus_scheduler = bus_scheduler
+        self._standard_svc = standard_svc
+        self._standard_record: Optional[StandardRecord] = None
 
         if self._plc_svc and self._bus_scheduler:
             self._plc_svc.set_scheduler(self._bus_scheduler)
@@ -1473,6 +1476,47 @@ class MainWindow(QMainWindow):
 
         self.grp_sampling.setLayout(sg)
         lay.addWidget(self.grp_sampling)
+
+        # Tiêu chuẩn sản phẩm theo mã hàng.
+        self.grp_standard = QGroupBox(self.i18n.t('standard_grp'))
+        std_lay = QGridLayout(self.grp_standard)
+        std_lay.setContentsMargins(6, 10, 6, 6)
+        std_lay.setSpacing(5)
+        self.lbl_part_no = QLabel(self.i18n.t('part_no_lbl'))
+        self.edit_part_no = QLineEdit()
+        self.edit_part_no.setMaxLength(8)
+        self.edit_part_no.textChanged.connect(self._on_standard_part_no_changed)
+        std_lay.addWidget(self.lbl_part_no, 0, 0)
+        std_lay.addWidget(self.edit_part_no, 0, 1)
+
+        self.btn_update_standard_file = QPushButton(self.i18n.t('btn_update_standard_file'))
+        self.btn_update_standard_file.clicked.connect(self._select_standard_file)
+        std_lay.addWidget(self.btn_update_standard_file, 1, 0, 1, 2)
+        self.lbl_standard_file = QLabel()
+        self.lbl_standard_file.setWordWrap(True)
+        std_lay.addWidget(self.lbl_standard_file, 2, 0, 1, 2)
+
+        self.lbl_lower_fixture_title = QLabel(self.i18n.t('lower_fixture_lbl'))
+        self.lbl_lower_fixture = QLabel('—')
+        self.lbl_upper_fixture_title = QLabel(self.i18n.t('upper_fixture_lbl'))
+        self.lbl_upper_fixture = QLabel('—')
+        self.lbl_thread_code_title = QLabel(self.i18n.t('thread_code_lbl'))
+        self.lbl_thread_code = QLabel('—')
+        self.lbl_special_warning_title = QLabel(self.i18n.t('special_warning_lbl'))
+        self.lbl_special_warning = QLabel('—')
+        self.lbl_special_warning.setWordWrap(True)
+        for row, (title, value) in enumerate((
+            (self.lbl_lower_fixture_title, self.lbl_lower_fixture),
+            (self.lbl_upper_fixture_title, self.lbl_upper_fixture),
+            (self.lbl_thread_code_title, self.lbl_thread_code),
+            (self.lbl_special_warning_title, self.lbl_special_warning),
+        ), start=3):
+            std_lay.addWidget(title, row, 0)
+            std_lay.addWidget(value, row, 1)
+        self.lbl_standard_status = QLabel(self.i18n.t('std_status_incomplete'))
+        std_lay.addWidget(self.lbl_standard_status, 7, 0, 1, 2)
+        self._refresh_standard_file_label()
+        lay.addWidget(self.grp_standard)
 
         # === 1.5. Nhóm Chương trình đo (R2 Upgrades) ===
         self.grp_program = QGroupBox("⚙️ Chương trình đo")
@@ -3962,6 +4006,77 @@ class MainWindow(QMainWindow):
         else:
             self.btn_toggle_lang.setText("🌐 Tiếng Việt (VI)")
 
+    def _clear_standard_display(self, status_key: str) -> None:
+        self._standard_record = None
+        for name in ('lbl_lower_fixture', 'lbl_upper_fixture', 'lbl_thread_code', 'lbl_special_warning'):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setText('—')
+                widget.setToolTip('')
+        if hasattr(self, 'lbl_standard_status'):
+            self.lbl_standard_status.setText(self.i18n.t(status_key))
+            self.lbl_standard_status.setStyleSheet('color: #f38ba8;' if status_key != 'std_status_incomplete' else 'color: #a6adc8;')
+
+    def _on_standard_part_no_changed(self) -> None:
+        if not hasattr(self, 'edit_part_no'):
+            return
+        raw = self.edit_part_no.text().strip().upper()
+        if self.edit_part_no.text() != raw:
+            self.edit_part_no.blockSignals(True)
+            self.edit_part_no.setText(raw)
+            self.edit_part_no.blockSignals(False)
+        if len(raw) != 8:
+            self._clear_standard_display('std_status_incomplete')
+            return
+        if self._standard_svc is None or self._standard_svc.active_path is None:
+            self._clear_standard_display('std_status_file_error')
+            return
+        record = self._standard_svc.lookup(raw)
+        if record is None:
+            self._clear_standard_display('std_status_not_found')
+            return
+        self._standard_record = record
+        values = {
+            'lbl_lower_fixture': record.lower_fixture,
+            'lbl_upper_fixture': record.upper_fixture,
+            'lbl_thread_code': record.thread_code,
+            'lbl_special_warning': record.special_warning,
+        }
+        for name, value in values.items():
+            text = value or '—'
+            widget = getattr(self, name)
+            widget.setText(text)
+            widget.setToolTip(text)
+        self.lbl_special_warning.setStyleSheet('color: #fab387; font-weight: bold;' if record.special_warning else '')
+        self.lbl_standard_status.setText(self.i18n.t('std_status_loaded'))
+        self.lbl_standard_status.setStyleSheet('color: #a6e3a1; font-weight: bold;')
+
+    def _refresh_standard_file_label(self) -> None:
+        if not hasattr(self, 'lbl_standard_file'):
+            return
+        path = getattr(self._standard_svc, 'active_path', None)
+        text = str(path) if path else self.i18n.t('std_status_file_error')
+        self.lbl_standard_file.setText(f"{self.i18n.t('std_file_lbl')} {os.path.basename(text) if path else text}")
+        self.lbl_standard_file.setToolTip(str(path or ''))
+
+    def _select_standard_file(self) -> None:
+        if self._standard_svc is None:
+            self._clear_standard_display('std_status_file_error')
+            return
+        current = self._standard_svc.active_path or self._standard_svc.default_path
+        path, _ = QFileDialog.getOpenFileName(self, self.i18n.t('btn_update_standard_file'), str(current.parent), 'Excel (*.xlsx)')
+        if not path:
+            return
+        try:
+            self._standard_svc.load(path)
+        except Exception as exc:
+            QMessageBox.warning(self, self.i18n.t('msg_err'), f"{self.i18n.t('msg_standard_file_invalid')}\n{exc}")
+            return
+        self._settings.save_standard_file_path(path)
+        self._refresh_standard_file_label()
+        self._on_standard_part_no_changed()
+        QMessageBox.information(self, self.i18n.t('msg_success'), self.i18n.t('msg_standard_file_updated'))
+
     def _toggle_language(self):
         new_lang = self.i18n.toggle()
         self._retranslate_ui()
@@ -4099,6 +4214,16 @@ class MainWindow(QMainWindow):
             self.spin_drawing_angle.setToolTip(self.i18n.t('drawing_angle_tooltip'))
         if hasattr(self, 'btn_servo_setup'):
             self.btn_servo_setup.setText(self.i18n.t('btn_servo_setup'))
+        if hasattr(self, 'grp_standard'):
+            self.grp_standard.setTitle(self.i18n.t('standard_grp'))
+            self.lbl_part_no.setText(self.i18n.t('part_no_lbl'))
+            self.btn_update_standard_file.setText(self.i18n.t('btn_update_standard_file'))
+            self.lbl_lower_fixture_title.setText(self.i18n.t('lower_fixture_lbl'))
+            self.lbl_upper_fixture_title.setText(self.i18n.t('upper_fixture_lbl'))
+            self.lbl_thread_code_title.setText(self.i18n.t('thread_code_lbl'))
+            self.lbl_special_warning_title.setText(self.i18n.t('special_warning_lbl'))
+            self._refresh_standard_file_label()
+            self._on_standard_part_no_changed()
         if hasattr(self, 'grp_plc_control'):
             self.grp_plc_control.setTitle(self.i18n.t('plc_control_grp'))
         if hasattr(self, 'btn_plc_run'):

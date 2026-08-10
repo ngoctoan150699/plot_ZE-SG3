@@ -113,6 +113,22 @@ TRANSLATIONS = {
         'export_grp': '💾 Xuất dữ liệu',
         'csv_simple_display_name': 'CSV đơn giản (Thời gian, Mô-men)',
         'import_tools_grp': '📥 Nhập dữ liệu sang công cụ khác',
+
+        # Product Standard
+        'standard_grp': '📋 Tiêu chuẩn sản phẩm',
+        'part_no_lbl': 'Mã hàng (8 ký tự):',
+        'btn_update_standard_file': '📁 Cập nhật file tiêu chuẩn',
+        'std_file_lbl': 'File tiêu chuẩn:',
+        'lower_fixture_lbl': 'Đồ gá dưới:',
+        'upper_fixture_lbl': 'Đồ gá trên:',
+        'thread_code_lbl': 'Mã ren:',
+        'special_warning_lbl': 'Cảnh báo đặc biệt:',
+        'std_status_incomplete': 'Chưa nhập đủ 8 ký tự mã hàng',
+        'std_status_not_found': 'Mã hàng không tồn tại',
+        'std_status_loaded': 'Đã tải tiêu chuẩn',
+        'std_status_file_error': 'Không tải được file tiêu chuẩn',
+        'msg_standard_file_updated': 'Đã cập nhật file tiêu chuẩn thành công',
+        'msg_standard_file_invalid': 'File tiêu chuẩn không hợp lệ:',
         'btn_import_plot': '📊 Nhập vào phân tích dữ liệu',
         
         # Real-time Display Group
@@ -272,6 +288,22 @@ TRANSLATIONS = {
         'export_grp': '💾 Export Data',
         'csv_simple_display_name': 'Simple CSV (Time, Torque)',
         'import_tools_grp': '📥 Import Data to Other Tools',
+
+        # Product Standard
+        'standard_grp': '📋 Product Standard',
+        'part_no_lbl': 'Part No. (8 chars):',
+        'btn_update_standard_file': '📁 Update standard file',
+        'std_file_lbl': 'Standard file:',
+        'lower_fixture_lbl': 'Lower fixture:',
+        'upper_fixture_lbl': 'Upper fixture:',
+        'thread_code_lbl': 'Thread code:',
+        'special_warning_lbl': 'Special warning:',
+        'std_status_incomplete': 'Part number requires exactly 8 characters',
+        'std_status_not_found': 'Part number not found',
+        'std_status_loaded': 'Standard loaded',
+        'std_status_file_error': 'Could not load standard file',
+        'msg_standard_file_updated': 'Standard file updated successfully',
+        'msg_standard_file_invalid': 'Invalid standard file:',
         'btn_import_plot': '📊 Import to Plot Viewer',
         
         # Real-time Display Group

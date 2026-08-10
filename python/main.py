@@ -97,6 +97,35 @@ def main():
     measurement_svc = MeasurementService()
     report_svc  = ReportService()
 
+    from application.standard_service import StandardService
+    standard_svc = StandardService()
+    saved_std_path = settings.load_standard_file_path()
+    if saved_std_path:
+        from pathlib import Path
+        p = Path(saved_std_path)
+        if p.exists():
+            try:
+                standard_svc.load(p)
+                logger.info("Đã tải file tiêu chuẩn từ settings: %s", p)
+            except Exception as e:
+                logger.warning("Không thể tải file tiêu chuẩn từ settings (%s), dùng file mặc định", e)
+                try:
+                    standard_svc.load()
+                except Exception as ex:
+                    logger.error("Không thể tải file tiêu chuẩn mặc định: %s", ex)
+        else:
+            logger.warning("File tiêu chuẩn đã lưu không tồn tại (%s), dùng file mặc định", saved_std_path)
+            try:
+                standard_svc.load()
+            except Exception as ex:
+                logger.error("Không thể tải file tiêu chuẩn mặc định: %s", ex)
+    else:
+        try:
+            standard_svc.load()
+            logger.info("Đã tải file tiêu chuẩn mặc định")
+        except Exception as ex:
+            logger.error("Không thể tải file tiêu chuẩn mặc định: %s", ex)
+
     # -------------------------------------------------------
     # 4. EXPORTERS – OCP: thêm exporter mới ở đây
     # -------------------------------------------------------
@@ -140,6 +169,7 @@ def main():
         measurement_svc=measurement_svc,
         report_svc=report_svc,
         bus_scheduler=bus_scheduler,
+        standard_svc=standard_svc,
     )
     window.set_app_icon(icon_path)
 
