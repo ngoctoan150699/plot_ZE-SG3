@@ -160,6 +160,14 @@ class AppSettings(ISettingsRepository):
         self._data['ui'] = current
         self._save_raw()
 
+    def load_standard_file_path(self) -> str:
+        """Tải đường dẫn file tiêu chuẩn người dùng đã chọn."""
+        return str(self.load_ui_settings().get('standard_file_path', '') or '')
+
+    def save_standard_file_path(self, path: str) -> None:
+        """Lưu đường dẫn file tiêu chuẩn bằng cơ chế merge UI settings."""
+        self.save_ui_settings({'standard_file_path': str(path or '')})
+
     def load_servo_profiles(self) -> dict:
         from domain.entities import ServoProfile
         profiles_raw = self._data.get('servo_profiles', {})

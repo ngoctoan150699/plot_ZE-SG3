@@ -181,3 +181,18 @@ class RecordingSession:
     @property
     def count(self) -> int:
         return len(self.samples)
+
+
+@dataclass(frozen=True)
+class StandardRecord:
+    """Một dòng tiêu chuẩn sản phẩm đã được kiểm tra từ file Excel."""
+    part_no: str
+    breakaway_max: float
+    operating_min: float
+    operating_max: float
+    internal_operating_min: float
+    internal_operating_max: float
+    lower_fixture: str = ""
+    upper_fixture: str = ""
+    thread_code: str = ""
+    special_warning: str = ""

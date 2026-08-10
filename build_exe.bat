@@ -42,6 +42,7 @@ echo [4/5] Building EXE...
   --add-data "python\app_icon.ico;." ^
   --add-data "draw_plot;draw_plot" ^
   --add-data "python\settings.json;." ^
+  --add-data "file\Upload%%20standard.xlsx;file" ^
   python\main.py
 if errorlevel 1 goto :fail
 
