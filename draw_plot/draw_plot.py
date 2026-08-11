@@ -418,6 +418,31 @@ class CommaDoubleSpinBox(QDoubleSpinBox):
             self.setValue(val)
         except Exception:
             pass
+    def wheelEvent(self, event):
+        """Ignore scroll wheel unless the widget already has keyboard focus."""
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+class NoScrollComboBox(QComboBox):
+    """QComboBox that only responds to scroll wheel when it has keyboard focus."""
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+class NoScrollSpinBox(QSpinBox):
+    """QSpinBox that only responds to scroll wheel when it has keyboard focus."""
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+
 class CustomToolbar(NavigationToolbar2QT):
     """Custom Toolbar that removes Subplots button and adds Zoom Out."""
     def __init__(self, canvas, parent=None):
@@ -1230,7 +1255,7 @@ class TorquePlotViewer(QMainWindow):
         files_layout.addLayout(files_ctrl_h)
         self.files_group.setLayout(files_layout)
         # Restrict max height so it scrolls internally instead of growing
-        self.files_group.setMaximumHeight(200)
+        self.files_group.setMaximumHeight(140)
 
         # NOTE: do not add self.files_group to main_layout here — it will be placed
         # into the left column alongside the metadata so it only occupies the
@@ -1239,11 +1264,17 @@ class TorquePlotViewer(QMainWindow):
         # === Report Metadata ===
         self.meta_group = QGroupBox(self._tr('plot_report_info_grp'))
         meta_layout = QGridLayout()
+        meta_layout.setContentsMargins(4, 4, 4, 4)
+        meta_layout.setVerticalSpacing(2)
+        meta_layout.setHorizontalSpacing(4)
 
         self.test_item_label = QLabel(self._tr('plot_test_item'))
         meta_layout.addWidget(self.test_item_label, 0, 0)
-        self.test_item_combo = QComboBox()
+        self.test_item_combo = NoScrollComboBox()
         self.test_item_combo.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
+        self.test_item_combo.setMaximumWidth(145)
+        self.test_item_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.test_item_combo.setMinimumContentsLength(12)
         self.test_item_combo.setEnabled(False) # Locked editing, synced from Thu thap
         try:
             self.test_item_combo.currentIndexChanged.connect(self.on_test_item_changed)
@@ -1252,7 +1283,7 @@ class TorquePlotViewer(QMainWindow):
 
         self.part_name_label = QLabel(self._tr('plot_part_name'))
         meta_layout.addWidget(self.part_name_label, 0, 2)
-        self.part_name_combo = QComboBox()
+        self.part_name_combo = NoScrollComboBox()
         self.part_name_combo.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
         self.part_name_combo.setEnabled(False) # Locked editing, synced from Thu thap
         meta_layout.addWidget(self.part_name_combo, 0, 3)
@@ -1264,7 +1295,7 @@ class TorquePlotViewer(QMainWindow):
         self.part_no_label = QLabel(self._tr('plot_part_no'))
         meta_layout.addWidget(self.part_no_label, 1, 0)
         self.part_no_edit = QLineEdit("")
-        self.part_no_edit.setMaximumWidth(140)
+        self.part_no_edit.setMaximumWidth(110)
         def _on_part_no_changed(text):
             pos = self.part_no_edit.cursorPosition()
             upp = text.upper()
@@ -1279,7 +1310,7 @@ class TorquePlotViewer(QMainWindow):
         part_sample_h.addWidget(self.part_no_edit)
         self.sample_no_label = QLabel(self._tr('plot_sample_no'))
         part_sample_h.addWidget(self.sample_no_label)
-        self.sample_no_spin = QSpinBox()
+        self.sample_no_spin = NoScrollSpinBox()
         self.sample_no_spin.setRange(1, 99)
         self.sample_no_spin.setValue(1)
         self.sample_no_spin.setMaximumWidth(70)
@@ -1293,79 +1324,78 @@ class TorquePlotViewer(QMainWindow):
         self.write_label = QLabel(self._tr('plot_write'))
         report_h.addWidget(self.write_label)
         self.write_edit = QLineEdit("")
-        self.write_edit.setMaximumWidth(140)
+        self.write_edit.setMaximumWidth(100)
         report_h.addWidget(self.write_edit)
         self.review_label = QLabel(self._tr('plot_review'))
         report_h.addWidget(self.review_label)
         self.review_edit = QLineEdit("")
-        self.review_edit.setMaximumWidth(140)
+        self.review_edit.setMaximumWidth(100)
         report_h.addWidget(self.review_edit)
         self.approval_label = QLabel(self._tr('plot_approval'))
         report_h.addWidget(self.approval_label)
         self.approval_edit = QLineEdit("")
-        self.approval_edit.setMaximumWidth(140)
+        self.approval_edit.setMaximumWidth(100)
         report_h.addWidget(self.approval_edit)
         meta_layout.addLayout(report_h, 3, 0, 1, 4)
 
-        # SPECIFICATION moved to its own row below PART NO
-        self.specification_label = QLabel(self._tr('plot_specification'))
+        # Drawing/Internal specifications are supplied by the validated Excel standard.
+        self.specification_label = QLabel(self._tr('plot_drawing_spec'))
         meta_layout.addWidget(self.specification_label, 2, 0)
-        spec_h = QHBoxLayout()
-        self.spec_min_spin = None
-        self.spec_max_spin = None
-        try:
-            self.spec_min_spin = CommaDoubleSpinBox()
-            self.spec_min_spin.setRange(-1e6, 1e6)
-            self.spec_min_spin.setMaximumWidth(120)
-            self.spec_min_spin.setSuffix(" Nm")
-            self.spec_min_spin.setValue(0.0)
-            self.spec_min_spin.setToolTip('Specification minimum (Nm)')
-            self.spec_min_label = QLabel(self._tr('plot_min'))
-            spec_h.addWidget(self.spec_min_label)
-            spec_h.addWidget(self.spec_min_spin)
-            try:
-                self.spec_min_spin.valueChanged.connect(self.update_average)
-                self.spec_min_spin.editingFinished.connect(self.save_current_spec)
-            except Exception:
-                pass
-            self.spec_max_spin = CommaDoubleSpinBox()
-            self.spec_max_spin.setRange(-1e6, 1e6)
-            self.spec_max_spin.setMaximumWidth(120)
-            self.spec_max_spin.setSuffix(" Nm")
-            self.spec_max_spin.setValue(0.0)
-            self.spec_max_spin.setToolTip('Specification maximum (Nm)')
-            self.spec_max_label = QLabel(self._tr('plot_max'))
-            spec_h.addWidget(self.spec_max_label)
-            spec_h.addWidget(self.spec_max_spin)
-            try:
-                self.spec_max_spin.valueChanged.connect(self.update_average)
-                self.spec_max_spin.editingFinished.connect(self.save_current_spec)
-            except Exception:
-                pass
-            self.spec_min_spin.show()
-            self.spec_max_spin.show()
-        except Exception:
-            pass
-            self.spec_edit = QLineEdit("")
-            self.spec_edit.setMaximumWidth(180)
-            spec_h.addWidget(self.spec_edit)
-            try:
-                self.spec_edit.textChanged.connect(self.update_average)
-            except Exception:
-                pass
-        meta_layout.addLayout(spec_h, 2, 1, 1, 3)
+        self.spec_min_spin = CommaDoubleSpinBox()
+        self.spec_max_spin = CommaDoubleSpinBox()
+        self.internal_spec_min_spin = CommaDoubleSpinBox()
+        self.internal_spec_max_spin = CommaDoubleSpinBox()
+        for spin in (self.spec_min_spin, self.spec_max_spin,
+                     self.internal_spec_min_spin, self.internal_spec_max_spin):
+            spin.setRange(-1e6, 1e6)
+            spin.setMaximumWidth(105)
+            spin.setSuffix(" Nm")
+            spin.setReadOnly(True)
+            spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
+            spin.valueChanged.connect(self.update_average)
+        self.spec_min_label = QLabel(self._tr('plot_min'))
+        self.spec_max_label = QLabel(self._tr('plot_max'))
+        self.internal_spec_label = QLabel(self._tr('plot_internal_spec'))
+        self.internal_spec_min_label = QLabel(self._tr('plot_min'))
+        self.internal_spec_max_label = QLabel(self._tr('plot_max'))
+        # Keep Drawing/Internal on separate rows so labels remain visible at 420 px.
+        spec_v = QVBoxLayout()
+        spec_v.setContentsMargins(0, 0, 0, 0)
+        spec_v.setSpacing(2)
+        drawing_spec_h = QHBoxLayout()
+        drawing_spec_h.setContentsMargins(0, 0, 0, 0)
+        drawing_spec_h.setSpacing(4)
+        drawing_spec_h.addWidget(self.spec_min_label)
+        drawing_spec_h.addWidget(self.spec_min_spin)
+        drawing_spec_h.addWidget(self.spec_max_label)
+        drawing_spec_h.addWidget(self.spec_max_spin)
+        drawing_spec_h.addStretch()
+        internal_spec_h = QHBoxLayout()
+        internal_spec_h.setContentsMargins(0, 0, 0, 0)
+        internal_spec_h.setSpacing(4)
+        internal_spec_h.addWidget(self.internal_spec_label)
+        internal_spec_h.addWidget(self.internal_spec_min_label)
+        internal_spec_h.addWidget(self.internal_spec_min_spin)
+        internal_spec_h.addWidget(self.internal_spec_max_label)
+        internal_spec_h.addWidget(self.internal_spec_max_spin)
+        internal_spec_h.addStretch()
+        spec_v.addLayout(drawing_spec_h)
+        spec_v.addLayout(internal_spec_h)
+        meta_layout.addLayout(spec_v, 2, 1, 1, 3)
+        self._excel_spec_available = False
 
-        self.date_label = QLabel(self._tr('plot_date'))
-        meta_layout.addWidget(self.date_label, 4, 0)
-        self.date_edit = QDateEdit(QDate.currentDate())
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setMaximumWidth(140)
-        meta_layout.addWidget(self.date_edit, 4, 1)
+        # Row 4: Date (editable, default today) Col 0-1 | Tester Col 2-3
+        self.date_display_label = QLabel(self._tr('plot_date'))
+        meta_layout.addWidget(self.date_display_label, 4, 0)
+        self.date_display_edit = QLineEdit(datetime.now().strftime('%Y-%m-%d'))
+        self.date_display_edit.setMaximumWidth(110)
+        self.date_display_edit.setToolTip('Format: YYYY-MM-DD')
+        meta_layout.addWidget(self.date_display_edit, 4, 1)
 
         self.tester_label = QLabel(self._tr('plot_tester'))
         meta_layout.addWidget(self.tester_label, 4, 2)
         self.tester_edit = QLineEdit("")
-        self.tester_edit.setMaximumWidth(180)
+        self.tester_edit.setMaximumWidth(140)
         def _on_tester_changed(text):
             pos = self.tester_edit.cursorPosition()
             clean = remove_diacritics_no_strip(text)
@@ -1379,7 +1409,7 @@ class TorquePlotViewer(QMainWindow):
 
         self.test_purpose_label = QLabel(self._tr('plot_test_purpose'))
         meta_layout.addWidget(self.test_purpose_label, 5, 0)
-        self.test_purpose_combo = QComboBox()
+        self.test_purpose_combo = NoScrollComboBox()
         self.test_purpose_combo.addItems([
             "Setting (S)",
             "First (F)",
@@ -1389,7 +1419,9 @@ class TorquePlotViewer(QMainWindow):
             "Long-term (L)",
             "other (O)"
         ])
-        self.test_purpose_combo.setMaximumWidth(240)
+        self.test_purpose_combo.setMaximumWidth(135)
+        self.test_purpose_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.test_purpose_combo.setMinimumContentsLength(10)
         self.test_purpose_combo.setCurrentIndex(-1)
         self.test_purpose_combo.currentIndexChanged.connect(self.on_test_purpose_changed)
         
@@ -1404,14 +1436,18 @@ class TorquePlotViewer(QMainWindow):
         tp_layout.addWidget(self.test_purpose_other_edit)
         meta_layout.addWidget(tp_container, 5, 1)
         
-        # Judgment display label (show OK/NG)
-        self.judgment_title_label = QLabel(self._tr('plot_judgment'))
+        # Two independent judgments from the same measured value.
+        self.judgment_title_label = QLabel(self._tr('plot_drawing_judgment'))
         meta_layout.addWidget(self.judgment_title_label, 5, 2)
         self.judgment_h = QHBoxLayout()
-        self.judgment_label = QLabel("")
+        self.judgment_label = QLabel("—")
         self.judgment_label.setFont(QFont("Arial", 11, QFont.Bold))
-        self.judgment_label.setMaximumWidth(100)
+        self.internal_judgment_title_label = QLabel(self._tr('plot_internal_judgment'))
+        self.internal_judgment_label = QLabel("—")
+        self.internal_judgment_label.setFont(QFont("Arial", 11, QFont.Bold))
         self.judgment_h.addWidget(self.judgment_label)
+        self.judgment_h.addWidget(self.internal_judgment_title_label)
+        self.judgment_h.addWidget(self.internal_judgment_label)
         meta_layout.addLayout(self.judgment_h, 5, 3)
         
         # Aspect ratio and Quantity together on Row 6 Col 0-1
@@ -1451,10 +1487,10 @@ class TorquePlotViewer(QMainWindow):
         # Team combo on Row 6 Col 2-3
         self.team_label = QLabel(self._tr('plot_team'))
         meta_layout.addWidget(self.team_label, 6, 2)
-        self.team_combo = QComboBox()
+        self.team_combo = NoScrollComboBox()
         self.team_combo.addItems(TEAMS)
         self.team_combo.setCurrentIndex(-1)
-        self.team_combo.setMaximumWidth(180)
+        self.team_combo.setMaximumWidth(140)
         meta_layout.addWidget(self.team_combo, 6, 3)
 
         # Remark on Row 7 Col 0-3. Not persisted; cleared when returning to acquisition tab.
@@ -1478,16 +1514,16 @@ class TorquePlotViewer(QMainWindow):
         self.lot_no_label = QLabel(self._tr('plot_lot_no'))
         meta_layout.addWidget(self.lot_no_label, 8, 0)
         self.lot_no_edit = QLineEdit("")
-        self.lot_no_edit.setMaximumWidth(180)
+        self.lot_no_edit.setMaximumWidth(140)
         meta_layout.addWidget(self.lot_no_edit, 8, 1)
 
         # Line No combo on Row 8 Col 2-3
         self.line_no_label = QLabel(self._tr('plot_line_no'))
         meta_layout.addWidget(self.line_no_label, 8, 2)
-        self.line_no_combo = QComboBox()
+        self.line_no_combo = NoScrollComboBox()
         self.line_no_combo.addItems(LINE_NOS)
         self.line_no_combo.setCurrentIndex(-1)
-        self.line_no_combo.setMaximumWidth(180)
+        self.line_no_combo.setMaximumWidth(140)
         meta_layout.addWidget(self.line_no_combo, 8, 3)
 
         # Highlight required report inputs until the operator fills them.
@@ -1569,14 +1605,11 @@ class TorquePlotViewer(QMainWindow):
 
         # Save Report Button (Row 13)
         self.save_report_btn = QPushButton(self._tr('plot_save_report'))
-        self.save_report_btn.setFixedHeight(32)
-        self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 10pt;")
+        self.save_report_btn.setFixedHeight(28)
+        self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 9pt;")
         self.save_report_btn.clicked.connect(self.save_report)
         meta_layout.addWidget(self.save_report_btn, 13, 0, 1, 4)
 
-        # Place judgment in its own column so it's always visible
-        meta_layout.addWidget(self.judgment_title_label, 5, 2)
-        meta_layout.addWidget(self.judgment_label, 5, 3)
         self.meta_group.setLayout(meta_layout)
         # meta_group.setMaximumWidth(380) => Removed
 
@@ -1610,8 +1643,8 @@ class TorquePlotViewer(QMainWindow):
         # Left Side Container (Scrollable)
         left_container = QWidget()
         left_layout = QVBoxLayout(left_container)
-        left_layout.setContentsMargins(4, 4, 10, 4)
-        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(2, 2, 6, 2)
+        left_layout.setSpacing(4)
         
         # Add Widgets to Left Side
         left_layout.addWidget(self.files_group)
@@ -1753,7 +1786,7 @@ class TorquePlotViewer(QMainWindow):
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(left_container)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setMinimumWidth(530)
+        left_scroll.setMinimumWidth(420)
         # Style the scroll area to match background
         left_scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
         
@@ -1763,7 +1796,7 @@ class TorquePlotViewer(QMainWindow):
         self.splitter.addWidget(self.plot_group)  # Use self.plot_group
         
         # Set initial sizes (Left=450, Right=Remaining)
-        self.splitter.setSizes([450, 1000])
+        self.splitter.setSizes([380, 1100])
 
 
         self.splitter.setCollapsible(0, False) # Left side always visible (min width) but can be resized
@@ -2784,22 +2817,48 @@ class TorquePlotViewer(QMainWindow):
             json.dump(self.test_item_specs, f, indent=2)
 
     def save_current_spec(self):
-        """Save the currently visible Spec Min/Max immediately after editing."""
-        try:
-            if not (getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None)):
-                return
-            part_name = self.part_name_combo.currentText()
-            item_name = self.test_item_combo.currentText()
-            if not part_name or not item_name:
-                return
-            part_specs = self.test_item_specs.setdefault(part_name, {})
-            part_specs[item_name] = {
-                'min': float(self.spec_min_spin.value()),
-                'max': float(self.spec_max_spin.value()),
-            }
-            self._save_test_item_specs()
-        except Exception as exc:
-            QMessageBox.warning(self, 'Spec Save Failed', f'Could not save specification:\n{exc}')
+        """Excel is the sole specification source; never persist it to legacy JSON."""
+        return
+
+    def clear_standard_record(self):
+        self._excel_spec_available = False
+        for spin in (self.spec_min_spin, self.spec_max_spin,
+                     self.internal_spec_min_spin, self.internal_spec_max_spin):
+            spin.blockSignals(True)
+            spin.setValue(0.0)
+            spin.blockSignals(False)
+        self._set_judgment(self.judgment_label, None)
+        self._set_judgment(self.internal_judgment_label, None)
+
+    def set_standard_record(self, record, test_code):
+        """Apply validated Excel limits for the selected measurement mode."""
+        if record is None or test_code not in ('breakaway', 'operating', 'oscillating'):
+            self.clear_standard_record()
+            return
+        if test_code == 'breakaway':
+            drawing = (0.0, float(record.breakaway_max))
+            internal = drawing
+        else:
+            drawing = (float(record.operating_min), float(record.operating_max))
+            internal = (float(record.internal_operating_min),
+                        float(record.internal_operating_max))
+        self._excel_spec_available = True
+        for spin, value in zip((self.spec_min_spin, self.spec_max_spin,
+                                self.internal_spec_min_spin, self.internal_spec_max_spin),
+                               drawing + internal):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+        self.update_average()
+
+    @staticmethod
+    def _set_judgment(label, result):
+        if result is None:
+            label.setText('—')
+            label.setStyleSheet('')
+        else:
+            label.setText('OK' if result else 'NG')
+            label.setStyleSheet('color: green;' if result else 'color: red;')
 
     def open_test_item_spec_setup(self):
         """Open the Test Item Specification configuration dialog."""
@@ -2833,61 +2892,38 @@ class TorquePlotViewer(QMainWindow):
 
 
     def on_test_item_changed(self, index=None):
-        """Load spec min/max when Test Item changes (dependent on Part Name)."""
+        """Update mode/range; Excel specifications are applied by MainWindow."""
         try:
             self._load_aspect_ratio_for_current_item()
         except Exception:
             pass
         try:
-            item_text = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else ''
-            target_mode = 'time' if 'breakaway' in item_text.lower() else 'angle'
-            for combo_name in ('plot_mode_combo', 'range_mode_combo'):
-                combo = getattr(self, combo_name, None)
-                if combo is None:
-                    continue
-                idx = combo.findData(target_mode)
-                if idx >= 0 and combo.currentIndex() != idx:
-                    combo.setCurrentIndex(idx)
-        except Exception:
-            pass
-        try:
             item_name = self.test_item_combo.currentText()
             part_name = self.part_name_combo.currentText()
-            
-            # Structure: {part: {item: {min, max}}}
-            part_specs = self.test_item_specs.get(part_name, {})
-            spec = part_specs.get(item_name, {})
-            
-            if getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None):
-                try:
-                    self.spec_min_spin.setValue(float(spec.get('min', 0.0)))
-                    self.spec_max_spin.setValue(float(spec.get('max', 0.0)))
-                except: pass
+            target_mode = 'time' if 'breakaway' in item_name.lower() else 'angle'
+            for combo_name in ('plot_mode_combo', 'range_mode_combo'):
+                combo = getattr(self, combo_name, None)
+                if combo is not None:
+                    idx = combo.findData(target_mode)
+                    if idx >= 0 and combo.currentIndex() != idx:
+                        combo.setCurrentIndex(idx)
 
-            # Update Ranges and Refresh Plot if in Default mode
+            if not getattr(self, '_excel_spec_available', False):
+                self.clear_standard_record()
+
             if getattr(self, 'range_mode_combo', None) and self._range_mode_key() == 'default':
                 is_angle = self._is_angle_mode()
-                
                 ranges = self.test_item_angle_ranges if is_angle else self.test_item_time_ranges
-                part_ranges = ranges.get(part_name, {})
-                pr = part_ranges.get(item_name, {})
-                
-                if pr:
-                    try:
-                        if not is_angle and getattr(self, 'start_time_spin', None) and getattr(self, 'end_time_spin', None):
-                            self.start_time_spin.setValue(float(pr.get('start', 0.0)))
-                            self.end_time_spin.setValue(float(pr.get('end', 0.0)))
-                    except Exception: pass
-
-            # Refresh averages/plot
-            try:
-                self.update_average()
-            except Exception:
-                try:
-                    self.update_plot()
-                except Exception: pass
+                pr = ranges.get(part_name, {}).get(item_name, {})
+                if pr and not is_angle and getattr(self, 'start_time_spin', None) and getattr(self, 'end_time_spin', None):
+                    self.start_time_spin.setValue(float(pr.get('start', 0.0)))
+                    self.end_time_spin.setValue(float(pr.get('end', 0.0)))
+            self.update_average()
         except Exception:
-            pass
+            try:
+                self.update_plot()
+            except Exception:
+                pass
 
     def _is_other_test_purpose(self) -> bool:
         combo = getattr(self, 'test_purpose_combo', None)
@@ -3953,21 +3989,19 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
 
-        # Judgment logic based directly on calculated average
+        # Inclusive judgments: exact Min/Max are OK; missing data/spec is —.
         try:
-            if calculated_average is not None and getattr(self, 'spec_min_spin', None) and getattr(self, 'spec_max_spin', None):
-                smin = float(self.spec_min_spin.value())
-                smax = float(self.spec_max_spin.value())
-                if smin <= calculated_average <= smax:
-                    self.judgment_label.setText('OK')
-                    self.judgment_label.setStyleSheet('color: green;')
-                else:
-                    self.judgment_label.setText('NG')
-                    self.judgment_label.setStyleSheet('color: red;')
+            if calculated_average is None or not getattr(self, '_excel_spec_available', False):
+                self._set_judgment(self.judgment_label, None)
+                self._set_judgment(self.internal_judgment_label, None)
             else:
-                self.judgment_label.setText("")
+                drawing_ok = self.spec_min_spin.value() <= calculated_average <= self.spec_max_spin.value()
+                internal_ok = self.internal_spec_min_spin.value() <= calculated_average <= self.internal_spec_max_spin.value()
+                self._set_judgment(self.judgment_label, drawing_ok)
+                self._set_judgment(self.internal_judgment_label, internal_ok)
         except Exception:
-            pass
+            self._set_judgment(self.judgment_label, None)
+            self._set_judgment(self.internal_judgment_label, None)
 
 
     def _build_export_xlsx_filename(self, report_dir: str) -> str:
@@ -4407,7 +4441,7 @@ class TorquePlotViewer(QMainWindow):
             spec_text = ''
 
         pairs = [
-            ('TEST ITEM', self.test_item_combo.currentText(), 'DATE', self.date_edit.date().toString('yyyy-MM-dd')),
+            ('TEST ITEM', self.test_item_combo.currentText(), 'DATE', self.date_display_edit.text().strip() if hasattr(self, 'date_display_edit') else datetime.now().strftime('%Y-%m-%d')),
             ('PART NAME', self.part_name_combo.currentText(), 'TESTER', self.tester_edit.text()),
             ('PART NO', self.part_no_edit.text(), 'LOT NO', self.lot_no_edit.text()),
             ('SPECIFICATION', spec_text, 'QUANTITY', str(self.quantity_spin.value())),
@@ -4997,7 +5031,7 @@ class TorquePlotViewer(QMainWindow):
             'part_name': self.part_name_combo.currentText(),
             'part_no': self.part_no_edit.text().strip(),
             'report_title': self.report_title_edit.text().strip() if hasattr(self, 'report_title_edit') else 'TEST REPORT',
-            'date': self.date_edit.date().toString('yyyy-MM-dd'),
+            'date': self.date_display_edit.text().strip() if hasattr(self, 'date_display_edit') else datetime.now().strftime('%Y-%m-%d'),
             'tester': self.tester_edit.text().strip(),
             'write': self.write_edit.text().strip() if hasattr(self, 'write_edit') else '',
             'review': self.review_edit.text().strip() if hasattr(self, 'review_edit') else '',
@@ -5096,13 +5130,9 @@ class TorquePlotViewer(QMainWindow):
                             self.spec_edit.setText(profile.get('spec', ''))
                     except Exception:
                         pass
-            if 'date' in profile:
-                try:
-                    d = QDate.fromString(profile.get('date', ''), 'yyyy-MM-dd')
-                    if d.isValid():
-                        self.date_edit.setDate(d)
-                except Exception:
-                    pass
+            if 'date' in profile and hasattr(self, 'date_display_edit'):
+                saved_date = profile.get('date', '').strip()
+                self.date_display_edit.setText(saved_date if saved_date else datetime.now().strftime('%Y-%m-%d'))
             if 'tester' in profile:
                 self.tester_edit.setText(profile.get('tester', ''))
             if 'write' in profile and hasattr(self, 'write_edit'):
@@ -5409,7 +5439,7 @@ class TorquePlotViewer(QMainWindow):
             tester=self.tester_edit.text().strip(),
             team=self.team_combo.currentText() if hasattr(self, 'team_combo') else '',
             line_no=self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else '',
-            date=self.date_edit.date().toString('yyyy-MM-dd'),
+            date=self.date_display_edit.text().strip() if hasattr(self, 'date_display_edit') else datetime.now().strftime('%Y-%m-%d'),
             csv_path=csv_dir,
             report_path=report_dir
         )

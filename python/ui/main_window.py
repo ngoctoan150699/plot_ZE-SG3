@@ -1161,6 +1161,7 @@ class MainWindow(QMainWindow):
             self._restore_plot_viewer_state()
             if hasattr(self, 'combo_test_item') and hasattr(self._plot_viewer, 'test_item_combo'):
                 self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
+            self._sync_standard_to_plot_viewer()
             self._connect_plot_viewer_state_signals()
             if hasattr(self._plot_viewer, 'apply_theme'):
                 self._plot_viewer.apply_theme(self._is_dark)
@@ -3889,6 +3890,14 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self._sync_plot_viewer_mode_for_test_item(text)
+        self._sync_standard_to_plot_viewer()
+
+    def _sync_standard_to_plot_viewer(self):
+        if not hasattr(self, '_plot_viewer'):
+            return
+        setter = getattr(self._plot_viewer, 'set_standard_record', None)
+        if setter is not None:
+            setter(self._standard_record, self._current_test_item_code())
 
     def _sync_plot_viewer_mode_for_test_item(self, text: str):
         """Breakaway dùng Time-Torque; Operating/Oscillating dùng Angle-Torque."""
@@ -3999,6 +4008,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'lbl_standard_status'):
             self.lbl_standard_status.setText(self.i18n.t(status_key))
             self.lbl_standard_status.setStyleSheet('color: #f38ba8;' if status_key != 'std_status_incomplete' else 'color: #a6adc8;')
+        self._sync_standard_to_plot_viewer()
 
     def _on_standard_part_no_changed(self) -> None:
         if not hasattr(self, 'edit_part_no'):
@@ -4033,6 +4043,7 @@ class MainWindow(QMainWindow):
         self.lbl_special_warning.setStyleSheet('color: #fab387; font-weight: bold;' if record.special_warning else '')
         self.lbl_standard_status.setText(self.i18n.t('std_status_loaded'))
         self.lbl_standard_status.setStyleSheet('color: #a6e3a1; font-weight: bold;')
+        self._sync_standard_to_plot_viewer()
 
     def _refresh_standard_file_label(self) -> None:
         if not hasattr(self, 'lbl_standard_file'):
