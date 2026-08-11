@@ -2690,7 +2690,7 @@ class MainWindow(QMainWindow):
         text_names = (
             'part_no_edit', 'write_edit', 'review_edit', 'approval_edit', 'spec_edit',
             'tester_edit', 'test_purpose_other_edit', 'lot_no_edit', 'csv_path_edit',
-            'report_path_edit', 'report_title_edit',
+            'report_path_edit', 'report_title_edit', 'machine_name_edit',
         )
         spin_names = ('quantity_spin', 'start_spin', 'end_spin', 'start_time_spin', 'end_time_spin')
         for name in combo_names:
@@ -2821,7 +2821,7 @@ class MainWindow(QMainWindow):
                 self.main_tabs.setCurrentIndex(0)
         finally:
             self._restoring_ui_state = False
-        
+
         # Apply initial plot limits
         self._update_plot_limits()
         self._update_sampling_summary()

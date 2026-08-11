@@ -146,6 +146,7 @@ class ReportMetadata:
     test_item: str    = ""
     part_name: str    = ""
     part_no: str      = ""
+    machine_name: str = ""
     sample_no: int    = 1
     remark: str       = ""
     test_purpose: str = ""

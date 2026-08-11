@@ -53,7 +53,7 @@ def remove_diacritics_no_strip(text: str) -> str:
 TITLE_MERGE = 'A1:E2'
 # Metadata block rows (left and right blocks)
 META_START_ROW = 3
-META_END_ROW = 8
+META_END_ROW = 9
 # Graph label row (GRAPH / STT row) placed directly under metadata
 GRAPH_LABEL_ROW = META_END_ROW + 1
 # Merged graph area (outer merged frame) - keep below metadata and label row
@@ -1068,8 +1068,8 @@ class TorquePlotViewer(QMainWindow):
         self.range_label = QLabel(self._tr('plot_range_lbl'))
         bottom_h.addWidget(self.range_label)
         self.range_mode_combo = QComboBox()
-        self.range_mode_combo.addItem('Time', 'time')
-        self.range_mode_combo.addItem('Angle', 'angle')
+        self.range_mode_combo.addItem(self._tr('plot_time'), 'time')
+        self.range_mode_combo.addItem(self._tr('plot_angle'), 'angle')
         self.range_mode_combo.setMaximumWidth(90)
         self.range_mode_combo.currentIndexChanged.connect(self.on_range_mode_changed)
         bottom_h.addWidget(self.range_mode_combo)
@@ -1194,13 +1194,13 @@ class TorquePlotViewer(QMainWindow):
             self.end_time_spin = None
 
         # Setup buttons for Time and Angle ranges (compact)
-        self.time_range_setup_btn = QPushButton('Vùng Time')
+        self.time_range_setup_btn = QPushButton(self._tr('plot_time_range'))
         self.time_range_setup_btn.setMinimumWidth(96)
         self.time_range_setup_btn.setToolTip('Thiết lập vùng tính theo thời gian')
         self.time_range_setup_btn.clicked.connect(lambda: self.open_part_range_setup(False))
         bottom_h.addWidget(self.time_range_setup_btn)
 
-        self.angle_range_setup_btn = QPushButton('Vùng Angle')
+        self.angle_range_setup_btn = QPushButton(self._tr('plot_angle_range'))
         self.angle_range_setup_btn.setMinimumWidth(96)
         self.angle_range_setup_btn.setToolTip('Thiết lập vùng tính theo góc')
         self.angle_range_setup_btn.clicked.connect(lambda: self.open_part_range_setup(True))
@@ -1383,6 +1383,15 @@ class TorquePlotViewer(QMainWindow):
         spec_v.addLayout(internal_spec_h)
         meta_layout.addLayout(spec_v, 2, 1, 1, 3)
         self._excel_spec_available = False
+
+        self.machine_name_label = QLabel(self._tr('plot_machine'))
+        meta_layout.addWidget(self.machine_name_label, 3, 0)
+        self.machine_name_edit = QLineEdit()
+        self.machine_name_edit.setMaxLength(50)
+        self.machine_name_edit.setPlaceholderText(self._tr('plot_machine_placeholder'))
+        self.machine_name_edit.editingFinished.connect(self._normalize_machine_name)
+        self.machine_name_edit.setMaximumWidth(145)
+        meta_layout.addWidget(self.machine_name_edit, 3, 1)
 
         # Row 4: Date (editable, default today) Col 0-1 | Tester Col 2-3
         self.date_display_label = QLabel(self._tr('plot_date'))
@@ -1977,7 +1986,8 @@ class TorquePlotViewer(QMainWindow):
                 ('part_no_label', 'plot_part_no'), ('sample_no_label', 'plot_sample_no'),
                 ('write_label', 'plot_write'), ('review_label', 'plot_review'), ('approval_label', 'plot_approval'),
                 ('specification_label', 'plot_specification'), ('spec_min_label', 'plot_min'),
-                ('spec_max_label', 'plot_max'), ('date_label', 'plot_date'), ('tester_label', 'plot_tester'),
+                ('spec_max_label', 'plot_max'), ('date_display_label', 'plot_date'),
+                ('machine_name_label', 'plot_machine'), ('tester_label', 'plot_tester'),
                 ('test_purpose_label', 'plot_test_purpose'), ('judgment_title_label', 'plot_judgment'),
                 ('graph_ratio_label', 'plot_graph_ratio'), ('qty_label', 'plot_qty'), ('team_label', 'plot_team'),
                 ('remark_label', 'plot_remark'), ('lot_no_label', 'plot_lot_no'), ('line_no_label', 'plot_line_no'),
@@ -2009,7 +2019,7 @@ class TorquePlotViewer(QMainWindow):
                 ])
             if getattr(self, 'range_mode_combo', None):
                 self._set_combo_text_by_data(self.range_mode_combo, [
-                    ('Time', 'time'), ('Angle', 'angle')
+                    (self._tr('plot_time'), 'time'), (self._tr('plot_angle'), 'angle')
                 ])
             if getattr(self, 'file_select_combo', None):
                 current = self.file_select_combo.currentData()
@@ -2024,6 +2034,17 @@ class TorquePlotViewer(QMainWindow):
 
             if getattr(self, 'sample_no_spin', None):
                 self.sample_no_spin.setToolTip(self._tr('plot_sample_tip'))
+            if getattr(self, 'machine_name_edit', None):
+                self.machine_name_edit.setPlaceholderText(self._tr('plot_machine_placeholder'))
+            if getattr(self, 'samples_label', None):
+                self.samples_label.setText(f"{self._tr('plot_samples')}: {len(self.samples)}")
+            if getattr(self, 'total_label', None):
+                count = len(self.torque_data) if hasattr(self, 'torque_data') else 0
+                self.total_label.setText(f"{self._tr('plot_pts')}: {count}")
+            if getattr(self, 'time_range_setup_btn', None):
+                self.time_range_setup_btn.setText(self._tr('plot_time_range'))
+            if getattr(self, 'angle_range_setup_btn', None):
+                self.angle_range_setup_btn.setText(self._tr('plot_angle_range'))
             if getattr(self, 'range_setup_btn', None):
                 self.range_setup_btn.setToolTip(self._tr('plot_ranges_tip'))
             if getattr(self, 'spec_setup_btn', None):
@@ -4446,7 +4467,8 @@ class TorquePlotViewer(QMainWindow):
             ('PART NO', self.part_no_edit.text(), 'LOT NO', self.lot_no_edit.text()),
             ('SPECIFICATION', spec_text, 'QUANTITY', str(self.quantity_spin.value())),
             ('TEST PURPOSE', (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "other (O)" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")), 'JUDGMENT', self.judgment_label.text()),
-            ('TEAM', self.team_combo.currentText() if hasattr(self, 'team_combo') else '', 'LINE NO', self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else '')
+            ('TEAM', self.team_combo.currentText() if hasattr(self, 'team_combo') else '', 'LINE NO', self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else ''),
+            ('MACHINE', self._machine_name_value(), '', '')
         ]
 
         for r, (l_label, l_val, r_label, r_val) in zip(rows, pairs):
@@ -5211,99 +5233,144 @@ class TorquePlotViewer(QMainWindow):
             summary_path = os.path.join(dir_path, "summary report.xlsx")
             self.summary_report_path_edit.setText(summary_path)
 
+    def _machine_name_value(self) -> str:
+        widget = self.__dict__.get('machine_name_edit')
+        return widget.text().strip() if widget is not None else str(self.__dict__.get('machine_name', '')).strip()
+
+    def _normalize_machine_name(self) -> None:
+        name = self.machine_name_edit.text().strip()
+        if self.machine_name_edit.text() != name:
+            self.machine_name_edit.setText(name)
+        self.machine_name = name
+
+    def set_machine_name(self, name: str) -> None:
+        """Restore the persisted Plot Viewer machine identifier."""
+        self.machine_name = str(name or '').strip()
+        if hasattr(self, 'machine_name_edit'):
+            self.machine_name_edit.setText(self.machine_name)
+
     def _append_summary_report(self, summary_path: str, metadata, filename: str, raw_path: str, report_path: str):
-        """Append one measurement row to an Excel Summary file formatted as a Table."""
+        """Migrate and append Summary through a validated same-volume temporary file."""
         if not summary_path:
             return None
+        temp_path = None
         try:
+            import shutil
+            import tempfile
             from openpyxl import Workbook, load_workbook
             from openpyxl.worksheet.table import Table, TableStyleInfo
             from openpyxl.utils import get_column_letter
-            from datetime import datetime
 
-            os.makedirs(os.path.dirname(summary_path) or '.', exist_ok=True)
-            if os.path.exists(summary_path):
-                wb = load_workbook(summary_path)
+            headers = [
+                "Saved At", "Machine", "Test Item", "Part Name", "Part No", "Sample No", "Purpose",
+                "Team", "Line No", "Tester", "Spec Min", "Spec Max", "Average Nm",
+                "Min Nm", "Max Nm", "Internal spec Min", "Internal spec Max",
+                "Judgment (Drawing spec)", "Judgment (Internal spec)", "Remark",
+                "Filename", "Raw CSV", "CTR Report",
+            ]
+            aliases = {
+                'judgment': 'Judgment (Drawing spec)', 'test purpose': 'Purpose',
+                'testing team': 'Team', 'specification min (nm)': 'Spec Min',
+                'specification max (nm)': 'Spec Max', 'actual value (nm)': 'Average Nm',
+            }
+            key = lambda value: str(value or '').strip().casefold()
+            directory = os.path.dirname(summary_path) or '.'
+            os.makedirs(directory, exist_ok=True)
+            source_exists = os.path.exists(summary_path)
+            fd, temp_path = tempfile.mkstemp(prefix='.summary_', suffix='.xlsx', dir=directory)
+            os.close(fd)
+
+            if source_exists:
+                shutil.copy2(summary_path, temp_path)
+                wb = load_workbook(temp_path)
                 ws = wb.active
+                old_headers = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
+                known = {key(header) for header in headers}
+                extras = [str(header).strip() for header in old_headers if header not in (None, '')
+                          and key(header) != 'date' and key(header) not in known and key(header) not in aliases]
+                active_headers = headers + extras
+                old_index = {}
+                for col, header in enumerate(old_headers, 1):
+                    name = str(header or '').strip()
+                    old_index.setdefault(key(aliases.get(key(name), name)), col)
+                old_rows = [[ws.cell(row, old_index[key(header)]).value if key(header) in old_index else None
+                             for header in active_headers] for row in range(2, ws.max_row + 1)]
             else:
                 wb = Workbook()
                 ws = wb.active
-                ws.title = "Summary"
+                ws.title = 'Summary'
+                active_headers, old_rows = list(headers), []
 
-            headers = [
-                "Saved At", "Date", "Test Item", "Part Name", "Part No", "Sample No",
-                "Purpose", "Team", "Line No", "Tester", "Spec Min", "Spec Max",
-                "Average Nm", "Min Nm", "Max Nm", "Judgment", "Remark",
-                "Filename", "Raw CSV", "CTR Report",
-            ]
-            existing_headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
-            has_existing_headers = any(value not in (None, '') for value in existing_headers)
-            if not has_existing_headers:
-                for col, header in enumerate(headers, start=1):
-                    ws.cell(row=1, column=col, value=header)
-                active_headers = headers
-            else:
-                active_headers = [str(value).strip() if value is not None else '' for value in existing_headers]
-
-            def _float_from_label(label):
+            def label_float(label):
                 try:
                     text = label.text().strip()
-                    return float(text) if text and text != '-' else None
+                    return float(text) if text and text not in ('-', '—') else None
                 except Exception:
                     return None
 
-            spec_min = float(self.spec_min_spin.value()) if getattr(self, 'spec_min_spin', None) else None
-            spec_max = float(self.spec_max_spin.value()) if getattr(self, 'spec_max_spin', None) else None
-            avg_value = _float_from_label(self.avg_label) if hasattr(self, 'avg_label') else None
-            values_by_header = {
-                'saved at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'date': getattr(metadata, 'date', ''),
-                'test item': getattr(metadata, 'test_item', ''),
-                'part name': getattr(metadata, 'part_name', ''),
-                'part no': getattr(metadata, 'part_no', ''),
-                'sample no': int(getattr(metadata, 'sample_no', 1)),
-                'test purpose': getattr(metadata, 'test_purpose', ''),
-                'purpose': getattr(metadata, 'test_purpose', ''),
-                'team': getattr(metadata, 'team', ''),
-                'testing team': getattr(metadata, 'team', ''),
-                'line no': getattr(metadata, 'line_no', ''),
-                'tester': getattr(metadata, 'tester', ''),
-                'spec min': spec_min,
-                'specification min (nm)': spec_min,
-                'spec max': spec_max,
-                'specification max (nm)': spec_max,
-                'average nm': avg_value,
-                'actual value (nm)': avg_value,
-                'min nm': _float_from_label(self.min_label) if hasattr(self, 'min_label') else None,
-                'max nm': _float_from_label(self.max_label) if hasattr(self, 'max_label') else None,
-                'judgment': self.judgment_label.text().strip() if hasattr(self, 'judgment_label') else '',
-                'remark': getattr(metadata, 'remark', ''),
-                'filename': filename,
-                'raw csv': raw_path,
-                'ctr report': report_path,
+            values = {
+                'Saved At': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'Machine': self._machine_name_value(),
+                'Test Item': getattr(metadata, 'test_item', ''), 'Part Name': getattr(metadata, 'part_name', ''),
+                'Part No': getattr(metadata, 'part_no', ''), 'Sample No': int(getattr(metadata, 'sample_no', 1)),
+                'Purpose': getattr(metadata, 'test_purpose', ''), 'Team': getattr(metadata, 'team', ''),
+                'Line No': getattr(metadata, 'line_no', ''), 'Tester': getattr(metadata, 'tester', ''),
+                'Spec Min': float(self.spec_min_spin.value()), 'Spec Max': float(self.spec_max_spin.value()),
+                'Average Nm': label_float(self.avg_label), 'Min Nm': label_float(self.min_label),
+                'Max Nm': label_float(self.max_label),
+                'Internal spec Min': float(self.internal_spec_min_spin.value()),
+                'Internal spec Max': float(self.internal_spec_max_spin.value()),
+                'Judgment (Drawing spec)': self.judgment_label.text().strip(),
+                'Judgment (Internal spec)': self.internal_judgment_label.text().strip(),
+                'Remark': getattr(metadata, 'remark', ''), 'Filename': filename,
+                'Raw CSV': raw_path, 'CTR Report': report_path,
             }
-            row = []
-            for header in active_headers:
-                key = str(header or '').strip().lower()
-                row.append(values_by_header.get(key, ''))
-            ws.append(row)
+            lookup = {key(name): value for name, value in values.items()}
+            old_rows.append([lookup.get(key(header), '') for header in active_headers])
 
-            # Recreate table range to include the appended row.
-            for tbl_name in list(ws.tables.keys()):
-                del ws.tables[tbl_name]
+            if ws.max_row:
+                ws.delete_rows(1, ws.max_row)
+            ws.append(active_headers)
+            for row in old_rows:
+                ws.append(row)
+            for table_name in list(ws.tables):
+                del ws.tables[table_name]
             end_col = get_column_letter(len(active_headers))
-            table = Table(displayName="TorqueSummary", ref=f"A1:{end_col}{ws.max_row}")
-            style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
-                                   showLastColumn=False, showRowStripes=True, showColumnStripes=False)
-            table.tableStyleInfo = style
+            table = Table(displayName='TorqueSummary', ref=f'A1:{end_col}{max(2, ws.max_row)}')
+            table.tableStyleInfo = TableStyleInfo(name='TableStyleMedium9', showFirstColumn=False,
+                                                   showLastColumn=False, showRowStripes=True,
+                                                   showColumnStripes=False)
             ws.add_table(table)
-            for col in range(1, len(active_headers) + 1):
-                ws.column_dimensions[get_column_letter(col)].width = min(45, max(12, len(str(ws.cell(row=1, column=col).value)) + 2))
-            wb.save(summary_path)
+            for col, header in enumerate(active_headers, 1):
+                ws.column_dimensions[get_column_letter(col)].width = min(45, max(12, len(header) + 2))
+            expected_rows = len(old_rows) + 1
+            wb.save(temp_path)
+            wb.close()
+
+            check = load_workbook(temp_path, read_only=True)
+            check_ws = check.active
+            actual_headers = [check_ws.cell(1, col).value for col in range(1, len(active_headers) + 1)]
+            valid = actual_headers == active_headers and check_ws.max_row == expected_rows
+            check.close()
+            if not valid:
+                raise ValueError('Summary workbook validation failed')
+
+            if source_exists:
+                backup_path = summary_path + '.bak'
+                if not os.path.exists(backup_path):
+                    shutil.copy2(summary_path, backup_path)
+            os.replace(temp_path, summary_path)
+            temp_path = None
             return summary_path
         except Exception as exc:
             QMessageBox.warning(self, "Summary Report", f"Could not update summary report:\n{exc}")
             return None
+        finally:
+            if temp_path:
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def save_report(self):
         """Save both raw CSV and CTR report CSV using ReportService."""
@@ -5433,6 +5500,7 @@ class TorquePlotViewer(QMainWindow):
             test_item=self.test_item_combo.currentText(),
             part_name=self.part_name_combo.currentText(),
             part_no=self.part_no_edit.text().strip(),
+            machine_name=self._machine_name_value(),
             sample_no=int(self.sample_no_spin.value()) if hasattr(self, 'sample_no_spin') else 1,
             remark=self.remark_edit.text().strip() if hasattr(self, 'remark_edit') else '',
             test_purpose=self.test_purpose_combo.currentText(),
