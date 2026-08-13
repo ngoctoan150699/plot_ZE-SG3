@@ -4485,9 +4485,9 @@ class TorquePlotViewer(QMainWindow):
             ('PART NAME', self.part_name_combo.currentText(), 'TESTER', self.tester_edit.text()),
             ('PART NO', self.part_no_edit.text(), 'LOT NO', self.lot_no_edit.text()),
             ('SPECIFICATION', spec_text, 'QUANTITY', str(self.quantity_spin.value())),
-            ('TEST PURPOSE', (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "other (O)" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")), 'JUDGMENT', self.judgment_label.text()),
-            ('TEAM', self.team_combo.currentText() if hasattr(self, 'team_combo') else '', 'LINE NO', self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else ''),
-            ('MACHINE', self._machine_name_value(), '', '')
+            ('TEST PURPOSE', (self.test_purpose_other_edit.text() if hasattr(self, 'test_purpose_combo') and self.test_purpose_combo.currentText() == "other (O)" else (self.test_purpose_combo.currentText() if hasattr(self, 'test_purpose_combo') else "")), 'JUDGMENT (Drawing spec)', self.judgment_label.text()),
+            ('TEAM', self.team_combo.currentText() if hasattr(self, 'team_combo') else '', 'JUDGMENT (Internal spec)', self.internal_judgment_label.text() if hasattr(self, 'internal_judgment_label') else ''),
+            ('MACHINE', self._machine_name_value(), 'LINE NO', self.line_no_combo.currentText() if hasattr(self, 'line_no_combo') else '')
         ]
 
         for r, (l_label, l_val, r_label, r_val) in zip(rows, pairs):
