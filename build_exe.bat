@@ -69,7 +69,7 @@ if errorlevel 1 goto :fail
 echo.
 echo BUILD SUCCESS
 echo Output EXE: dist\%APP_NAME%.exe
-echo Output SETUP: iss\mysetupZE-SG3 Torque Acquisition v2.0.12.exe
+echo Output SETUP: iss\mysetupZE-SG3 Torque Acquisition v2.0.13.exe
 goto :end
 
 :fail
