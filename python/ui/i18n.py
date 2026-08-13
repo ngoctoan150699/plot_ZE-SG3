@@ -147,6 +147,10 @@ TRANSLATIONS = {
         'lbl_max': 'Lớn nhất:',
         'lbl_min': 'Nhỏ nhất:',
         'lbl_plc_angle': 'Góc PLC:',
+        'btn_show_details': '🔽 Chi tiết',
+        'btn_hide_details': '🔼 Ẩn bớt',
+        'tip_show_details': 'Hiện thêm các thông số (Tare, Số mẫu, Thời gian, Min, Max, Góc)',
+        'tip_hide_details': 'Ẩn bớt các thông số chi tiết',
         
         # Charts
         'chart_torque_time': '📈 Mô-men – Thời gian',
@@ -328,6 +332,10 @@ TRANSLATIONS = {
         'lbl_max': 'Maximum:',
         'lbl_min': 'Minimum:',
         'lbl_plc_angle': 'PLC Angle:',
+        'btn_show_details': '🔽 Details',
+        'btn_hide_details': '🔼 Hide',
+        'tip_show_details': 'Show additional metrics (Tare, Samples, Time, Min, Max, Angle)',
+        'tip_hide_details': 'Hide detailed metrics',
         
         # Charts
         'chart_torque_time': '📈 Torque – Time',

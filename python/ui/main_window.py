@@ -1755,67 +1755,92 @@ class MainWindow(QMainWindow):
     def _build_display_group(self) -> QWidget:
         self.display_panel_grp = QGroupBox("📊 Real-time Data Info")
         self.display_panel_grp.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        g = QGridLayout()
-        g.setContentsMargins(6, 8, 6, 6)
-        g.setSpacing(4)
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(6, 8, 6, 6)
+        main_layout.setSpacing(4)
+
+        # 1. Primary grid: Torque (prominent) + Status & Toggle details button
+        primary_grid = QGridLayout()
+        primary_grid.setContentsMargins(0, 0, 0, 0)
+        primary_grid.setSpacing(4)
 
         # Current Torque - Styled prominently but not excessively large
         self.lbl_torque = QLabel("0.000 Nm")
         self.lbl_torque.setFont(QFont('Segoe UI', 14, QFont.Bold))
         self.lbl_torque.setStyleSheet("color: #1976D2;") 
         self.lbl_display_torque_title = QLabel("Torque:")
-        g.addWidget(self.lbl_display_torque_title, 0, 0)
-        g.addWidget(self.lbl_torque, 0, 1, 1, 3)
+        primary_grid.addWidget(self.lbl_display_torque_title, 0, 0)
+        primary_grid.addWidget(self.lbl_torque, 0, 1, 1, 3)
 
-        # Row 1: Status & Pts
+        # Status & Toggle details button
         self.lbl_display_status_title = QLabel("Status:")
-        g.addWidget(self.lbl_display_status_title, 1, 0)
+        primary_grid.addWidget(self.lbl_display_status_title, 1, 0)
         self.lbl_stable = QLabel("---")
         self.lbl_stable.setStyleSheet("font-weight: bold; font-size: 11px;")
-        g.addWidget(self.lbl_stable, 1, 1)
+        primary_grid.addWidget(self.lbl_stable, 1, 1)
 
+        self.btn_toggle_display_details = QPushButton()
+        self.btn_toggle_display_details.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle_display_details.setFixedHeight(22)
+        self.btn_toggle_display_details.clicked.connect(self._toggle_realtime_details)
+        primary_grid.addWidget(self.btn_toggle_display_details, 1, 2, 1, 2, Qt.AlignRight)
+
+        primary_grid.setColumnStretch(1, 1)
+        main_layout.addLayout(primary_grid)
+
+        # 2. Collapsible secondary container for additional parameters
+        self.display_details_widget = QWidget()
+        sec_grid = QGridLayout(self.display_details_widget)
+        sec_grid.setContentsMargins(0, 2, 0, 0)
+        sec_grid.setSpacing(4)
+
+        # Row 0: Samples & Time
         self.lbl_display_samples_title = QLabel("Samples:")
-        g.addWidget(self.lbl_display_samples_title, 1, 2)
+        sec_grid.addWidget(self.lbl_display_samples_title, 0, 0)
         self.lbl_count = QLabel("0")
         self.lbl_count.setStyleSheet("font-weight: bold;")
-        g.addWidget(self.lbl_count, 1, 3)
-
-        # Row 2: Tare & Time
-        self.lbl_display_tare_title = QLabel("Tare:")
-        g.addWidget(self.lbl_display_tare_title, 2, 0)
-        self.lbl_tare = QLabel("--- Nm")
-        g.addWidget(self.lbl_tare, 2, 1)
+        sec_grid.addWidget(self.lbl_count, 0, 1)
 
         self.lbl_display_time_title = QLabel("Time:")
-        g.addWidget(self.lbl_display_time_title, 2, 2)
+        sec_grid.addWidget(self.lbl_display_time_title, 0, 2)
         self.lbl_rectime = QLabel("0.0 s")
-        g.addWidget(self.lbl_rectime, 2, 3)
+        sec_grid.addWidget(self.lbl_rectime, 0, 3)
 
-        # Row 3: Max
+        # Row 1: Tare & PLC Angle
         info_style = "font-weight: bold; font-size: 12px;"
-        self.lbl_display_max_title = QLabel("Maximum:")
-        g.addWidget(self.lbl_display_max_title, 3, 0)
-        self.lbl_max = QLabel("---")
-        self.lbl_max.setStyleSheet(f"color: #1976D2; {info_style}")
-        g.addWidget(self.lbl_max, 3, 1)
+        self.lbl_display_tare_title = QLabel("Tare:")
+        sec_grid.addWidget(self.lbl_display_tare_title, 1, 0)
+        self.lbl_tare = QLabel("--- Nm")
+        sec_grid.addWidget(self.lbl_tare, 1, 1)
 
-        # Row 4: Min
-        self.lbl_display_min_title = QLabel("Minimum:")
-        g.addWidget(self.lbl_display_min_title, 4, 0)
-        self.lbl_min = QLabel("---")
-        self.lbl_min.setStyleSheet(f"color: #D32F2F; {info_style}")
-        g.addWidget(self.lbl_min, 4, 1)
-
-        # Row 4: PLC angle returned from D124
         self.lbl_display_plc_angle_title = QLabel("Góc PLC:")
-        g.addWidget(self.lbl_display_plc_angle_title, 4, 2)
+        sec_grid.addWidget(self.lbl_display_plc_angle_title, 1, 2)
         self.lbl_plc_angle = QLabel("0.00°")
         self.lbl_plc_angle.setStyleSheet(f"color: #6A1B9A; {info_style}")
-        g.addWidget(self.lbl_plc_angle, 4, 3)
+        sec_grid.addWidget(self.lbl_plc_angle, 1, 3)
 
-        g.setColumnStretch(1, 1)
-        g.setColumnStretch(3, 1)
-        self.display_panel_grp.setLayout(g)
+        # Row 2: Maximum & Minimum
+        self.lbl_display_max_title = QLabel("Maximum:")
+        sec_grid.addWidget(self.lbl_display_max_title, 2, 0)
+        self.lbl_max = QLabel("---")
+        self.lbl_max.setStyleSheet(f"color: #1976D2; {info_style}")
+        sec_grid.addWidget(self.lbl_max, 2, 1)
+
+        self.lbl_display_min_title = QLabel("Minimum:")
+        sec_grid.addWidget(self.lbl_display_min_title, 2, 2)
+        self.lbl_min = QLabel("---")
+        self.lbl_min.setStyleSheet(f"color: #D32F2F; {info_style}")
+        sec_grid.addWidget(self.lbl_min, 2, 3)
+
+        sec_grid.setColumnStretch(1, 1)
+        sec_grid.setColumnStretch(3, 1)
+
+        # Collapsed by default
+        self.display_details_widget.setVisible(False)
+        self._update_toggle_details_button_text()
+        main_layout.addWidget(self.display_details_widget)
+
+        self.display_panel_grp.setLayout(main_layout)
         return self.display_panel_grp
 
 
@@ -2018,6 +2043,16 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'lbl_plc_angle'):
                 plc_angle_color = "#cba6f7" if dark else "#6A1B9A"
                 self.lbl_plc_angle.setStyleSheet(f"color: {plc_angle_color}; font-weight: bold; font-size: 12px;")
+
+        if hasattr(self, 'btn_toggle_display_details'):
+            btn_bg = "rgba(255, 255, 255, 0.08)" if dark else "rgba(0, 0, 0, 0.04)"
+            btn_border = "#585b70" if dark else "#c0c0c0"
+            btn_color = "#cdd6f4" if dark else "#424242"
+            self.btn_toggle_display_details.setStyleSheet(
+                f"QPushButton {{ background-color: {btn_bg}; color: {btn_color}; "
+                f"border: 1px solid {btn_border}; font-size: 8.5pt; padding: 1px 6px; border-radius: 3px; }}"
+                f"QPushButton:hover {{ background-color: {'rgba(255, 255, 255, 0.15)' if dark else 'rgba(0, 0, 0, 0.08)'}; }}"
+            )
 
         if hasattr(self, 'lbl_conn_status'):
             status_color = "#a6adc8" if dark else "#757575"
@@ -2663,6 +2698,8 @@ class MainWindow(QMainWindow):
             ui['plc_jog_speed'] = self.spin_plc_jog_speed.value()
         if hasattr(self, 'combo_chart_display_mode'):
             ui['chart_display_mode'] = self._get_chart_display_mode()
+        if hasattr(self, 'display_details_widget'):
+            ui['show_realtime_details'] = self.display_details_widget.isVisible()
         if hasattr(self, '_plot_viewer'):
             ui['plot_viewer'] = self._collect_plot_viewer_state()
         if extra:
@@ -2813,6 +2850,10 @@ class MainWindow(QMainWindow):
                 idx = self.combo_chart_display_mode.findData(mode)
                 self.combo_chart_display_mode.setCurrentIndex(idx if idx >= 0 else 0)
                 self._apply_chart_display_mode(mode)
+            if hasattr(self, 'display_details_widget'):
+                show_details = bool(ui.get('show_realtime_details', False))
+                self.display_details_widget.setVisible(show_details)
+                self._update_toggle_details_button_text()
             # Khi tắt/bật lại app, luôn mở Thu thập > Kết nối để người dùng
             # kiểm tra/kết nối thiết bị trước. Không khôi phục tab cuối cùng.
             if hasattr(self, 'tabs') and self.tabs.count() > 0:
@@ -2825,6 +2866,24 @@ class MainWindow(QMainWindow):
         # Apply initial plot limits
         self._update_plot_limits()
         self._update_sampling_summary()
+
+    def _toggle_realtime_details(self) -> None:
+        """Ẩn/hiện các thông số bổ sung trong khung dữ liệu thời gian thực."""
+        if hasattr(self, 'display_details_widget'):
+            is_visible = not self.display_details_widget.isVisible()
+            self.display_details_widget.setVisible(is_visible)
+            self._update_toggle_details_button_text()
+            self._save_ui_state()
+
+    def _update_toggle_details_button_text(self) -> None:
+        if hasattr(self, 'btn_toggle_display_details'):
+            is_vis = getattr(self, 'display_details_widget', None) is not None and self.display_details_widget.isVisible()
+            if is_vis:
+                self.btn_toggle_display_details.setText(self.i18n.t('btn_hide_details'))
+                self.btn_toggle_display_details.setToolTip(self.i18n.t('tip_hide_details'))
+            else:
+                self.btn_toggle_display_details.setText(self.i18n.t('btn_show_details'))
+                self.btn_toggle_display_details.setToolTip(self.i18n.t('tip_show_details'))
 
     def _update_sampling_summary(self):
         if hasattr(self, 'lbl_sampling_summary'):
@@ -4116,6 +4175,8 @@ class MainWindow(QMainWindow):
             self.lbl_display_min_title.setText(self.i18n.t('lbl_min'))
         if hasattr(self, 'lbl_display_plc_angle_title'):
             self.lbl_display_plc_angle_title.setText(self.i18n.t('lbl_plc_angle'))
+        if hasattr(self, 'btn_toggle_display_details'):
+            self._update_toggle_details_button_text()
 
         # Retranslate connection status live text
         if not self._connected:
