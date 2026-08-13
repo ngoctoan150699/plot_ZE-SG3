@@ -4535,6 +4535,52 @@ class TorquePlotViewer(QMainWindow):
             except Exception:
                 pass
 
+        # ========== AUXILIARY INFO: MACHINE ID (L5..L6) & INTERNAL SPEC (L7..M8) ==========
+        try:
+            # L5: Header Machine ID, L6: Value
+            mach_id = self._machine_name_value()
+            cell_l5 = ws.cell(row=5, column=12, value='Machine ID')  # L5
+            cell_l5.font = bold_12
+            cell_l5.alignment = center
+            cell_l5.fill = label_fill
+            cell_l5.border = thin_border
+
+            cell_l6 = ws.cell(row=6, column=12, value=mach_id)  # L6
+            cell_l6.alignment = center
+            cell_l6.fill = value_fill
+            cell_l6.border = thin_border
+
+            int_min = float(self.internal_spec_min_spin.value()) if getattr(self, 'internal_spec_min_spin', None) else 0.0
+            int_max = float(self.internal_spec_max_spin.value()) if getattr(self, 'internal_spec_max_spin', None) else 0.0
+
+            # L7 & M7: Headers
+            cell_l7 = ws.cell(row=7, column=12, value='Internal spec Min')  # L7
+            cell_l7.font = bold_12
+            cell_l7.alignment = center
+            cell_l7.fill = label_fill
+            cell_l7.border = thin_border
+
+            cell_m7 = ws.cell(row=7, column=13, value='Internal spec Max')  # M7
+            cell_m7.font = bold_12
+            cell_m7.alignment = center
+            cell_m7.fill = label_fill
+            cell_m7.border = thin_border
+
+            # L8 & M8: Values
+            cell_l8 = ws.cell(row=8, column=12, value=int_min)  # L8
+            cell_l8.alignment = center
+            cell_l8.fill = value_fill
+            cell_l8.border = thin_border
+            cell_l8.number_format = '0.00'
+
+            cell_m8 = ws.cell(row=8, column=13, value=int_max)  # M8
+            cell_m8.alignment = center
+            cell_m8.fill = value_fill
+            cell_m8.border = thin_border
+            cell_m8.number_format = '0.00'
+        except Exception:
+            pass
+
         # (TORQUE TYPE and PART NAME are represented in values in the metadata table above)
 
         # ========== GRAPH CONDITION (Start/End Time) ==========
@@ -5018,7 +5064,8 @@ class TorquePlotViewer(QMainWindow):
         ws.column_dimensions['I'].width = 12
         ws.column_dimensions['J'].width = 12
         ws.column_dimensions['K'].width = 12
-        ws.column_dimensions['L'].width = 12
+        ws.column_dimensions['L'].width = 20
+        ws.column_dimensions['M'].width = 20
 
         # Increase row heights for metadata rows (3..7) so all metadata fields
         # (TEST ITEM, PART NAME, PART NO, SPECIFICATION, TEST PURPOSE) have equal height
