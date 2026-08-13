@@ -22,7 +22,7 @@ from typing import List, Optional, Any, cast
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QApplication, QCheckBox, QComboBox, QCompleter, QDialog, QDialogButtonBox,
     QAbstractSpinBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTabWidget, QTextEdit,
@@ -1483,11 +1483,18 @@ class MainWindow(QMainWindow):
         std_lay.setContentsMargins(6, 10, 6, 6)
         std_lay.setSpacing(5)
         self.lbl_part_no = QLabel(self.i18n.t('part_no_lbl'))
-        self.edit_part_no = QLineEdit()
-        self.edit_part_no.setMaxLength(8)
-        self.edit_part_no.textChanged.connect(self._on_standard_part_no_changed)
+        self.combo_part_no = QComboBox()
+        self.combo_part_no.setEditable(True)
+        self.combo_part_no.setInsertPolicy(QComboBox.NoInsert)
+        self.combo_part_no.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
+        p_edit = self.combo_part_no.lineEdit()
+        if p_edit is not None:
+            p_edit.setMaxLength(8)
+            p_edit.setPlaceholderText(self.i18n.t('part_no_placeholder') if hasattr(self, 'i18n') else "VD: CBJ0000A")
+        self.combo_part_no.editTextChanged.connect(self._on_standard_part_no_changed)
+        self.edit_part_no = self.combo_part_no
         std_lay.addWidget(self.lbl_part_no, 0, 0)
-        std_lay.addWidget(self.edit_part_no, 0, 1)
+        std_lay.addWidget(self.combo_part_no, 0, 1)
 
         self.btn_update_standard_file = QPushButton(self.i18n.t('btn_update_standard_file'))
         self.btn_update_standard_file.clicked.connect(self._select_standard_file)
@@ -1577,17 +1584,6 @@ class MainWindow(QMainWindow):
         pc_lay.setContentsMargins(6, 8, 6, 6)
         pc_lay.setSpacing(6)
 
-        row_run = QHBoxLayout()
-        row_run.setSpacing(6)
-        self.btn_plc_run = QPushButton(self.i18n.t('btn_plc_run'))
-        self.btn_plc_run.clicked.connect(self._plc_toggle_run_stop)
-        row_run.addWidget(self.btn_plc_run)
-        pc_lay.addLayout(row_run)
-
-        # Các widget PLC phụ vẫn tồn tại và giữ nguyên signal/handler nhưng không đưa vào layout.
-        self.grp_plc_control.setLayout(pc_lay)
-        lay.addWidget(self.grp_plc_control)
-
         self.btn_plc_reset = QPushButton(self.i18n.t('btn_plc_reset'))
         self.btn_plc_abort = QPushButton(self.i18n.t('btn_plc_abort'))
         self.btn_plc_home = QPushButton(self.i18n.t('btn_plc_home'))
@@ -1600,6 +1596,8 @@ class MainWindow(QMainWindow):
         self.spin_plc_jog_speed.setValue(10.0)
         self.spin_plc_jog_speed.setSuffix(" rpm")
         self.spin_plc_jog_speed.valueChanged.connect(self._on_plc_jog_speed_changed)
+
+        # 1. Hàng nút quay +- đặt ở trên
         self.btn_plc_jog_minus = QPushButton(self.i18n.t('btn_plc_jog_minus'))
         self.btn_plc_jog_plus = QPushButton(self.i18n.t('btn_plc_jog_plus'))
         self.btn_plc_jog_minus.pressed.connect(lambda: self._plc_jog_minus(True))
@@ -1611,9 +1609,22 @@ class MainWindow(QMainWindow):
         row_jog.addWidget(self.btn_plc_jog_minus)
         row_jog.addWidget(self.btn_plc_jog_plus)
         pc_lay.addLayout(row_jog)
-        for btn in (self.btn_plc_run, self.btn_plc_jog_minus, self.btn_plc_jog_plus):
+
+        # 2. Nút Chạy đặt ở dưới 2 nút quay +-
+        row_run = QHBoxLayout()
+        row_run.setSpacing(6)
+        self.btn_plc_run = QPushButton(self.i18n.t('btn_plc_run'))
+        self.btn_plc_run.clicked.connect(self._plc_toggle_run_stop)
+        row_run.addWidget(self.btn_plc_run)
+        pc_lay.addLayout(row_run)
+
+        for btn in (self.btn_plc_jog_minus, self.btn_plc_jog_plus, self.btn_plc_run):
             btn.setMinimumHeight(30)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        # Các widget PLC phụ vẫn tồn tại và giữ nguyên signal/handler nhưng không đưa vào layout.
+        self.grp_plc_control.setLayout(pc_lay)
+        lay.addWidget(self.grp_plc_control)
 
         # --- Recording ---
         self.grp_recording = QGroupBox("🔴 Ghi dữ liệu")
@@ -2694,6 +2705,8 @@ class MainWindow(QMainWindow):
             ui['part_name'] = self.combo_part_name.currentText()
         if hasattr(self, 'combo_test_item'):
             ui['test_item'] = self.combo_test_item.currentText()
+        if hasattr(self, 'combo_part_no'):
+            ui['standard_part_no'] = self.combo_part_no.currentText().strip().upper()
         if hasattr(self, 'spin_plc_jog_speed'):
             ui['plc_jog_speed'] = self.spin_plc_jog_speed.value()
         if hasattr(self, 'combo_chart_display_mode'):
@@ -2843,6 +2856,8 @@ class MainWindow(QMainWindow):
                 saved_test_item = str(ui['test_item'])
                 if self.combo_test_item.findText(saved_test_item) >= 0:
                     self._restore_combo_text(self.combo_test_item, saved_test_item)
+            if 'standard_part_no' in ui and hasattr(self, 'combo_part_no'):
+                self._restore_combo_text(self.combo_part_no, ui['standard_part_no'])
             if 'plc_jog_speed' in ui and hasattr(self, 'spin_plc_jog_speed'):
                 self.spin_plc_jog_speed.setValue(float(ui['plc_jog_speed']))
             if hasattr(self, 'combo_chart_display_mode'):
@@ -2863,9 +2878,12 @@ class MainWindow(QMainWindow):
         finally:
             self._restoring_ui_state = False
 
-        # Apply initial plot limits
+        # Apply initial plot limits & populate standard part numbers
         self._update_plot_limits()
         self._update_sampling_summary()
+        self._refresh_standard_file_label()
+        self._populate_standard_part_numbers()
+        self._on_standard_part_no_changed()
 
     def _toggle_realtime_details(self) -> None:
         """Ẩn/hiện các thông số bổ sung trong khung dữ liệu thời gian thực."""
@@ -3954,6 +3972,8 @@ class MainWindow(QMainWindow):
     def _sync_standard_to_plot_viewer(self):
         if not hasattr(self, '_plot_viewer'):
             return
+        if hasattr(self._plot_viewer, 'set_standard_part_numbers') and self._standard_svc:
+            self._plot_viewer.set_standard_part_numbers(self._standard_svc.part_numbers)
         setter = getattr(self._plot_viewer, 'set_standard_record', None)
         if setter is not None:
             setter(self._standard_record, self._current_test_item_code())
@@ -4069,14 +4089,43 @@ class MainWindow(QMainWindow):
             self.lbl_standard_status.setStyleSheet('color: #f38ba8;' if status_key != 'std_status_incomplete' else 'color: #a6adc8;')
         self._sync_standard_to_plot_viewer()
 
-    def _on_standard_part_no_changed(self) -> None:
-        if not hasattr(self, 'edit_part_no'):
+    def _populate_standard_part_numbers(self) -> None:
+        """Cập nhật danh sách sổ tuỳ chọn mã hàng từ file tiêu chuẩn."""
+        if not hasattr(self, 'combo_part_no'):
             return
-        raw = self.edit_part_no.text().strip().upper()
-        if self.edit_part_no.text() != raw:
-            self.edit_part_no.blockSignals(True)
-            self.edit_part_no.setText(raw)
-            self.edit_part_no.blockSignals(False)
+        current = self.combo_part_no.currentText().strip().upper()
+        items = self._standard_svc.part_numbers if self._standard_svc else []
+        self.combo_part_no.blockSignals(True)
+        self.combo_part_no.clear()
+        self.combo_part_no.addItem("")
+        for p in items:
+            self.combo_part_no.addItem(p)
+
+        completer = QCompleter(items, self.combo_part_no)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        self.combo_part_no.setCompleter(completer)
+
+        if current:
+            idx = self.combo_part_no.findText(current)
+            if idx >= 0:
+                self.combo_part_no.setCurrentIndex(idx)
+            else:
+                self.combo_part_no.setEditText(current)
+        self.combo_part_no.blockSignals(False)
+
+    def _on_standard_part_no_changed(self) -> None:
+        if not hasattr(self, 'combo_part_no') and not hasattr(self, 'edit_part_no'):
+            return
+        widget = getattr(self, 'combo_part_no', None) or getattr(self, 'edit_part_no', None)
+        raw = (widget.currentText() if hasattr(widget, 'currentText') else widget.text()).strip().upper()
+        line_edit = widget.lineEdit() if hasattr(widget, 'lineEdit') else widget
+        if line_edit is not None and line_edit.text() != raw:
+            pos = line_edit.cursorPosition()
+            line_edit.blockSignals(True)
+            line_edit.setText(raw)
+            line_edit.setCursorPosition(pos)
+            line_edit.blockSignals(False)
         if len(raw) != 8:
             self._clear_standard_display('std_status_incomplete')
             return
@@ -4096,9 +4145,9 @@ class MainWindow(QMainWindow):
         }
         for name, value in values.items():
             text = value or '—'
-            widget = getattr(self, name)
-            widget.setText(text)
-            widget.setToolTip(text)
+            w = getattr(self, name)
+            w.setText(text)
+            w.setToolTip(text)
         self.lbl_special_warning.setStyleSheet('color: #fab387; font-weight: bold;' if record.special_warning else '')
         self.lbl_standard_status.setText(self.i18n.t('std_status_loaded'))
         self.lbl_standard_status.setStyleSheet('color: #a6e3a1; font-weight: bold;')
@@ -4127,6 +4176,7 @@ class MainWindow(QMainWindow):
             return
         self._settings.save_standard_file_path(path)
         self._refresh_standard_file_label()
+        self._populate_standard_part_numbers()
         self._on_standard_part_no_changed()
         QMessageBox.information(self, self.i18n.t('msg_success'), self.i18n.t('msg_standard_file_updated'))
 
@@ -4274,6 +4324,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'grp_standard'):
             self.grp_standard.setTitle(self.i18n.t('standard_grp'))
             self.lbl_part_no.setText(self.i18n.t('part_no_lbl'))
+            if hasattr(self, 'combo_part_no') and self.combo_part_no.lineEdit():
+                self.combo_part_no.lineEdit().setPlaceholderText(self.i18n.t('part_no_placeholder'))
             self.btn_update_standard_file.setText(self.i18n.t('btn_update_standard_file'))
             self.lbl_lower_fixture_title.setText(self.i18n.t('lower_fixture_lbl'))
             self.lbl_upper_fixture_title.setText(self.i18n.t('upper_fixture_lbl'))

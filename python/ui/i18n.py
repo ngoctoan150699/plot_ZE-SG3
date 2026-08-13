@@ -123,6 +123,7 @@ TRANSLATIONS = {
         # Product Standard
         'standard_grp': '📋 Tiêu chuẩn sản phẩm',
         'part_no_lbl': 'Mã hàng (8 ký tự):',
+        'part_no_placeholder': 'VD: CBJ0000A',
         'btn_update_standard_file': '📁 Cập nhật file tiêu chuẩn',
         'std_file_lbl': 'File tiêu chuẩn:',
         'lower_fixture_lbl': 'Đồ gá dưới:',
@@ -308,6 +309,7 @@ TRANSLATIONS = {
         # Product Standard
         'standard_grp': '📋 Product Standard',
         'part_no_lbl': 'Part No. (8 chars):',
+        'part_no_placeholder': 'Ex: CBJ0000A',
         'btn_update_standard_file': '📁 Update standard file',
         'std_file_lbl': 'Standard file:',
         'lower_fixture_lbl': 'Lower fixture:',

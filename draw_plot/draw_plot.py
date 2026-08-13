@@ -2851,6 +2851,19 @@ class TorquePlotViewer(QMainWindow):
         self._set_judgment(self.judgment_label, None)
         self._set_judgment(self.internal_judgment_label, None)
 
+    def set_standard_part_numbers(self, part_numbers: list) -> None:
+        """Apply available standard part numbers for auto-completion in Plot Viewer."""
+        self.available_part_numbers = list(part_numbers or [])
+        if hasattr(self, 'part_no_edit') and self.part_no_edit is not None:
+            try:
+                from PyQt5.QtWidgets import QCompleter
+                completer = QCompleter(self.available_part_numbers, self.part_no_edit)
+                completer.setCaseSensitivity(Qt.CaseInsensitive)
+                completer.setFilterMode(Qt.MatchContains)
+                self.part_no_edit.setCompleter(completer)
+            except Exception:
+                pass
+
     def set_standard_record(self, record, test_code):
         """Apply validated Excel limits for the selected measurement mode."""
         if record is None or test_code not in ('breakaway', 'operating', 'oscillating'):

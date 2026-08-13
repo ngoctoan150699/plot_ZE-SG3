@@ -56,6 +56,7 @@ class StandardServiceTests(unittest.TestCase):
         self.assertEqual((record.breakaway_max, record.operating_min, record.operating_max), (12, 1, 5))
         self.assertEqual((record.internal_operating_min, record.internal_operating_max), (3, 3.5))
         self.assertEqual((record.lower_fixture, record.upper_fixture, record.thread_code, record.special_warning), ("ϕ30", "ϕ35", "M10x1.25", "Hấp"))
+        self.assertEqual(service.part_numbers, ["CBJ0000A"])
         self.assertIsNone(service.lookup("CBJ0000"))
 
     def test_reordered_and_normalized_headers(self):

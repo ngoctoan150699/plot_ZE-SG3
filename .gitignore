@@ -12,6 +12,9 @@ build/
 dist/
 *.spec
 *.exe
-
-
-
+*.rar
+*.zip
+*.7z
+*.bak
+~$*
+Bangiao/

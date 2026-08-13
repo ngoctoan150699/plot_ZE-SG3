@@ -58,6 +58,11 @@ class StandardService:
     def active_path(self) -> Optional[Path]:
         return self._active_path
 
+    @property
+    def part_numbers(self) -> list[str]:
+        """Danh sách các mã hàng có trong file tiêu chuẩn, đã sắp xếp."""
+        return sorted(self._records.keys())
+
     def load(self, path: Optional[Path] = None) -> int:
         candidate = Path(path) if path else self._default_path
         records = self._parse(candidate)
