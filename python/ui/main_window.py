@@ -938,7 +938,7 @@ class MainWindow(QMainWindow):
 
         # Theme & Ngôn ngữ state (load từ settings)
         ui_cfg = settings_repo.load_ui_settings()
-        self._restoring_ui_state = False
+        self._restoring_ui_state = True
         self._is_dark = ui_cfg.get('dark_theme', False)
 
         from ui.i18n import I18n
@@ -972,6 +972,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'tabs'):
             self.tabs.currentChanged.connect(lambda _: self._save_ui_state())
         self._update_jog_speed_from_profile()
+        self._restoring_ui_state = False
 
         # PLC polling chạy bằng background thread giống DataCollectorService.
         # Không dùng QTimer để tránh UI thread bị chặn khi Modbus RTU timeout/bận.
@@ -2764,6 +2765,7 @@ class MainWindow(QMainWindow):
         state = self._settings.load_ui_settings().get('plot_viewer', {})
         if not isinstance(state, dict):
             return
+        prev_restoring = getattr(self, '_restoring_ui_state', False)
         self._restoring_ui_state = True
         try:
             for name, value in state.items():
@@ -2777,7 +2779,7 @@ class MainWindow(QMainWindow):
                 elif hasattr(widget, 'setValue'):
                     widget.setValue(value)
         finally:
-            self._restoring_ui_state = False
+            self._restoring_ui_state = prev_restoring
 
     def _connect_plot_viewer_state_signals(self) -> None:
         viewer = getattr(self, '_plot_viewer', None)
@@ -2839,6 +2841,7 @@ class MainWindow(QMainWindow):
         
         # UI settings (Acquisition / Plot)
         ui = self._settings.load_ui_settings()
+        prev_restoring = getattr(self, '_restoring_ui_state', False)
         self._restoring_ui_state = True
         try:
             if 'interval_ms' in ui:
@@ -2876,10 +2879,11 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'main_tabs') and self.main_tabs.count() > 0:
                 self.main_tabs.setCurrentIndex(0)
         finally:
-            self._restoring_ui_state = False
+            self._restoring_ui_state = prev_restoring
 
-        # Apply initial plot limits & populate standard part numbers
+        # Apply initial plot limits, acquisition settings & populate standard part numbers
         self._update_plot_limits()
+        self._on_acquisition_settings_changed()
         self._update_sampling_summary()
         self._refresh_standard_file_label()
         self._populate_standard_part_numbers()
@@ -2930,6 +2934,7 @@ class MainWindow(QMainWindow):
         self.chk_fixed_y.setChecked(values['fixed_y'])
         self._update_plot_limits()
         self._on_acquisition_settings_changed()
+        self._save_ui_state()
         self._update_sampling_summary()
 
     def _show_modbus_status_dialog(self):
@@ -2998,12 +3003,13 @@ class MainWindow(QMainWindow):
         self._collector.set_interval(interval)
         if self._bus_scheduler:
             self._bus_scheduler.set_intervals(interval, 100)
-        self.plot.max_window_s = window
-        if self._recording:
+        if hasattr(self, 'plot'):
+            self.plot.max_window_s = window
+        if hasattr(self, '_session') and self._recording:
             self._session.sample_interval_ms = interval
         
         # 2. Lưu lại vào file settings.json (nếu đã init UI xong)
-        if hasattr(self, '_settings'):
+        if hasattr(self, '_settings') and not getattr(self, '_restoring_ui_state', False):
              ui = self._settings.load_ui_settings()
              ui['interval_ms'] = interval
              ui['window_s'] = window
