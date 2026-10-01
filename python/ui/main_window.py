@@ -84,10 +84,19 @@ TEST_ITEM_CODES = {
     'Oscillating Torque': 'oscillating',
     'Angle Measurement': 'angle',
     'Đo góc': 'angle',
+    'Mô-men phá vỡ': 'breakaway',
+    'Mô-men quay': 'operating',
+    'Mô-men dao động': 'oscillating',
     'B': 'breakaway',
     'O': 'operating',
     'OSC': 'oscillating',
     'ANGLE': 'angle',
+}
+
+CODE_TO_PLOT_VIEWER_ITEM = {
+    'breakaway': 'Breakaway Torque',
+    'operating': 'Operating Torque',
+    'oscillating': 'Oscillating Torque',
 }
 
 def servo_profile_key(part_name_or_code: str, test_item_or_code: str) -> str:
@@ -1128,14 +1137,14 @@ class MainWindow(QMainWindow):
 
     def _on_main_tab_changed(self, index: int):
         """Lazy-load Plot Viewer only when user opens the tab."""
-        if index == 0 and hasattr(self, '_plot_viewer'):
+        if index == 1 and getattr(self, '_plot_viewer_loaded', False):
+            # Đảm bảo canvas repaint lại đầy đủ khi quay lại tab Plot Viewer
             try:
-                # Metadata chỉ xóa sau Operating/Oscillating; biểu đồ luôn giữ nguyên.
-                if self._current_test_item_code() in ('operating', 'oscillating'):
-                    self._plot_viewer.clear_remark()
-                    self._plot_viewer.clear_required_report_info()
+                if hasattr(self, '_plot_viewer') and hasattr(self._plot_viewer, 'canvas'):
+                    self._plot_viewer.canvas.draw_idle()
             except Exception:
                 pass
+            return
         if index != 1 or getattr(self, '_plot_viewer_loaded', False):
             return
         try:
@@ -3786,6 +3795,14 @@ class MainWindow(QMainWindow):
         self._restore_plc_jog_speed()
         self._clear_itr_oscillating_angles_after_run()
 
+        # Tự động xóa Remark khi đo xong Oscillating hoặc Operating; Breakaway vẫn giữ lại.
+        completed_code = self._current_test_item_code()
+        if completed_code in ('operating', 'oscillating') and hasattr(self, '_plot_viewer'):
+            try:
+                self._plot_viewer.clear_remark()
+            except Exception:
+                pass
+
     def _clear_samples(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
         self.lbl_count.setText("0")
@@ -3933,8 +3950,8 @@ class MainWindow(QMainWindow):
             self._plot_viewer.part_name_combo.setCurrentText(self.combo_part_name.currentText())
 
         if hasattr(self._plot_viewer, 'plot_mode_combo'):
-            test_text = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else ''
-            target_mode = 'time' if 'breakaway' in test_text.lower() else 'angle'
+            code = self._current_test_item_code()
+            target_mode = 'time' if code == 'breakaway' else 'angle'
             idx = self._plot_viewer.plot_mode_combo.findData(target_mode)
             if idx >= 0:
                 self._plot_viewer.plot_mode_combo.setCurrentIndex(idx)
@@ -3953,7 +3970,9 @@ class MainWindow(QMainWindow):
         self._plot_viewer.part_name_combo.setCurrentText(text)
         self._plot_viewer.part_name_combo.blockSignals(False)
         try:
-            self._plot_viewer.set_valid_test_items(text, self.combo_test_item.currentText())
+            code = self._current_test_item_code()
+            pv_item = CODE_TO_PLOT_VIEWER_ITEM.get(code, 'Breakaway Torque')
+            self._plot_viewer.set_valid_test_items(text, pv_item)
             self._plot_viewer.on_part_name_changed()
         except Exception:
             pass
@@ -3961,18 +3980,20 @@ class MainWindow(QMainWindow):
     def _sync_test_item_to_plot_viewer(self, text: str):
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
             return
+        code = TEST_ITEM_CODES.get(str(text), self._current_test_item_code())
+        pv_item = CODE_TO_PLOT_VIEWER_ITEM.get(code, 'Breakaway Torque')
         self._plot_viewer.test_item_combo.blockSignals(True)
-        self._plot_viewer.test_item_combo.setCurrentText(text)
+        self._plot_viewer.test_item_combo.setCurrentText(pv_item)
         self._plot_viewer.test_item_combo.blockSignals(False)
         try:
             self._plot_viewer.set_valid_test_items(
                 self.combo_part_name.currentText() if hasattr(self, 'combo_part_name') else '',
-                text,
+                pv_item,
             )
             self._plot_viewer.on_test_item_changed()
         except Exception:
             pass
-        self._sync_plot_viewer_mode_for_test_item(text)
+        self._sync_plot_viewer_mode_for_test_item(code)
         self._sync_standard_to_plot_viewer()
 
     def _sync_standard_to_plot_viewer(self):
@@ -3988,7 +4009,8 @@ class MainWindow(QMainWindow):
         """Breakaway dùng Time-Torque; Operating/Oscillating dùng Angle-Torque."""
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
             return
-        target_mode = 'time' if 'breakaway' in str(text).lower() else 'angle'
+        code = TEST_ITEM_CODES.get(str(text), self._current_test_item_code())
+        target_mode = 'time' if code == 'breakaway' else 'angle'
         for combo_name in ('plot_mode_combo', 'range_mode_combo'):
             combo = getattr(self._plot_viewer, combo_name, None)
             if combo is None:
@@ -4008,10 +4030,15 @@ class MainWindow(QMainWindow):
     def _sync_test_item_to_acquisition(self, text: str):
         if not hasattr(self, 'combo_test_item'):
             return
-        self.combo_test_item.blockSignals(True)
-        self.combo_test_item.setCurrentText(text)
-        self.combo_test_item.blockSignals(False)
-        self._save_ui_state()
+        code = TEST_ITEM_CODES.get(str(text), str(text).lower())
+        target_idx = self.combo_test_item.findData(code)
+        if target_idx >= 0 and self.combo_test_item.currentIndex() != target_idx:
+            self.combo_test_item.blockSignals(True)
+            self.combo_test_item.setCurrentIndex(target_idx)
+            self.combo_test_item.blockSignals(False)
+            self._update_jog_speed_from_profile()
+            self._update_drawing_angle_visibility()
+            self._save_ui_state()
 
     # ===========================================================
     # UTIL

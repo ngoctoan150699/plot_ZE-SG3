@@ -6,7 +6,7 @@ thư viện bên ngoài nào (Zero-dependency domain layer theo DIP).
 """
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -191,8 +191,8 @@ class StandardRecord:
     breakaway_max: float
     operating_min: float
     operating_max: float
-    internal_operating_min: float
-    internal_operating_max: float
+    internal_operating_min: Optional[float] = None
+    internal_operating_max: Optional[float] = None
     lower_fixture: str = ""
     upper_fixture: str = ""
     thread_code: str = ""

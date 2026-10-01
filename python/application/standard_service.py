@@ -125,7 +125,7 @@ class StandardService:
                     raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}, cột '{_HEADERS['part_no']}': trùng mã '{part_no}'")
 
                 numeric = {}
-                for key in ("breakaway_max", "operating_min", "operating_max", "internal_operating_min", "internal_operating_max"):
+                for key in ("breakaway_max", "operating_min", "operating_max"):
                     try:
                         number = float(cell(key))
                     except (TypeError, ValueError) as exc:
@@ -135,9 +135,25 @@ class StandardService:
                     numeric[key] = number
                 if numeric["breakaway_max"] < 0:
                     raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}, cột '{_HEADERS['breakaway_max']}': giá trị phải >= 0")
-                for min_key, max_key in (("operating_min", "operating_max"), ("internal_operating_min", "internal_operating_max")):
-                    if numeric[min_key] > numeric[max_key]:
-                        raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}: '{_HEADERS[min_key]}' phải <= '{_HEADERS[max_key]}'")
+                if numeric["operating_min"] > numeric["operating_max"]:
+                    raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}: '{_HEADERS['operating_min']}' phải <= '{_HEADERS['operating_max']}'")
+
+                def parse_optional_float(key: str) -> Optional[float]:
+                    val = cell(key)
+                    if val is None or str(val).strip() == "":
+                        return None
+                    try:
+                        num = float(val)
+                    except (TypeError, ValueError) as exc:
+                        raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}, cột '{_HEADERS[key]}': giá trị phải là số") from exc
+                    if not math.isfinite(num):
+                        raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}, cột '{_HEADERS[key]}': giá trị phải là số hữu hạn")
+                    return num
+
+                int_min = parse_optional_float("internal_operating_min")
+                int_max = parse_optional_float("internal_operating_max")
+                if int_min is not None and int_max is not None and int_min > int_max:
+                    raise StandardFileError(f"Sheet '{worksheet.title}', dòng {row_number}: '{_HEADERS['internal_operating_min']}' phải <= '{_HEADERS['internal_operating_max']}'")
 
                 def text(key: str) -> str:
                     value = cell(key)
@@ -145,7 +161,7 @@ class StandardService:
 
                 records[part_no] = StandardRecord(
                     part_no, numeric["breakaway_max"], numeric["operating_min"], numeric["operating_max"],
-                    numeric["internal_operating_min"], numeric["internal_operating_max"],
+                    int_min, int_max,
                     text("lower_fixture"), text("upper_fixture"), text("thread_code"), text("special_warning"),
                 )
             if not records:

@@ -2849,6 +2849,7 @@ class TorquePlotViewer(QMainWindow):
 
     def clear_standard_record(self):
         self._excel_spec_available = False
+        self._has_internal_spec = False
         for spin in (self.spec_min_spin, self.spec_max_spin,
                      self.internal_spec_min_spin, self.internal_spec_max_spin):
             spin.blockSignals(True)
@@ -2875,14 +2876,18 @@ class TorquePlotViewer(QMainWindow):
         if record is None or test_code not in ('breakaway', 'operating', 'oscillating'):
             self.clear_standard_record()
             return
+        has_int = (
+            getattr(record, 'internal_operating_min', None) is not None
+            and getattr(record, 'internal_operating_max', None) is not None
+        )
         if test_code == 'breakaway':
             drawing = (0.0, float(record.breakaway_max))
-            internal = drawing
+            internal = (float(record.internal_operating_min), float(record.internal_operating_max)) if has_int else (0.0, 0.0)
         else:
             drawing = (float(record.operating_min), float(record.operating_max))
-            internal = (float(record.internal_operating_min),
-                        float(record.internal_operating_max))
+            internal = (float(record.internal_operating_min), float(record.internal_operating_max)) if has_int else (0.0, 0.0)
         self._excel_spec_available = True
+        self._has_internal_spec = bool(has_int)
         for spin, value in zip((self.spec_min_spin, self.spec_max_spin,
                                 self.internal_spec_min_spin, self.internal_spec_max_spin),
                                drawing + internal):
@@ -4036,9 +4041,12 @@ class TorquePlotViewer(QMainWindow):
                 self._set_judgment(self.internal_judgment_label, None)
             else:
                 drawing_ok = self.spec_min_spin.value() <= calculated_average <= self.spec_max_spin.value()
-                internal_ok = self.internal_spec_min_spin.value() <= calculated_average <= self.internal_spec_max_spin.value()
                 self._set_judgment(self.judgment_label, drawing_ok)
-                self._set_judgment(self.internal_judgment_label, internal_ok)
+                if getattr(self, '_has_internal_spec', False):
+                    internal_ok = self.internal_spec_min_spin.value() <= calculated_average <= self.internal_spec_max_spin.value()
+                    self._set_judgment(self.internal_judgment_label, internal_ok)
+                else:
+                    self._set_judgment(self.internal_judgment_label, None)
         except Exception:
             self._set_judgment(self.judgment_label, None)
             self._set_judgment(self.internal_judgment_label, None)
@@ -4550,8 +4558,9 @@ class TorquePlotViewer(QMainWindow):
             cell_l6.fill = value_fill
             cell_l6.border = thin_border
 
-            int_min = float(self.internal_spec_min_spin.value()) if getattr(self, 'internal_spec_min_spin', None) else 0.0
-            int_max = float(self.internal_spec_max_spin.value()) if getattr(self, 'internal_spec_max_spin', None) else 0.0
+            has_internal = getattr(self, '_has_internal_spec', False)
+            int_min = float(self.internal_spec_min_spin.value()) if has_internal and getattr(self, 'internal_spec_min_spin', None) else "—"
+            int_max = float(self.internal_spec_max_spin.value()) if has_internal and getattr(self, 'internal_spec_max_spin', None) else "—"
 
             # L7 & M7: Headers
             cell_l7 = ws.cell(row=7, column=12, value='Internal spec Min')  # L7
@@ -4571,13 +4580,15 @@ class TorquePlotViewer(QMainWindow):
             cell_l8.alignment = center
             cell_l8.fill = value_fill
             cell_l8.border = thin_border
-            cell_l8.number_format = '0.00'
+            if isinstance(int_min, (int, float)):
+                cell_l8.number_format = '0.00'
 
             cell_m8 = ws.cell(row=8, column=13, value=int_max)  # M8
             cell_m8.alignment = center
             cell_m8.fill = value_fill
             cell_m8.border = thin_border
-            cell_m8.number_format = '0.00'
+            if isinstance(int_max, (int, float)):
+                cell_m8.number_format = '0.00'
         except Exception:
             pass
 
@@ -5384,8 +5395,8 @@ class TorquePlotViewer(QMainWindow):
                 'Spec Min': float(self.spec_min_spin.value()), 'Spec Max': float(self.spec_max_spin.value()),
                 'Average Nm': label_float(self.avg_label), 'Min Nm': label_float(self.min_label),
                 'Max Nm': label_float(self.max_label),
-                'Internal spec Min': float(self.internal_spec_min_spin.value()),
-                'Internal spec Max': float(self.internal_spec_max_spin.value()),
+                'Internal spec Min': float(self.internal_spec_min_spin.value()) if getattr(self, '_has_internal_spec', False) else '',
+                'Internal spec Max': float(self.internal_spec_max_spin.value()) if getattr(self, '_has_internal_spec', False) else '',
                 'Judgment (Drawing spec)': self.judgment_label.text().strip(),
                 'Judgment (Internal spec)': self.internal_judgment_label.text().strip(),
                 'Remark': getattr(metadata, 'remark', ''), 'Filename': filename,
