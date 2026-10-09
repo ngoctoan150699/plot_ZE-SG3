@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 from domain.entities import StandardRecord
 
 DEFAULT_STANDARD_FILENAME = "Upload%20standard.xlsx"
-_HEADERS = {
+_REQUIRED_HEADERS = {
     "part_no": "Mã hàng",
     "breakaway_max": "Tiêu chuẩn momen phá vỡ lớn nhất (Nm)",
     "operating_min": "Tiêu chuẩn momen hoạt động nhỏ nhất (Nm)",
@@ -23,6 +23,21 @@ _HEADERS = {
     "thread_code": "Mã ren",
     "special_warning": "Cảnh báo đặc biệt",
 }
+
+_OPTIONAL_HEADERS = {
+    "part_name": "Part name",
+    "ball_seat": "Ball seat",
+    "ball_size": "Ball size",
+}
+
+_HEADERS = {**_REQUIRED_HEADERS, **_OPTIONAL_HEADERS}
+
+_HEADER_ALIASES = {
+    "part_name": ["part name", "tên chi tiết", "tên sản phẩm"],
+    "ball_seat": ["ball seat"],
+    "ball_size": ["ball size", "cỡ bi", "kích thước bi"],
+}
+
 
 
 def _normalize_header(value: object) -> str:
@@ -96,6 +111,10 @@ class StandardService:
             positions: Dict[str, int] = {}
             seen = set()
             expected = {_normalize_header(label): key for key, label in _HEADERS.items()}
+            for key, aliases in _HEADER_ALIASES.items():
+                for alias in aliases:
+                    expected[_normalize_header(alias)] = key
+
             for index, value in enumerate(header_row):
                 normalized = _normalize_header(value)
                 if not normalized:
@@ -104,8 +123,10 @@ class StandardService:
                     raise StandardFileError(f"Sheet '{worksheet.title}', dòng 1: trùng tiêu đề '{value}'")
                 seen.add(normalized)
                 if normalized in expected:
-                    positions[expected[normalized]] = index
-            missing = [label for key, label in _HEADERS.items() if key not in positions]
+                    key = expected[normalized]
+                    if key not in positions:
+                        positions[key] = index
+            missing = [label for key, label in _REQUIRED_HEADERS.items() if key not in positions]
             if missing:
                 raise StandardFileError(f"Sheet '{worksheet.title}', dòng 1: thiếu cột {', '.join(missing)}")
 
@@ -115,8 +136,10 @@ class StandardService:
                     continue
 
                 def cell(key: str):
-                    index = positions[key]
-                    return row[index] if index < len(row) else None
+                    index = positions.get(key)
+                    if index is None or index >= len(row):
+                        return None
+                    return row[index]
 
                 part_no = str(cell("part_no") or "").strip().upper()
                 if len(part_no) != 8:
@@ -157,12 +180,26 @@ class StandardService:
 
                 def text(key: str) -> str:
                     value = cell(key)
-                    return "" if value is None else str(value).strip()
+                    if value is None:
+                        return ""
+                    if isinstance(value, float) and value.is_integer():
+                        return str(int(value))
+                    return str(value).strip()
 
                 records[part_no] = StandardRecord(
-                    part_no, numeric["breakaway_max"], numeric["operating_min"], numeric["operating_max"],
-                    int_min, int_max,
-                    text("lower_fixture"), text("upper_fixture"), text("thread_code"), text("special_warning"),
+                    part_no=part_no,
+                    breakaway_max=numeric["breakaway_max"],
+                    operating_min=numeric["operating_min"],
+                    operating_max=numeric["operating_max"],
+                    internal_operating_min=int_min,
+                    internal_operating_max=int_max,
+                    lower_fixture=text("lower_fixture"),
+                    upper_fixture=text("upper_fixture"),
+                    thread_code=text("thread_code"),
+                    special_warning=text("special_warning"),
+                    part_name=text("part_name"),
+                    ball_seat=text("ball_seat"),
+                    ball_size=text("ball_size"),
                 )
             if not records:
                 raise StandardFileError(f"Sheet '{worksheet.title}' không có bản ghi tiêu chuẩn")

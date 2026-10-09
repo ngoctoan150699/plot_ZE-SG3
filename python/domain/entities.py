@@ -197,3 +197,7 @@ class StandardRecord:
     upper_fixture: str = ""
     thread_code: str = ""
     special_warning: str = ""
+    part_name: str = ""
+    ball_seat: str = ""
+    ball_size: str = ""
+

@@ -36,13 +36,14 @@
     "window_s": 60,
     "y_max": 40.0,
     "fixed_y": true,
-    "part_name": "Inner Tie Rod",
-    "test_item": "Breakaway Torque",
+    "part_name": "Ball Joint",
+    "test_item": "Mô-men phá vỡ",
     "dark_theme": false,
     "language": "vi",
     "main_tab_index": 0,
-    "left_tab_index": 2,
+    "left_tab_index": 0,
     "plc_jog_speed": 10.0,
+    "standard_file_path": "C:/Users/NgocToan/Downloads/Upload%20standard (1).xlsx",
     "plot_viewer": {
       "test_item_combo": "Breakaway Torque",
       "part_name_combo": "Inner Tie Rod",
@@ -67,7 +68,10 @@
       "end_spin": 2466,
       "start_time_spin": -36.0,
       "end_time_spin": 36.0
-    }
+    },
+    "standard_part_no": "CBJ0006A",
+    "chart_display_mode": "both",
+    "show_realtime_details": false
   },
   "servo_profiles": {
     "ITR_B": {

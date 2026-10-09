@@ -1513,6 +1513,12 @@ class MainWindow(QMainWindow):
         self.lbl_standard_file.setWordWrap(True)
         std_lay.addWidget(self.lbl_standard_file, 2, 0, 1, 2)
 
+        self.lbl_std_part_name_title = QLabel(self.i18n.t('std_part_name_lbl'))
+        self.lbl_std_part_name = QLabel('—')
+        self.lbl_std_ball_seat_title = QLabel(self.i18n.t('std_ball_seat_lbl'))
+        self.lbl_std_ball_seat = QLabel('—')
+        self.lbl_std_ball_size_title = QLabel(self.i18n.t('std_ball_size_lbl'))
+        self.lbl_std_ball_size = QLabel('—')
         self.lbl_lower_fixture_title = QLabel(self.i18n.t('lower_fixture_lbl'))
         self.lbl_lower_fixture = QLabel('—')
         self.lbl_upper_fixture_title = QLabel(self.i18n.t('upper_fixture_lbl'))
@@ -1523,6 +1529,9 @@ class MainWindow(QMainWindow):
         self.lbl_special_warning = QLabel('—')
         self.lbl_special_warning.setWordWrap(True)
         for row, (title, value) in enumerate((
+            (self.lbl_std_part_name_title, self.lbl_std_part_name),
+            (self.lbl_std_ball_seat_title, self.lbl_std_ball_seat),
+            (self.lbl_std_ball_size_title, self.lbl_std_ball_size),
             (self.lbl_lower_fixture_title, self.lbl_lower_fixture),
             (self.lbl_upper_fixture_title, self.lbl_upper_fixture),
             (self.lbl_thread_code_title, self.lbl_thread_code),
@@ -1531,7 +1540,7 @@ class MainWindow(QMainWindow):
             std_lay.addWidget(title, row, 0)
             std_lay.addWidget(value, row, 1)
         self.lbl_standard_status = QLabel(self.i18n.t('std_status_incomplete'))
-        std_lay.addWidget(self.lbl_standard_status, 7, 0, 1, 2)
+        std_lay.addWidget(self.lbl_standard_status, 10, 0, 1, 2)
         self._refresh_standard_file_label()
         lay.addWidget(self.grp_standard)
 
@@ -4112,7 +4121,10 @@ class MainWindow(QMainWindow):
 
     def _clear_standard_display(self, status_key: str) -> None:
         self._standard_record = None
-        for name in ('lbl_lower_fixture', 'lbl_upper_fixture', 'lbl_thread_code', 'lbl_special_warning'):
+        for name in (
+            'lbl_std_part_name', 'lbl_std_ball_seat', 'lbl_std_ball_size',
+            'lbl_lower_fixture', 'lbl_upper_fixture', 'lbl_thread_code', 'lbl_special_warning',
+        ):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setText('—')
@@ -4171,6 +4183,9 @@ class MainWindow(QMainWindow):
             return
         self._standard_record = record
         values = {
+            'lbl_std_part_name': record.part_name,
+            'lbl_std_ball_seat': record.ball_seat,
+            'lbl_std_ball_size': record.ball_size,
             'lbl_lower_fixture': record.lower_fixture,
             'lbl_upper_fixture': record.upper_fixture,
             'lbl_thread_code': record.thread_code,
@@ -4178,12 +4193,22 @@ class MainWindow(QMainWindow):
         }
         for name, value in values.items():
             text = value or '—'
-            w = getattr(self, name)
-            w.setText(text)
-            w.setToolTip(text)
-        self.lbl_special_warning.setStyleSheet('color: #fab387; font-weight: bold;' if record.special_warning else '')
-        self.lbl_standard_status.setText(self.i18n.t('std_status_loaded'))
-        self.lbl_standard_status.setStyleSheet('color: #a6e3a1; font-weight: bold;')
+            w = getattr(self, name, None)
+            if w is not None:
+                w.setText(text)
+                w.setToolTip(text)
+        if hasattr(self, 'lbl_special_warning'):
+            self.lbl_special_warning.setStyleSheet('color: #fab387; font-weight: bold;' if record.special_warning else '')
+        if hasattr(self, 'lbl_standard_status'):
+            self.lbl_standard_status.setText(self.i18n.t('std_status_loaded'))
+            self.lbl_standard_status.setStyleSheet('color: #a6e3a1; font-weight: bold;')
+        if record.part_name and hasattr(self, 'combo_part_name'):
+            p_text = record.part_name.strip()
+            idx = self.combo_part_name.findText(p_text, Qt.MatchFixedString)
+            if idx < 0:
+                idx = self.combo_part_name.findData(p_text)
+            if idx >= 0 and self.combo_part_name.currentIndex() != idx:
+                self.combo_part_name.setCurrentIndex(idx)
         self._sync_standard_to_plot_viewer()
 
     def _refresh_standard_file_label(self) -> None:
@@ -4360,6 +4385,12 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'combo_part_no') and self.combo_part_no.lineEdit():
                 self.combo_part_no.lineEdit().setPlaceholderText(self.i18n.t('part_no_placeholder'))
             self.btn_update_standard_file.setText(self.i18n.t('btn_update_standard_file'))
+            if hasattr(self, 'lbl_std_part_name_title'):
+                self.lbl_std_part_name_title.setText(self.i18n.t('std_part_name_lbl'))
+            if hasattr(self, 'lbl_std_ball_seat_title'):
+                self.lbl_std_ball_seat_title.setText(self.i18n.t('std_ball_seat_lbl'))
+            if hasattr(self, 'lbl_std_ball_size_title'):
+                self.lbl_std_ball_size_title.setText(self.i18n.t('std_ball_size_lbl'))
             self.lbl_lower_fixture_title.setText(self.i18n.t('lower_fixture_lbl'))
             self.lbl_upper_fixture_title.setText(self.i18n.t('upper_fixture_lbl'))
             self.lbl_thread_code_title.setText(self.i18n.t('thread_code_lbl'))

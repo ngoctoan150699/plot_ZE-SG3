@@ -93,6 +93,45 @@ class StandardServiceTests(unittest.TestCase):
         self.assertEqual(service.active_path, old_path)
         self.assertEqual(service.lookup("CBJ0000A").breakaway_max, 12)
 
+    def test_new_standard_columns_and_backward_compatibility(self):
+        # 1. File cũ (chỉ 10 cột) -> tương thích ngược, các cột mới trả về ""
+        old_service = StandardService(self.write_book("old_format.xlsx", headers=HEADERS, rows=[VALID_ROW]))
+        self.assertEqual(old_service.load(), 1)
+        old_record = old_service.lookup("CBJ0000A")
+        self.assertIsNotNone(old_record)
+        self.assertEqual(old_record.part_name, "")
+        self.assertEqual(old_record.ball_seat, "")
+        self.assertEqual(old_record.ball_size, "")
+
+        # 2. File mới (13 cột, có Part name, Ball seat, Ball size)
+        new_headers = [
+            "Mã hàng",
+            "Part name",
+            "Ball seat",
+            "Ball size",
+            "Tiêu chuẩn momen phá vỡ lớn nhất (Nm)",
+            "Tiêu chuẩn momen hoạt động nhỏ nhất (Nm)",
+            "Tiêu chuẩn momen hoạt động lớn nhất (Nm)",
+            "Tiêu chuẩn momen hoạt động  nội bộ nhỏ nhất (Nm)",
+            "Tiêu chuẩn momen hoạt động nội bộ lớn nhất (Nm)",
+            "Tiêu chuẩn đồ gá dưới",
+            "Tiêu chuẩn đồ gá trên",
+            "Mã ren",
+            "Cảnh báo đặc biệt",
+        ]
+        new_row = ["CBJ0006A", "Ball Joint", "GBB0052A", 35, 18, 1, 5, None, None, "ϕ30", "ϕ35", "M10", "Hấp"]
+        new_service = StandardService(self.write_book("new_format.xlsx", headers=new_headers, rows=[new_row]))
+        self.assertEqual(new_service.load(), 1)
+        new_record = new_service.lookup("CBJ0006A")
+        self.assertIsNotNone(new_record)
+        self.assertEqual(new_record.part_name, "Ball Joint")
+        self.assertEqual(new_record.ball_seat, "GBB0052A")
+        self.assertEqual(new_record.ball_size, "35")
+        self.assertEqual(new_record.breakaway_max, 18)
+        self.assertEqual((new_record.operating_min, new_record.operating_max), (1, 5))
+        self.assertIsNone(new_record.internal_operating_min)
+        self.assertIsNone(new_record.internal_operating_max)
+
     def test_settings_path_round_trip_preserves_other_ui_keys(self):
         settings_path = self.dir / "settings.json"
         settings_path.write_text(json.dumps({"ui": {"language": "vi"}}), encoding="utf-8")

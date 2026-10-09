@@ -16,6 +16,7 @@ class SummaryMigrationTests(unittest.TestCase):
     def viewer(self):
         v=TorquePlotViewer.__new__(TorquePlotViewer)
         v.machine_name='ZE-SG3-01'
+        v._has_internal_spec = True
         v.spec_min_spin=V(1); v.spec_max_spin=V(5); v.internal_spec_min_spin=V(2); v.internal_spec_max_spin=V(4)
         v.avg_label=L('3'); v.min_label=L('2.5'); v.max_label=L('3.5'); v.judgment_label=L('OK'); v.internal_judgment_label=L('OK')
         return v

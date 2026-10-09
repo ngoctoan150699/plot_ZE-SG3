@@ -2943,6 +2943,7 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
         try:
+            self._update_k_factor()
             item_name = self.test_item_combo.currentText()
             part_name = self.part_name_combo.currentText()
             target_mode = 'time' if 'breakaway' in item_name.lower() else 'angle'
@@ -3092,38 +3093,44 @@ class TorquePlotViewer(QMainWindow):
             except Exception:
                 pass
 
+    def _update_k_factor(self):
+        """Update self.k_factor based on currently selected part_name and test_item."""
+        try:
+            pname = self.part_name_combo.currentText().strip() if getattr(self, 'part_name_combo', None) else ''
+            item_name = self.test_item_combo.currentText().strip() if getattr(self, 'test_item_combo', None) else ''
+            if not pname:
+                self.k_factor = 1.0
+                return
+            value = self.calibration_data.get(pname, 1.0)
+            if isinstance(value, dict):
+                if 'Breakaway' in item_name:
+                    mode_key = 'breakaway'
+                elif 'Oscillating' in item_name:
+                    mode_key = 'oscillating'
+                else:
+                    mode_key = 'operating'
+                if mode_key in value:
+                    self.k_factor = float(value[mode_key])
+                elif mode_key == 'oscillating':
+                    self.k_factor = float(value.get('operating', 1.0))
+                else:
+                    self.k_factor = float(value.get('operating', 1.0))
+            else:
+                self.k_factor = float(value)
+        except Exception:
+            self.k_factor = 1.0
+
     def on_part_name_changed(self, index=None):
         """Apply per-part configured range and available specs when part selection changes."""
         try:
-            pname = self.part_name_combo.currentText()
-            
             # 1. Factor K (Calibration) - Update first so it's ready for plot refreshes
-            try:
-                value = self.calibration_data.get(pname.strip(), 1.0)
-                if isinstance(value, dict):
-                    item_name = self.test_item_combo.currentText() if getattr(self, 'test_item_combo', None) else ''
-                    if 'Breakaway' in item_name:
-                        mode_key = 'breakaway'
-                    elif 'Oscillating' in item_name:
-                        mode_key = 'oscillating'
-                    else:
-                        mode_key = 'operating'
-                    # Backward compat: oscillating falls back to operating
-                    if mode_key in value:
-                        self.k_factor = float(value[mode_key])
-                    elif mode_key == 'oscillating':
-                        self.k_factor = float(value.get('operating', 1.0))
-                    else:
-                        self.k_factor = float(value.get('operating', 1.0))
-                else:
-                    self.k_factor = float(value)
-            except:
-                self.k_factor = 1.0
+            self._update_k_factor()
 
             # 2. Specs and Ranges - Trigger unified update in on_test_item_changed
             try:
                 self.on_test_item_changed()
-            except: pass
+            except Exception:
+                pass
         except Exception:
             pass
             
@@ -5012,12 +5019,14 @@ class TorquePlotViewer(QMainWindow):
                     x_data = s.get('time', []) or []
 
                 trqs = s.get('torque', []) or []
+                k = getattr(self, 'k_factor', 1.0)
                 
                 for i, (x_val, trq) in enumerate(zip(x_data, trqs), start=1):
                     data_sheet.cell(row=row, column=1, value=name)
                     data_sheet.cell(row=row, column=2, value=i)
                     ct = data_sheet.cell(row=row, column=3, value=x_val)
-                    ctr = data_sheet.cell(row=row, column=4, value=trq)
+                    calib_trq = (trq * k) if k != 1.0 else trq
+                    ctr = data_sheet.cell(row=row, column=4, value=calib_trq)
                     try:
                         ct.number_format = '0.00000000'
                         ctr.number_format = '0.00000000'
@@ -5049,10 +5058,12 @@ class TorquePlotViewer(QMainWindow):
             # If we don't have angle data for single dataset fallback, we can't do much.
             # But commonly self.samples is populated. This fallback is for safety.
             
+            k = getattr(self, 'k_factor', 1.0)
             for i, (x_val, trq) in enumerate(zip(x_data, self.torque_data), start=1):
                 data_sheet.cell(row=i + 1, column=1, value=i)
                 ct = data_sheet.cell(row=i + 1, column=2, value=x_val)
-                ctr = data_sheet.cell(row=i + 1, column=3, value=trq)
+                calib_trq = (trq * k) if k != 1.0 else trq
+                ctr = data_sheet.cell(row=i + 1, column=3, value=calib_trq)
                 try:
                     ct.number_format = '0.00000000'
                     ctr.number_format = '0.00000000'
@@ -5509,13 +5520,10 @@ class TorquePlotViewer(QMainWindow):
             except:
                 pass
 
-        k = getattr(self, 'k_factor', 1.0)
         raw_samples = []
         for i in range(len(times)):
             t = times[i]
             trq = torques[i]
-            if k != 1.0:
-                trq = trq * k
             ang = angles[i] if i < len(angles) else 0.0
             cyc = cycles[i] if i < len(cycles) else 1
             raw_samples.append(SampleData(
@@ -5631,8 +5639,6 @@ class TorquePlotViewer(QMainWindow):
                     }, f, indent=2)
             except:
                 pass
-            if metadata.part_name == 'Inner Tie Rod' and metadata.test_item == 'Oscillating Torque':
-                self.clear_oscillating_angle_range('Inner Tie Rod')
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save reports:\n{e}")
