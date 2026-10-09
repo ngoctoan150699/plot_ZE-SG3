@@ -4155,8 +4155,12 @@ class MainWindow(QMainWindow):
             idx = self.combo_part_no.findText(current)
             if idx >= 0:
                 self.combo_part_no.setCurrentIndex(idx)
+            elif items:
+                self.combo_part_no.setCurrentIndex(1)
             else:
-                self.combo_part_no.setEditText(current)
+                self.combo_part_no.setCurrentIndex(0)
+        elif items:
+            self.combo_part_no.setCurrentIndex(1)
         self.combo_part_no.blockSignals(False)
 
     def _on_standard_part_no_changed(self) -> None:
