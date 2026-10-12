@@ -1168,9 +1168,14 @@ class MainWindow(QMainWindow):
                 self.combo_test_item.currentTextChanged.connect(self._sync_test_item_to_plot_viewer)
                 self._plot_viewer.test_item_combo.currentTextChanged.connect(self._sync_test_item_to_acquisition)
                 self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
+            if hasattr(self, 'combo_part_no') and hasattr(self._plot_viewer, 'part_no_edit'):
+                self._plot_viewer.part_no_edit.textChanged.connect(self._sync_part_no_to_acquisition)
+                self._sync_part_no_to_plot_viewer(self.combo_part_no.currentText())
             self._restore_plot_viewer_state()
             if hasattr(self, 'combo_test_item') and hasattr(self._plot_viewer, 'test_item_combo'):
                 self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
+            if hasattr(self, 'combo_part_no') and self.combo_part_no.currentText().strip():
+                self._sync_part_no_to_plot_viewer(self.combo_part_no.currentText())
             self._sync_standard_to_plot_viewer()
             self._connect_plot_viewer_state_signals()
             if hasattr(self._plot_viewer, 'apply_theme'):
@@ -3840,6 +3845,10 @@ class MainWindow(QMainWindow):
         test_code = 'B' if 'breakaway' in test_item.lower() or test_item.strip().upper() == 'B' else 'O'
 
         part_no = 'UNKNOWN'
+        if hasattr(self, 'combo_part_no'):
+            p_val = self.combo_part_no.currentText().strip().upper()
+            if p_val:
+                part_no = p_val
         purpose_code = 'S'
         team_code = 'QM'
         sample_code = '01'
@@ -3958,6 +3967,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'combo_part_name'):
             self._plot_viewer.part_name_combo.setCurrentText(self.combo_part_name.currentText())
 
+        if hasattr(self, 'combo_part_no'):
+            self._sync_part_no_to_plot_viewer(self.combo_part_no.currentText())
+
         if hasattr(self._plot_viewer, 'plot_mode_combo'):
             code = self._current_test_item_code()
             target_mode = 'time' if code == 'breakaway' else 'angle'
@@ -4008,11 +4020,47 @@ class MainWindow(QMainWindow):
     def _sync_standard_to_plot_viewer(self):
         if not hasattr(self, '_plot_viewer'):
             return
+        if hasattr(self, 'combo_part_no'):
+            self._sync_part_no_to_plot_viewer(self.combo_part_no.currentText())
         if hasattr(self._plot_viewer, 'set_standard_part_numbers') and self._standard_svc:
             self._plot_viewer.set_standard_part_numbers(self._standard_svc.part_numbers)
         setter = getattr(self._plot_viewer, 'set_standard_record', None)
         if setter is not None:
             setter(self._standard_record, self._current_test_item_code())
+
+    def _sync_part_no_to_plot_viewer(self, text: str) -> None:
+        if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
+            return
+        edit = getattr(self._plot_viewer, 'part_no_edit', None)
+        if edit is None:
+            return
+        clean = str(text or '').strip().upper()
+        if edit.text().strip().upper() == clean:
+            return
+        edit.blockSignals(True)
+        edit.setText(clean)
+        edit.blockSignals(False)
+        if hasattr(self._plot_viewer, '_refresh_required_report_highlights'):
+            try:
+                self._plot_viewer._refresh_required_report_highlights()
+            except Exception:
+                pass
+
+    def _sync_part_no_to_acquisition(self, text: str) -> None:
+        if not hasattr(self, 'combo_part_no'):
+            return
+        clean = str(text or '').strip().upper()
+        current = self.combo_part_no.currentText().strip().upper()
+        if current == clean:
+            return
+        self.combo_part_no.blockSignals(True)
+        idx = self.combo_part_no.findText(clean)
+        if idx >= 0:
+            self.combo_part_no.setCurrentIndex(idx)
+        else:
+            self.combo_part_no.setEditText(clean)
+        self.combo_part_no.blockSignals(False)
+        self._on_standard_part_no_changed()
 
     def _sync_plot_viewer_mode_for_test_item(self, text: str):
         """Breakaway dùng Time-Torque; Operating/Oscillating dùng Angle-Torque."""
@@ -4175,6 +4223,7 @@ class MainWindow(QMainWindow):
             line_edit.setText(raw)
             line_edit.setCursorPosition(pos)
             line_edit.blockSignals(False)
+        self._sync_part_no_to_plot_viewer(raw)
         if len(raw) != 8:
             self._clear_standard_display('std_status_incomplete')
             return

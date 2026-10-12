@@ -1458,6 +1458,7 @@ class TorquePlotViewer(QMainWindow):
         self.judgment_h.addWidget(self.internal_judgment_title_label)
         self.judgment_h.addWidget(self.internal_judgment_label)
         meta_layout.addLayout(self.judgment_h, 5, 3)
+        self._update_internal_spec_visibility()
         
         # Aspect ratio and Quantity together on Row 6 Col 0-1
         self.graph_ratio_label = QLabel(self._tr('plot_graph_ratio'))
@@ -2847,7 +2848,26 @@ class TorquePlotViewer(QMainWindow):
         """Excel is the sole specification source; never persist it to legacy JSON."""
         return
 
+    def _update_internal_spec_visibility(self, test_code: str = None) -> None:
+        """Tiêu chuẩn nội bộ chỉ áp dụng cho Operating và Oscillating; Breakaway không có tiêu chuẩn nội bộ."""
+        if test_code is None:
+            test_code = 'breakaway' if self._is_breakaway_test_item() else 'operating'
+        visible = (test_code != 'breakaway')
+        widgets = (
+            getattr(self, 'internal_spec_label', None),
+            getattr(self, 'internal_spec_min_label', None),
+            getattr(self, 'internal_spec_min_spin', None),
+            getattr(self, 'internal_spec_max_label', None),
+            getattr(self, 'internal_spec_max_spin', None),
+            getattr(self, 'internal_judgment_title_label', None),
+            getattr(self, 'internal_judgment_label', None),
+        )
+        for w in widgets:
+            if w is not None and hasattr(w, 'setVisible'):
+                w.setVisible(visible)
+
     def clear_standard_record(self):
+        self._standard_record = None
         self._excel_spec_available = False
         self._has_internal_spec = False
         for spin in (self.spec_min_spin, self.spec_max_spin,
@@ -2857,6 +2877,7 @@ class TorquePlotViewer(QMainWindow):
             spin.blockSignals(False)
         self._set_judgment(self.judgment_label, None)
         self._set_judgment(self.internal_judgment_label, None)
+        self._update_internal_spec_visibility()
 
     def set_standard_part_numbers(self, part_numbers: list) -> None:
         """Apply available standard part numbers for auto-completion in Plot Viewer."""
@@ -2873,27 +2894,31 @@ class TorquePlotViewer(QMainWindow):
 
     def set_standard_record(self, record, test_code):
         """Apply validated Excel limits for the selected measurement mode."""
+        self._standard_record = record
         if record is None or test_code not in ('breakaway', 'operating', 'oscillating'):
             self.clear_standard_record()
             return
-        has_int = (
-            getattr(record, 'internal_operating_min', None) is not None
-            and getattr(record, 'internal_operating_max', None) is not None
-        )
         if test_code == 'breakaway':
             drawing = (0.0, float(record.breakaway_max))
-            internal = (float(record.internal_operating_min), float(record.internal_operating_max)) if has_int else (0.0, 0.0)
+            internal = (0.0, 0.0)
+            self._excel_spec_available = True
+            self._has_internal_spec = False
         else:
+            has_int = (
+                getattr(record, 'internal_operating_min', None) is not None
+                and getattr(record, 'internal_operating_max', None) is not None
+            )
             drawing = (float(record.operating_min), float(record.operating_max))
             internal = (float(record.internal_operating_min), float(record.internal_operating_max)) if has_int else (0.0, 0.0)
-        self._excel_spec_available = True
-        self._has_internal_spec = bool(has_int)
+            self._excel_spec_available = True
+            self._has_internal_spec = bool(has_int)
         for spin, value in zip((self.spec_min_spin, self.spec_max_spin,
                                 self.internal_spec_min_spin, self.internal_spec_max_spin),
                                drawing + internal):
             spin.blockSignals(True)
             spin.setValue(value)
             spin.blockSignals(False)
+        self._update_internal_spec_visibility(test_code)
         self.update_average()
 
     @staticmethod
@@ -2953,6 +2978,12 @@ class TorquePlotViewer(QMainWindow):
                     idx = combo.findData(target_mode)
                     if idx >= 0 and combo.currentIndex() != idx:
                         combo.setCurrentIndex(idx)
+
+            test_code = 'breakaway' if 'breakaway' in item_name.lower() else ('oscillating' if 'oscillating' in item_name.lower() else 'operating')
+            if getattr(self, '_standard_record', None) is not None:
+                self.set_standard_record(self._standard_record, test_code)
+            else:
+                self._update_internal_spec_visibility(test_code)
 
             if not getattr(self, '_excel_spec_available', False):
                 self.clear_standard_record()
