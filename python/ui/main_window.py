@@ -1171,10 +1171,10 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'combo_part_no') and hasattr(self._plot_viewer, 'part_no_edit'):
                 self._plot_viewer.part_no_edit.textChanged.connect(self._sync_part_no_to_acquisition)
                 self._sync_part_no_to_plot_viewer(self.combo_part_no.currentText())
+            if hasattr(self._plot_viewer, 'report_saved_and_cleared'):
+                self._plot_viewer.report_saved_and_cleared.connect(self._on_plot_viewer_report_cleared)
             self._restore_plot_viewer_state()
-            if hasattr(self, 'combo_test_item') and hasattr(self._plot_viewer, 'test_item_combo'):
-                self._sync_test_item_to_plot_viewer(self.combo_test_item.currentText())
-            if hasattr(self, 'combo_part_no') and self.combo_part_no.currentText().strip():
+            if hasattr(self, 'combo_part_no'):
                 self._sync_part_no_to_plot_viewer(self.combo_part_no.currentText())
             self._sync_standard_to_plot_viewer()
             self._connect_plot_viewer_state_signals()
@@ -1507,6 +1507,7 @@ class MainWindow(QMainWindow):
             p_edit.setMaxLength(8)
             p_edit.setPlaceholderText(self.i18n.t('part_no_placeholder') if hasattr(self, 'i18n') else "VD: CBJ0000A")
         self.combo_part_no.editTextChanged.connect(self._on_standard_part_no_changed)
+        self.combo_part_no.currentIndexChanged.connect(lambda _: self._on_standard_part_no_changed())
         self.edit_part_no = self.combo_part_no
         std_lay.addWidget(self.lbl_part_no, 0, 0)
         std_lay.addWidget(self.combo_part_no, 0, 1)
@@ -1661,6 +1662,8 @@ class MainWindow(QMainWindow):
         btns1.setSpacing(8)
         self.btn_rec_start = QPushButton("▶️ Bắt đầu ghi")
         self._update_rec_start_btn_style()
+        self.btn_rec_start.setEnabled(False)
+        self.btn_rec_start.setToolTip(self.i18n.t('std_status_incomplete') if hasattr(self, 'i18n') else "Chưa nhập đủ 8 ký tự mã hàng")
         self.btn_rec_start.clicked.connect(self._start_recording)
         
         self.btn_rec_stop  = QPushButton("⏹ Dừng ghi")
@@ -2190,10 +2193,43 @@ class MainWindow(QMainWindow):
             self.btn_connect.setText(self.i18n.t('btn_connect'))
         self.btn_connect.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; padding: 8px;")
 
+    def _is_part_no_valid(self) -> bool:
+        """Kiểm tra mã hàng đã nhập đúng 8 ký tự hay chưa."""
+        if not hasattr(self, 'combo_part_no'):
+            return False
+        raw = self.combo_part_no.currentText().strip()
+        return len(raw) == 8
+
+    def _update_rec_start_button_state(self) -> None:
+        """Cập nhật trạng thái enabled/disabled của nút 'Bắt đầu ghi' theo mã hàng và tiến trình đo."""
+        if not hasattr(self, 'btn_rec_start'):
+            return
+        is_recording = bool(getattr(self, '_recording', False))
+        is_angle_running = getattr(self, '_angle_state', 'IDLE') != 'IDLE'
+        valid_part_no = self._is_part_no_valid()
+
+        can_start = (not is_recording) and (not is_angle_running) and valid_part_no
+        self.btn_rec_start.setEnabled(can_start)
+        if not valid_part_no:
+            self.btn_rec_start.setToolTip(self.i18n.t('std_status_incomplete') if hasattr(self, 'i18n') else "Chưa nhập đủ 8 ký tự mã hàng")
+        else:
+            self.btn_rec_start.setToolTip(self.i18n.t('btn_start_record') if hasattr(self, 'i18n') else "")
+
     def _update_rec_start_btn_style(self):
-        color = "#FF9800" if not self._is_dark else "#fab387" # Orange
-        text_color = "white" if not self._is_dark else "#1e1e2e"
-        self.btn_rec_start.setStyleSheet(f"background-color: {color}; color: {text_color}; font-weight: bold; height: 28px;")
+        if not self._is_dark:
+            color = "#FF9800"
+            text_color = "white"
+            disabled_bg = "#e0e0e0"
+            disabled_text = "#9e9e9e"
+        else:
+            color = "#fab387"
+            text_color = "#1e1e2e"
+            disabled_bg = "#313244"
+            disabled_text = "#6c7086"
+        self.btn_rec_start.setStyleSheet(
+            f"QPushButton {{ background-color: {color}; color: {text_color}; font-weight: bold; height: 28px; border-radius: 4px; }} "
+            f"QPushButton:disabled {{ background-color: {disabled_bg}; color: {disabled_text}; border: 1px solid {disabled_bg}; }}"
+        )
 
     def _update_rec_stop_btn_style(self):
         color = "#F44336" if not self._is_dark else "#f38ba8" # Red
@@ -2793,7 +2829,11 @@ class MainWindow(QMainWindow):
         try:
             for name, value in state.items():
                 widget = getattr(viewer, name, None)
-                if widget is None or name == 'test_item_combo':
+                if widget is None or name in (
+                    'test_item_combo', 'part_no_edit',
+                    'spec_min_spin', 'spec_max_spin',
+                    'internal_spec_min_spin', 'internal_spec_max_spin',
+                ):
                     continue
                 if hasattr(widget, 'setCurrentText'):
                     self._restore_combo_text(widget, value)
@@ -3695,7 +3735,7 @@ class MainWindow(QMainWindow):
     def _finish_angle_program(self) -> None:
         self._angle_state = 'IDLE'
         self._angle_profile = None
-        self.btn_rec_start.setEnabled(True)
+        self._update_rec_start_button_state()
         self.btn_rec_stop.setEnabled(False)
         self._restore_after_angle_program()
         self._log(self.i18n.t('angle_completed'))
@@ -3707,11 +3747,14 @@ class MainWindow(QMainWindow):
         self._angle_state = 'IDLE'
         self._angle_profile = None
         self._restore_after_angle_program()
-        if hasattr(self, 'btn_rec_start'):
-            self.btn_rec_start.setEnabled(True)
+        self._update_rec_start_button_state()
+        if hasattr(self, 'btn_rec_stop'):
             self.btn_rec_stop.setEnabled(False)
 
     def _start_recording(self):
+        if not self._is_part_no_valid():
+            QMessageBox.warning(self, self.i18n.t('msg_warning'), self.i18n.t('std_status_incomplete'))
+            return
         # Angle dùng nút bắt đầu hiện tại nhưng tuyệt đối không bật ghi mẫu.
         if self._is_angle_selected():
             self._start_angle_program()
@@ -3794,7 +3837,7 @@ class MainWindow(QMainWindow):
         if self._bus_scheduler:
             self._bus_scheduler.set_recording_active(False)
         duration = self._session.end_time - self._session.start_time
-        self.btn_rec_start.setEnabled(True)
+        self._update_rec_start_button_state()
         self.btn_rec_stop.setEnabled(False)
         self.btn_rec_clear.setEnabled(True)
         self._log(f"⏹ Đã dừng ghi – {self._session.count} mẫu, {duration:.1f}s")
@@ -3808,14 +3851,6 @@ class MainWindow(QMainWindow):
             self._log("⏹ Đã dừng chu trình Servo")
         self._restore_plc_jog_speed()
         self._clear_itr_oscillating_angles_after_run()
-
-        # Tự động xóa Remark khi đo xong Oscillating hoặc Operating; Breakaway vẫn giữ lại.
-        completed_code = self._current_test_item_code()
-        if completed_code in ('operating', 'oscillating') and hasattr(self, '_plot_viewer'):
-            try:
-                self._plot_viewer.clear_remark()
-            except Exception:
-                pass
 
     def _clear_samples(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
@@ -4062,6 +4097,19 @@ class MainWindow(QMainWindow):
         self.combo_part_no.blockSignals(False)
         self._on_standard_part_no_changed()
 
+    def _on_plot_viewer_report_cleared(self) -> None:
+        """Được gọi khi Plot Viewer lưu báo cáo và xóa các hạng mục bắt buộc."""
+        if hasattr(self, 'combo_part_no'):
+            self.combo_part_no.blockSignals(True)
+            if self.combo_part_no.count() > 0:
+                self.combo_part_no.setCurrentIndex(0)
+            self.combo_part_no.setEditText("")
+            p_edit = self.combo_part_no.lineEdit()
+            if p_edit is not None:
+                p_edit.clear()
+            self.combo_part_no.blockSignals(False)
+            self._on_standard_part_no_changed()
+
     def _sync_plot_viewer_mode_for_test_item(self, text: str):
         """Breakaway dùng Time-Torque; Operating/Oscillating dùng Angle-Torque."""
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
@@ -4203,12 +4251,10 @@ class MainWindow(QMainWindow):
             idx = self.combo_part_no.findText(current)
             if idx >= 0:
                 self.combo_part_no.setCurrentIndex(idx)
-            elif items:
-                self.combo_part_no.setCurrentIndex(1)
             else:
-                self.combo_part_no.setCurrentIndex(0)
-        elif items:
-            self.combo_part_no.setCurrentIndex(1)
+                self.combo_part_no.setEditText(current)
+        else:
+            self.combo_part_no.setCurrentIndex(0)
         self.combo_part_no.blockSignals(False)
 
     def _on_standard_part_no_changed(self) -> None:
@@ -4224,6 +4270,7 @@ class MainWindow(QMainWindow):
             line_edit.setCursorPosition(pos)
             line_edit.blockSignals(False)
         self._sync_part_no_to_plot_viewer(raw)
+        self._update_rec_start_button_state()
         if len(raw) != 8:
             self._clear_standard_display('std_status_incomplete')
             return
@@ -4476,6 +4523,7 @@ class MainWindow(QMainWindow):
                 self.btn_rec_start.setText(self.i18n.t('btn_start_record'))
             else:
                 self.btn_rec_start.setText(self.i18n.t('btn_stop_record'))
+            self._update_rec_start_button_state()
         if hasattr(self, 'btn_rec_stop'):
             self.btn_rec_stop.setText(self.i18n.t('btn_stop_record'))
         if hasattr(self, 'btn_rec_clear'):
@@ -4568,7 +4616,7 @@ class MainWindow(QMainWindow):
         # R2 Upgrade: Automatically stop data collection in Breakaway when outgoing direction is done
         if self._recording and not recording_active:
             self._recording = False
-            self.btn_rec_start.setEnabled(True)
+            self._update_rec_start_button_state()
             self.btn_rec_stop.setEnabled(False)
             self.btn_rec_clear.setEnabled(True)
             self._log(f"⏹ Đã dừng ghi (Tự động ngắt khi hết chiều đi) – {self._session.count} mẫu")

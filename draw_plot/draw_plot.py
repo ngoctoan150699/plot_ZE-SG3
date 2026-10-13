@@ -174,7 +174,7 @@ def get_config_file(name: str):
     return get_config_dir() / name
 
 import matplotlib.pyplot as plt
-from PyQt5.QtCore import QDate, Qt, QRect, QPoint, QSize, QLocale
+from PyQt5.QtCore import QDate, Qt, QRect, QPoint, QSize, QLocale, pyqtSignal
 from PyQt5.QtWidgets import QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QLayout
 import bisect
 import pathlib
@@ -840,6 +840,7 @@ class CalibrationDialog(QDialog):
 
 class TorquePlotViewer(QMainWindow):
     """CSV Torque Plot Viewer"""
+    report_saved_and_cleared = pyqtSignal()
     
     def __init__(self, i18n=None):
         super().__init__()
@@ -1211,8 +1212,9 @@ class TorquePlotViewer(QMainWindow):
 
         self.spec_setup_btn = QPushButton(self._tr('plot_specs'))
         self.spec_setup_btn.setMinimumWidth(100)
-        self.spec_setup_btn.setToolTip(self._tr('plot_specs_tip'))
+        self.spec_setup_btn.setToolTip("Tiêu chuẩn được quản lý tự động theo mã hàng từ tab Thu thập")
         self.spec_setup_btn.clicked.connect(self.open_test_item_spec_setup)
+        self.spec_setup_btn.setEnabled(False)
         bottom_h.addWidget(self.spec_setup_btn)
 
         self.calibration_btn = QPushButton(self._tr('plot_calibration'))
@@ -1296,15 +1298,9 @@ class TorquePlotViewer(QMainWindow):
         meta_layout.addWidget(self.part_no_label, 1, 0)
         self.part_no_edit = QLineEdit("")
         self.part_no_edit.setMaximumWidth(110)
-        def _on_part_no_changed(text):
-            pos = self.part_no_edit.cursorPosition()
-            upp = text.upper()
-            if text != upp:
-                self.part_no_edit.blockSignals(True)
-                self.part_no_edit.setText(upp)
-                self.part_no_edit.setCursorPosition(pos)
-                self.part_no_edit.blockSignals(False)
-        self.part_no_edit.textChanged.connect(_on_part_no_changed)
+        self.part_no_edit.setReadOnly(True)
+        self.part_no_edit.setFocusPolicy(Qt.NoFocus)
+        self.part_no_edit.setToolTip("Mã sản phẩm được khoá và đồng bộ tự động từ tab Thu thập")
         part_sample_h = QHBoxLayout()
         part_sample_h.setSpacing(8)
         part_sample_h.addWidget(self.part_no_edit)
@@ -1352,6 +1348,11 @@ class TorquePlotViewer(QMainWindow):
             spin.setSuffix(" Nm")
             spin.setReadOnly(True)
             spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
+            spin.setFocusPolicy(Qt.NoFocus)
+            if spin.lineEdit() is not None:
+                spin.lineEdit().setReadOnly(True)
+                spin.lineEdit().setFocusPolicy(Qt.NoFocus)
+            spin.setToolTip("Tiêu chuẩn được khoá và nạp tự động theo mã hàng từ tab Thu thập")
             spin.valueChanged.connect(self.update_average)
         self.spec_min_label = QLabel(self._tr('plot_min'))
         self.spec_max_label = QLabel(self._tr('plot_max'))
@@ -2089,8 +2090,12 @@ class TorquePlotViewer(QMainWindow):
                     background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px;
                     selection-background-color: #89b4fa; selection-color: #11111b;
                 }
+                QLineEdit:read-only, QDoubleSpinBox:read-only {
+                    background-color: #242438; color: #a6adc8; border: 1px solid #363a4f;
+                }
                 QPushButton { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 5px; padding: 6px 12px; font-weight: 600; }
                 QPushButton:hover { background-color: #45475a; }
+                QPushButton:disabled { background-color: #1e1e2e; color: #585b70; border-color: #313244; }
                 QTabWidget::pane, QFrame { border-color: #45475a; }
                 QScrollArea { background-color: transparent; border: none; }
             """)
@@ -2106,8 +2111,10 @@ class TorquePlotViewer(QMainWindow):
                 QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #2c3e50; font-weight: bold; }
                 QLabel { color: #333333; }
                 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit { background-color: #ffffff; color: #333333; border: 1px solid #cccccc; border-radius: 4px; padding: 5px; selection-background-color: #3f51b5; }
+                QLineEdit:read-only, QDoubleSpinBox:read-only { background-color: #e9ecef; color: #495057; border: 1px solid #ced4da; }
                 QPushButton { background-color: #ffffff; color: #333333; border: 1px solid #dcdcdc; border-radius: 5px; padding: 6px 12px; font-weight: 600; }
                 QPushButton:hover { background-color: #f0f0f0; }
+                QPushButton:disabled { background-color: #f0f0f0; color: #a0a0a0; border-color: #e0e0e0; }
                 QScrollArea { background-color: transparent; border: none; }
             """)
             fig_color = '#ffffff'
@@ -2880,17 +2887,10 @@ class TorquePlotViewer(QMainWindow):
         self._update_internal_spec_visibility()
 
     def set_standard_part_numbers(self, part_numbers: list) -> None:
-        """Apply available standard part numbers for auto-completion in Plot Viewer."""
+        """Apply available standard part numbers in Plot Viewer."""
         self.available_part_numbers = list(part_numbers or [])
         if hasattr(self, 'part_no_edit') and self.part_no_edit is not None:
-            try:
-                from PyQt5.QtWidgets import QCompleter
-                completer = QCompleter(self.available_part_numbers, self.part_no_edit)
-                completer.setCaseSensitivity(Qt.CaseInsensitive)
-                completer.setFilterMode(Qt.MatchContains)
-                self.part_no_edit.setCompleter(completer)
-            except Exception:
-                pass
+            self.part_no_edit.setCompleter(None)
 
     def set_standard_record(self, record, test_code):
         """Apply validated Excel limits for the selected measurement mode."""
@@ -5143,6 +5143,13 @@ class TorquePlotViewer(QMainWindow):
             wb.save(path)
             if show_message:
                 QMessageBox.information(self, "Saved", f"Excel report saved to:\n{path}")
+                item_name = self.test_item_combo.currentText().strip()
+                test_code = 'breakaway' if 'breakaway' in item_name.lower() else ('oscillating' if 'oscillating' in item_name.lower() else 'operating')
+                if test_code in ('operating', 'oscillating'):
+                    self.clear_required_report_info()
+                    self.clear_remark()
+                    self.clear_standard_record()
+                    self.report_saved_and_cleared.emit()
             return path
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save Excel:\n{e}")
@@ -5656,6 +5663,15 @@ class TorquePlotViewer(QMainWindow):
                 self, "Report Saved",
                 f"Successfully saved reports:\n\n1. Raw CSV: {raw_path}\n2. Excel Report: {report_path}{summary_msg}"
             )
+
+            # Sau khi lưu momen hoạt động (hoặc dao động) xong, tự động xóa 5 hạng mục bắt buộc và remark
+            item_name = self.test_item_combo.currentText().strip()
+            test_code = 'breakaway' if 'breakaway' in item_name.lower() else ('oscillating' if 'oscillating' in item_name.lower() else 'operating')
+            if test_code in ('operating', 'oscillating'):
+                self.clear_required_report_info()
+                self.clear_remark()
+                self.clear_standard_record()
+                self.report_saved_and_cleared.emit()
 
             self.csv_dir = csv_dir
             self.report_dir = report_dir
