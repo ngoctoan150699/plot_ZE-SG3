@@ -193,6 +193,11 @@ TRANSLATIONS = {
         'btn_clear_chart': '🗑️ Xóa biểu đồ',
         'btn_theme_light': '☀️  Giao diện Sáng',
         'btn_theme_dark': '🌙  Giao diện Tối',
+        'msg_confirm_clear_plot_title': 'Xác nhận xóa biểu đồ',
+        'msg_confirm_clear_plot': 'Bạn có muốn xóa dữ liệu biểu đồ trước khi chuyển sang tab Thu thập không?',
+        'btn_ok_confirm': 'Đồng ý',
+        'btn_cancel_confirm': 'Hủy',
+        'msg_chart_cleared_on_tab_switch': '🗑️ Đã xóa biểu đồ khi chuyển sang tab Thu thập',
     },
     'en': {
         # Tab Headers
@@ -382,6 +387,11 @@ TRANSLATIONS = {
         'btn_clear_chart': '🗑️ Clear chart',
         'btn_theme_light': '☀️  Light Theme',
         'btn_theme_dark': '🌙  Dark Theme',
+        'msg_confirm_clear_plot_title': 'Confirm Clear Chart',
+        'msg_confirm_clear_plot': 'Do you want to clear chart data before switching to the Acquisition tab?',
+        'btn_ok_confirm': 'OK',
+        'btn_cancel_confirm': 'Cancel',
+        'msg_chart_cleared_on_tab_switch': '🗑️ Chart cleared when switching to Acquisition tab',
     }
 }
 

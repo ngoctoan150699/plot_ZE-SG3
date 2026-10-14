@@ -3474,19 +3474,26 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
 
-    def clear_all_samples(self):
-        """Remove all imported samples after confirmation."""
-        if not self.samples:
+    def clear_all_samples(self, prompt: bool = True):
+        """Remove all imported samples after confirmation (or silently if prompt=False)."""
+        if not self.samples and prompt:
             QMessageBox.information(self, "Clear All", "No imported samples to clear.")
             return
-        ok = QMessageBox.question(self, "Confirm Clear All", "Remove ALL imported samples?", QMessageBox.Yes | QMessageBox.No)
-        if ok != QMessageBox.Yes:
-            return
+        if prompt:
+            ok = QMessageBox.question(self, "Confirm Clear All", "Remove ALL imported samples?", QMessageBox.Yes | QMessageBox.No)
+            if ok != QMessageBox.Yes:
+                return
         # clear data
         try:
             self.samples.clear()
         except Exception:
             self.samples = []
+        try:
+            self.torque_data = []
+            self.time_data = []
+            self.angle_data = []
+        except Exception:
+            pass
         # clear combo box items except '__all__'
         try:
             while self.file_select_combo.count() > 1:
@@ -3513,7 +3520,10 @@ class TorquePlotViewer(QMainWindow):
             self.update_plot()
             QApplication.processEvents()
             self.update_average()
-            pass
+            if hasattr(self, 'judgment_label'):
+                self.judgment_label.setText("")
+            if hasattr(self, 'internal_judgment_label'):
+                self.internal_judgment_label.setText("")
         except Exception:
             pass
     

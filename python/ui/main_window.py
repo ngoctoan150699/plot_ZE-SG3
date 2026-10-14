@@ -891,6 +891,7 @@ class MainWindow(QMainWindow):
         self._only_stable = True
         self._chk_stable_only: Optional[QCheckBox] = None
         self._chart_paused = False  # Trạng thái đóng băng biểu đồ
+        self._current_main_tab_index = 0
         self._current_angle = 0.0
         self._current_cycle = 0
         self._last_plc_status = None
@@ -1136,7 +1137,17 @@ class MainWindow(QMainWindow):
             self.main_tabs.currentChanged.connect(self._on_main_tab_changed)
 
     def _on_main_tab_changed(self, index: int):
-        """Lazy-load Plot Viewer only when user opens the tab."""
+        """Lazy-load Plot Viewer only when user opens the tab, and handle tab transitions."""
+        prev_index = getattr(self, '_current_main_tab_index', 0)
+        self._current_main_tab_index = index
+
+        if getattr(self, '_restoring_ui_state', False):
+            return
+
+        # Khi chuyển từ tab Phân tích (index 1) sang tab Thu thập (index 0)
+        if prev_index == 1 and index == 0:
+            self._handle_switch_from_plot_viewer_to_acquisition()
+
         if index == 1 and getattr(self, '_plot_viewer_loaded', False):
             # Đảm bảo canvas repaint lại đầy đủ khi quay lại tab Plot Viewer
             try:
@@ -1184,6 +1195,59 @@ class MainWindow(QMainWindow):
             self._save_ui_state()
         except Exception as exc:
             logger.warning("Không tải được Plot Viewer: %s", exc)
+
+    def _confirm_clear_charts_dialog(self) -> bool:
+        """Hiển thị hộp thoại xác nhận xóa biểu đồ khi chuyển từ tab Phân tích sang Thu thập."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle(self.i18n.t('msg_confirm_clear_plot_title'))
+        msg.setText(self.i18n.t('msg_confirm_clear_plot'))
+        btn_ok = msg.addButton(self.i18n.t('btn_ok_confirm'), QMessageBox.AcceptRole)
+        btn_cancel = msg.addButton(self.i18n.t('btn_cancel_confirm'), QMessageBox.RejectRole)
+        msg.setDefaultButton(btn_ok)
+        msg.exec_()
+        return msg.clickedButton() == btn_ok
+
+    def _handle_switch_from_plot_viewer_to_acquisition(self) -> None:
+        """Kiểm tra và hỏi người dùng có muốn xóa biểu đồ khi chuyển từ tab Phân tích sang Thu thập."""
+        has_pv_samples = False
+        if hasattr(self, '_plot_viewer') and self._plot_viewer:
+            has_pv_samples = bool(getattr(self._plot_viewer, 'samples', None))
+
+        has_acq_samples = False
+        if hasattr(self, '_session') and self._session:
+            has_acq_samples = bool(self._session.samples)
+
+        has_plot_data = False
+        if hasattr(self, 'plot') and getattr(self.plot, '_x_data', None):
+            has_plot_data = len(self.plot._x_data) > 0
+
+        # Nếu không có biểu đồ hoặc dữ liệu mẫu nào thì không cần hiện thông báo
+        if not has_pv_samples and not has_acq_samples and not has_plot_data:
+            return
+
+        if self._confirm_clear_charts_dialog():
+            self._clear_charts_on_tab_switch()
+
+    def _clear_charts_on_tab_switch(self) -> None:
+        """Xóa biểu đồ ở cả tab Plot Viewer và tab Thu thập (áp dụng cho tất cả các loại mô-men)."""
+        # 1. Xóa biểu đồ và mẫu bên Plot Viewer
+        if hasattr(self, '_plot_viewer') and self._plot_viewer:
+            try:
+                if hasattr(self._plot_viewer, 'clear_all_samples'):
+                    self._plot_viewer.clear_all_samples(prompt=False)
+            except Exception as exc:
+                logger.warning("Lỗi xóa biểu đồ Plot Viewer: %s", exc)
+
+        # 2. Xóa biểu đồ và làm mới phiên đo bên tab Thu thập
+        try:
+            if hasattr(self, '_session') and self._session and self._session.samples:
+                self._clear_samples()
+            self._clear_chart()
+        except Exception as exc:
+            logger.warning("Lỗi xóa biểu đồ Thu thập: %s", exc)
+
+        self._log(self.i18n.t('msg_chart_cleared_on_tab_switch'))
 
     def showEvent(self, a0):
         """Set initial splitter sizes as a proportion of the window width on first show.
@@ -2562,6 +2626,10 @@ class MainWindow(QMainWindow):
             delattr(self, '_plc_mode_before_jog')
 
     def _plc_jog_plus(self, active: bool):
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            if active:
+                self._log("⚠️ PLC chưa kết nối, không thể JOG")
+            return
         if active:
             self._begin_plc_jog(direction=1)
         self._plc_command("Jog+ ON" if active else "Jog+ OFF", lambda: self._plc_svc.jog_plus(active) if self._plc_svc else False)
@@ -2569,6 +2637,10 @@ class MainWindow(QMainWindow):
             self._end_plc_jog()
 
     def _plc_jog_minus(self, active: bool):
+        if not self._plc_svc or not self._plc_svc.is_connected():
+            if active:
+                self._log("⚠️ PLC chưa kết nối, không thể JOG")
+            return
         if active:
             self._begin_plc_jog(direction=-1)
         self._plc_command("Jog- ON" if active else "Jog- OFF", lambda: self._plc_svc.jog_minus(active) if self._plc_svc else False)
@@ -4064,6 +4136,8 @@ class MainWindow(QMainWindow):
             setter(self._standard_record, self._current_test_item_code())
 
     def _sync_part_no_to_plot_viewer(self, text: str) -> None:
+        if getattr(self, '_syncing_part_no', False):
+            return
         if not _HAS_PLOT_VIEWER or not hasattr(self, '_plot_viewer'):
             return
         edit = getattr(self._plot_viewer, 'part_no_edit', None)
@@ -4072,43 +4146,57 @@ class MainWindow(QMainWindow):
         clean = str(text or '').strip().upper()
         if edit.text().strip().upper() == clean:
             return
-        edit.blockSignals(True)
-        edit.setText(clean)
-        edit.blockSignals(False)
-        if hasattr(self._plot_viewer, '_refresh_required_report_highlights'):
-            try:
-                self._plot_viewer._refresh_required_report_highlights()
-            except Exception:
-                pass
+        self._syncing_part_no = True
+        try:
+            edit.blockSignals(True)
+            edit.setText(clean)
+            edit.blockSignals(False)
+            if hasattr(self._plot_viewer, '_refresh_required_report_highlights'):
+                try:
+                    self._plot_viewer._refresh_required_report_highlights()
+                except Exception:
+                    pass
+        finally:
+            self._syncing_part_no = False
 
     def _sync_part_no_to_acquisition(self, text: str) -> None:
+        if getattr(self, '_syncing_part_no', False):
+            return
         if not hasattr(self, 'combo_part_no'):
             return
         clean = str(text or '').strip().upper()
         current = self.combo_part_no.currentText().strip().upper()
         if current == clean:
             return
-        self.combo_part_no.blockSignals(True)
-        idx = self.combo_part_no.findText(clean)
-        if idx >= 0:
-            self.combo_part_no.setCurrentIndex(idx)
-        else:
-            self.combo_part_no.setEditText(clean)
-        self.combo_part_no.blockSignals(False)
-        self._on_standard_part_no_changed()
+        self._syncing_part_no = True
+        try:
+            self.combo_part_no.blockSignals(True)
+            idx = self.combo_part_no.findText(clean)
+            if idx >= 0:
+                self.combo_part_no.setCurrentIndex(idx)
+            else:
+                self.combo_part_no.setEditText(clean)
+            self.combo_part_no.blockSignals(False)
+            self._on_standard_part_no_changed()
+        finally:
+            self._syncing_part_no = False
 
     def _on_plot_viewer_report_cleared(self) -> None:
         """Được gọi khi Plot Viewer lưu báo cáo và xóa các hạng mục bắt buộc."""
         if hasattr(self, 'combo_part_no'):
-            self.combo_part_no.blockSignals(True)
-            if self.combo_part_no.count() > 0:
-                self.combo_part_no.setCurrentIndex(0)
-            self.combo_part_no.setEditText("")
-            p_edit = self.combo_part_no.lineEdit()
-            if p_edit is not None:
-                p_edit.clear()
-            self.combo_part_no.blockSignals(False)
-            self._on_standard_part_no_changed()
+            self._syncing_part_no = True
+            try:
+                self.combo_part_no.blockSignals(True)
+                if self.combo_part_no.count() > 0:
+                    self.combo_part_no.setCurrentIndex(0)
+                self.combo_part_no.setEditText("")
+                p_edit = self.combo_part_no.lineEdit()
+                if p_edit is not None:
+                    p_edit.clear()
+                self.combo_part_no.blockSignals(False)
+                self._on_standard_part_no_changed()
+            finally:
+                self._syncing_part_no = False
 
     def _sync_plot_viewer_mode_for_test_item(self, text: str):
         """Breakaway dùng Time-Torque; Operating/Oscillating dùng Angle-Torque."""
@@ -4253,6 +4341,8 @@ class MainWindow(QMainWindow):
                 self.combo_part_no.setCurrentIndex(idx)
             else:
                 self.combo_part_no.setEditText(current)
+        elif items:
+            self.combo_part_no.setCurrentIndex(1)
         else:
             self.combo_part_no.setCurrentIndex(0)
         self.combo_part_no.blockSignals(False)
@@ -4308,7 +4398,10 @@ class MainWindow(QMainWindow):
             if idx < 0:
                 idx = self.combo_part_name.findData(p_text)
             if idx >= 0 and self.combo_part_name.currentIndex() != idx:
+                self.combo_part_name.blockSignals(True)
                 self.combo_part_name.setCurrentIndex(idx)
+                self.combo_part_name.blockSignals(False)
+                self._populate_valid_test_items()
         self._sync_standard_to_plot_viewer()
 
     def _refresh_standard_file_label(self) -> None:

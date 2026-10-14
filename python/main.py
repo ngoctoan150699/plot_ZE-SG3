@@ -22,6 +22,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def setup_exception_hook():
+    def _handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        import traceback
+        import datetime
+        err_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        logger.critical("Uncaught exception:\n%s", err_msg)
+        try:
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write(f"\n--- CRASH AT {datetime.datetime.now().isoformat()} ---\n")
+                f.write(err_msg)
+        except Exception:
+            pass
+        try:
+            from PyQt5.QtWidgets import QMessageBox
+            app_inst = QApplication.instance()
+            if app_inst:
+                QMessageBox.critical(
+                    None,
+                    "Lỗi ứng dụng",
+                    f"Ứng dụng gặp lỗi không mong muốn:\n{exc_value}\n\nChi tiết lỗi đã được ghi vào file crash.log."
+                )
+        except Exception:
+            pass
+    sys.excepthook = _handle_exception
+
+
+
 def set_windows_timer_resolution(enable: bool):
     import sys
     if sys.platform == 'win32':
@@ -39,6 +69,7 @@ def set_windows_timer_resolution(enable: bool):
 
 
 def main():
+    setup_exception_hook()
     set_windows_timer_resolution(True)
     # -------------------------------------------------------
     # 1. INFRASTRUCTURE – Load settings
