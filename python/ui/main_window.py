@@ -572,12 +572,12 @@ class ServoSetupDialog(QDialog):
         form.addRow(self.lbl_speed, self.spin_speed)
         form.addRow("", self.lbl_converted_speed)
         form.addRow("Đơn vị tốc độ:" if self.i18n.current_language == "vi" else "Speed Unit:", self.combo_speed_unit)
+        form.addRow(self.lbl_jog_speed, self.spin_jog_speed)
         if is_angle:
             form.addRow(self.i18n.t('angle_positive_torque_lbl'), self.spin_positive_torque)
             form.addRow(self.i18n.t('angle_negative_torque_lbl'), self.spin_negative_torque)
             form.addRow(self.lbl_safety_torque, self.spin_safety_torque)
         else:
-            form.addRow(self.lbl_jog_speed, self.spin_jog_speed)
             form.addRow(self.lbl_pos, self.spin_pos)
             form.addRow("", self.lbl_pos_pulses)
             form.addRow(self.lbl_neg, self.spin_neg)
@@ -1685,6 +1685,13 @@ class MainWindow(QMainWindow):
         self.spin_plc_jog_speed.setValue(10.0)
         self.spin_plc_jog_speed.setSuffix(" rpm")
         self.spin_plc_jog_speed.valueChanged.connect(self._on_plc_jog_speed_changed)
+        _make_spinbox_text_edit_friendly(self.spin_plc_jog_speed)
+
+        row_jog_speed = QHBoxLayout()
+        row_jog_speed.setSpacing(6)
+        row_jog_speed.addWidget(self.lbl_plc_jog_speed)
+        row_jog_speed.addWidget(self.spin_plc_jog_speed)
+        pc_lay.addLayout(row_jog_speed)
 
         # 1. Hàng nút quay +- đặt ở trên
         self.btn_plc_jog_minus = QPushButton(self.i18n.t('btn_plc_jog_minus'))
@@ -2561,6 +2568,13 @@ class MainWindow(QMainWindow):
             self.spin_plc_jog_speed.blockSignals(False)
 
     def _on_plc_jog_speed_changed(self, val: float):
+        if hasattr(self, '_settings'):
+            profile_key = servo_profile_key(self._current_part_code(), self._current_test_item_code())
+            profiles = self._settings.load_servo_profiles()
+            profile = profiles.get(profile_key)
+            if profile:
+                profile.jog_speed = round(float(val), 2)
+                self._settings.save_servo_profiles(profiles)
         if self._plc_svc and self._plc_svc.is_connected():
             output_deg_s = float(val) * 0.3
             if self._plc_svc.write_speed(output_deg_s):

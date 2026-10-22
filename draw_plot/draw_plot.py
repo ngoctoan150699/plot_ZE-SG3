@@ -1266,77 +1266,61 @@ class TorquePlotViewer(QMainWindow):
         # === Report Metadata ===
         self.meta_group = QGroupBox(self._tr('plot_report_info_grp'))
         meta_layout = QGridLayout()
-        meta_layout.setContentsMargins(4, 4, 4, 4)
-        meta_layout.setVerticalSpacing(2)
-        meta_layout.setHorizontalSpacing(4)
+        meta_layout.setContentsMargins(6, 6, 6, 6)
+        meta_layout.setVerticalSpacing(4)
+        meta_layout.setHorizontalSpacing(6)
 
+        # ---------------------------------------------------------
+        # KHU VỰC 1: PHẦN TỰ ĐỘNG (Thông tin tiêu chuẩn & Đánh giá)
+        # ---------------------------------------------------------
+        self.lbl_auto_section = QLabel(self._tr('plot_auto_info_section'))
+        self.lbl_auto_section.setStyleSheet("font-weight: bold; color: #1976D2; font-size: 11px; margin-top: 2px;")
+        meta_layout.addWidget(self.lbl_auto_section, 0, 0, 1, 4)
+
+        # Row 1: Chế độ đo (Col 0-1) | Sản phẩm (Col 2-3)
         self.test_item_label = QLabel(self._tr('plot_test_item'))
-        meta_layout.addWidget(self.test_item_label, 0, 0)
+        meta_layout.addWidget(self.test_item_label, 1, 0)
         self.test_item_combo = NoScrollComboBox()
         self.test_item_combo.addItems(["Breakaway Torque", "Operating Torque", "Oscillating Torque"])
-        self.test_item_combo.setMaximumWidth(145)
         self.test_item_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.test_item_combo.setMinimumContentsLength(12)
         self.test_item_combo.setEnabled(False) # Locked editing, synced from Thu thap
         try:
             self.test_item_combo.currentIndexChanged.connect(self.on_test_item_changed)
-        except: pass
-        meta_layout.addWidget(self.test_item_combo, 0, 1)
+        except Exception:
+            pass
+        meta_layout.addWidget(self.test_item_combo, 1, 1)
 
         self.part_name_label = QLabel(self._tr('plot_part_name'))
-        meta_layout.addWidget(self.part_name_label, 0, 2)
+        meta_layout.addWidget(self.part_name_label, 1, 2)
         self.part_name_combo = NoScrollComboBox()
         self.part_name_combo.addItems(["Inner Tie Rod", "Ball Joint", "Outer Tie Rod", "Stabilizer Link"])
         self.part_name_combo.setEnabled(False) # Locked editing, synced from Thu thap
-        meta_layout.addWidget(self.part_name_combo, 0, 3)
         try:
             self.part_name_combo.currentIndexChanged.connect(self.on_part_name_changed)
         except Exception:
             pass
+        meta_layout.addWidget(self.part_name_combo, 1, 3)
 
+        # Row 2: Mã sản phẩm (Col 0-1) | Ngày (Col 2-3)
         self.part_no_label = QLabel(self._tr('plot_part_no'))
-        meta_layout.addWidget(self.part_no_label, 1, 0)
+        meta_layout.addWidget(self.part_no_label, 2, 0)
         self.part_no_edit = QLineEdit("")
-        self.part_no_edit.setMaximumWidth(110)
         self.part_no_edit.setReadOnly(True)
         self.part_no_edit.setFocusPolicy(Qt.NoFocus)
         self.part_no_edit.setToolTip("Mã sản phẩm được khoá và đồng bộ tự động từ tab Thu thập")
-        part_sample_h = QHBoxLayout()
-        part_sample_h.setSpacing(8)
-        part_sample_h.addWidget(self.part_no_edit)
-        self.sample_no_label = QLabel(self._tr('plot_sample_no'))
-        part_sample_h.addWidget(self.sample_no_label)
-        self.sample_no_spin = NoScrollSpinBox()
-        self.sample_no_spin.setRange(1, 99)
-        self.sample_no_spin.setValue(1)
-        self.sample_no_spin.setMaximumWidth(70)
-        self.sample_no_spin.setToolTip(self._tr('plot_sample_tip'))
-        part_sample_h.addWidget(self.sample_no_spin)
-        meta_layout.addLayout(part_sample_h, 1, 1)
+        meta_layout.addWidget(self.part_no_edit, 2, 1)
 
-        # Report role fields (Write / Review / Approval) placed in a single horizontal row (compact)
-        report_h = QHBoxLayout()
-        report_h.setSpacing(8)
-        self.write_label = QLabel(self._tr('plot_write'))
-        report_h.addWidget(self.write_label)
-        self.write_edit = QLineEdit("")
-        self.write_edit.setMaximumWidth(100)
-        report_h.addWidget(self.write_edit)
-        self.review_label = QLabel(self._tr('plot_review'))
-        report_h.addWidget(self.review_label)
-        self.review_edit = QLineEdit("")
-        self.review_edit.setMaximumWidth(100)
-        report_h.addWidget(self.review_edit)
-        self.approval_label = QLabel(self._tr('plot_approval'))
-        report_h.addWidget(self.approval_label)
-        self.approval_edit = QLineEdit("")
-        self.approval_edit.setMaximumWidth(100)
-        report_h.addWidget(self.approval_edit)
-        meta_layout.addLayout(report_h, 3, 0, 1, 4)
+        self.date_display_label = QLabel(self._tr('plot_date'))
+        meta_layout.addWidget(self.date_display_label, 2, 2)
+        self.date_display_edit = QLineEdit(datetime.now().strftime('%Y-%m-%d'))
+        self.date_display_edit.setToolTip('Format: YYYY-MM-DD')
+        meta_layout.addWidget(self.date_display_edit, 2, 3)
 
-        # Drawing/Internal specifications are supplied by the validated Excel standard.
+        # Row 3: Tiêu chuẩn bản vẽ (Drawing spec)
         self.specification_label = QLabel(self._tr('plot_drawing_spec'))
-        meta_layout.addWidget(self.specification_label, 2, 0)
+        meta_layout.addWidget(self.specification_label, 3, 0)
+
         self.spec_min_spin = CommaDoubleSpinBox()
         self.spec_max_spin = CommaDoubleSpinBox()
         self.internal_spec_min_spin = CommaDoubleSpinBox()
@@ -1344,7 +1328,7 @@ class TorquePlotViewer(QMainWindow):
         for spin in (self.spec_min_spin, self.spec_max_spin,
                      self.internal_spec_min_spin, self.internal_spec_max_spin):
             spin.setRange(-1e6, 1e6)
-            spin.setMaximumWidth(105)
+            spin.setFixedWidth(100)
             spin.setSuffix(" Nm")
             spin.setReadOnly(True)
             spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
@@ -1354,58 +1338,110 @@ class TorquePlotViewer(QMainWindow):
                 spin.lineEdit().setFocusPolicy(Qt.NoFocus)
             spin.setToolTip("Tiêu chuẩn được khoá và nạp tự động theo mã hàng từ tab Thu thập")
             spin.valueChanged.connect(self.update_average)
+
         self.spec_min_label = QLabel(self._tr('plot_min'))
+        self.spec_min_label.setFixedWidth(28)
         self.spec_max_label = QLabel(self._tr('plot_max'))
-        self.internal_spec_label = QLabel(self._tr('plot_internal_spec'))
-        self.internal_spec_min_label = QLabel(self._tr('plot_min'))
-        self.internal_spec_max_label = QLabel(self._tr('plot_max'))
-        # Keep Drawing/Internal on separate rows so labels remain visible at 420 px.
-        spec_v = QVBoxLayout()
-        spec_v.setContentsMargins(0, 0, 0, 0)
-        spec_v.setSpacing(2)
+        self.spec_max_label.setFixedWidth(28)
+
         drawing_spec_h = QHBoxLayout()
         drawing_spec_h.setContentsMargins(0, 0, 0, 0)
         drawing_spec_h.setSpacing(4)
         drawing_spec_h.addWidget(self.spec_min_label)
         drawing_spec_h.addWidget(self.spec_min_spin)
+        drawing_spec_h.addSpacing(6)
         drawing_spec_h.addWidget(self.spec_max_label)
         drawing_spec_h.addWidget(self.spec_max_spin)
         drawing_spec_h.addStretch()
+        meta_layout.addLayout(drawing_spec_h, 3, 1, 1, 3)
+
+        # Row 4: Tiêu chuẩn nội bộ (Internal spec)
+        self.internal_spec_label = QLabel(self._tr('plot_internal_spec'))
+        meta_layout.addWidget(self.internal_spec_label, 4, 0)
+
+        self.internal_spec_min_label = QLabel(self._tr('plot_min'))
+        self.internal_spec_min_label.setFixedWidth(28)
+        self.internal_spec_max_label = QLabel(self._tr('plot_max'))
+        self.internal_spec_max_label.setFixedWidth(28)
+
         internal_spec_h = QHBoxLayout()
         internal_spec_h.setContentsMargins(0, 0, 0, 0)
         internal_spec_h.setSpacing(4)
-        internal_spec_h.addWidget(self.internal_spec_label)
         internal_spec_h.addWidget(self.internal_spec_min_label)
         internal_spec_h.addWidget(self.internal_spec_min_spin)
+        internal_spec_h.addSpacing(6)
         internal_spec_h.addWidget(self.internal_spec_max_label)
         internal_spec_h.addWidget(self.internal_spec_max_spin)
         internal_spec_h.addStretch()
-        spec_v.addLayout(drawing_spec_h)
-        spec_v.addLayout(internal_spec_h)
-        meta_layout.addLayout(spec_v, 2, 1, 1, 3)
+        meta_layout.addLayout(internal_spec_h, 4, 1, 1, 3)
+
         self._excel_spec_available = False
 
+        # Row 5: Đánh giá (Judgment)
+        self.judgment_title_label = QLabel(self._tr('plot_drawing_judgment'))
+        meta_layout.addWidget(self.judgment_title_label, 5, 0)
+        self.judgment_label = QLabel("—")
+        self.judgment_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        meta_layout.addWidget(self.judgment_label, 5, 1)
+
+        self.internal_judgment_title_label = QLabel(self._tr('plot_internal_judgment'))
+        meta_layout.addWidget(self.internal_judgment_title_label, 5, 2)
+        self.internal_judgment_label = QLabel("—")
+        self.internal_judgment_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        meta_layout.addWidget(self.internal_judgment_label, 5, 3)
+
+        self._update_internal_spec_visibility()
+
+        # ---------------------------------------------------------
+        # PHÂN CÁCH (Divider)
+        # ---------------------------------------------------------
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        sep.setStyleSheet("color: #dcdcdc; margin: 3px 0px;")
+        meta_layout.addWidget(sep, 6, 0, 1, 4)
+
+        # ---------------------------------------------------------
+        # KHU VỰC 2: CÁC PHẦN CẦN NHẬP (Thông tin nhập liệu báo cáo)
+        # ---------------------------------------------------------
+        self.lbl_manual_section = QLabel(self._tr('plot_manual_info_section'))
+        self.lbl_manual_section.setStyleSheet("font-weight: bold; color: #E65100; font-size: 11px; margin-top: 2px;")
+        meta_layout.addWidget(self.lbl_manual_section, 7, 0, 1, 4)
+
+        # Row 8: Số mẫu (Col 0-1) | Mã máy (Col 2-3)
+        self.sample_no_label = QLabel(self._tr('plot_sample_no'))
+        meta_layout.addWidget(self.sample_no_label, 8, 0)
+        self.sample_no_spin = NoScrollSpinBox()
+        self.sample_no_spin.setRange(1, 99)
+        self.sample_no_spin.setValue(1)
+        self.sample_no_spin.setToolTip(self._tr('plot_sample_tip'))
+        meta_layout.addWidget(self.sample_no_spin, 8, 1)
+
         self.machine_name_label = QLabel(self._tr('plot_machine'))
-        meta_layout.addWidget(self.machine_name_label, 3, 0)
+        meta_layout.addWidget(self.machine_name_label, 8, 2)
         self.machine_name_edit = QLineEdit()
         self.machine_name_edit.setMaxLength(50)
         self.machine_name_edit.setPlaceholderText(self._tr('plot_machine_placeholder'))
         self.machine_name_edit.editingFinished.connect(self._normalize_machine_name)
-        self.machine_name_edit.setMaximumWidth(145)
-        meta_layout.addWidget(self.machine_name_edit, 3, 1)
+        meta_layout.addWidget(self.machine_name_edit, 8, 3)
 
-        # Row 4: Date (editable, default today) Col 0-1 | Tester Col 2-3
-        self.date_display_label = QLabel(self._tr('plot_date'))
-        meta_layout.addWidget(self.date_display_label, 4, 0)
-        self.date_display_edit = QLineEdit(datetime.now().strftime('%Y-%m-%d'))
-        self.date_display_edit.setMaximumWidth(110)
-        self.date_display_edit.setToolTip('Format: YYYY-MM-DD')
-        meta_layout.addWidget(self.date_display_edit, 4, 1)
+        # Row 9: Số lot (Col 0-1) | Số line (Col 2-3)
+        self.lot_no_label = QLabel(self._tr('plot_lot_no'))
+        meta_layout.addWidget(self.lot_no_label, 9, 0)
+        self.lot_no_edit = QLineEdit("")
+        meta_layout.addWidget(self.lot_no_edit, 9, 1)
 
+        self.line_no_label = QLabel(self._tr('plot_line_no'))
+        meta_layout.addWidget(self.line_no_label, 9, 2)
+        self.line_no_combo = NoScrollComboBox()
+        self.line_no_combo.addItems(LINE_NOS)
+        self.line_no_combo.setCurrentIndex(-1)
+        meta_layout.addWidget(self.line_no_combo, 9, 3)
+
+        # Row 10: Người đo (Col 0-1) | Nhóm (Col 2-3)
         self.tester_label = QLabel(self._tr('plot_tester'))
-        meta_layout.addWidget(self.tester_label, 4, 2)
+        meta_layout.addWidget(self.tester_label, 10, 0)
         self.tester_edit = QLineEdit("")
-        self.tester_edit.setMaximumWidth(140)
         def _on_tester_changed(text):
             pos = self.tester_edit.cursorPosition()
             clean = remove_diacritics_no_strip(text)
@@ -1415,10 +1451,18 @@ class TorquePlotViewer(QMainWindow):
                 self.tester_edit.setCursorPosition(pos)
                 self.tester_edit.blockSignals(False)
         self.tester_edit.textChanged.connect(_on_tester_changed)
-        meta_layout.addWidget(self.tester_edit, 4, 3)
+        meta_layout.addWidget(self.tester_edit, 10, 1)
 
+        self.team_label = QLabel(self._tr('plot_team'))
+        meta_layout.addWidget(self.team_label, 10, 2)
+        self.team_combo = NoScrollComboBox()
+        self.team_combo.addItems(TEAMS)
+        self.team_combo.setCurrentIndex(-1)
+        meta_layout.addWidget(self.team_combo, 10, 3)
+
+        # Row 11: Mục đích (Col 0-1) | Tỷ lệ & Số lượng (Col 2-3)
         self.test_purpose_label = QLabel(self._tr('plot_test_purpose'))
-        meta_layout.addWidget(self.test_purpose_label, 5, 0)
+        meta_layout.addWidget(self.test_purpose_label, 11, 0)
         self.test_purpose_combo = NoScrollComboBox()
         self.test_purpose_combo.addItems([
             "Setting (S)",
@@ -1429,52 +1473,36 @@ class TorquePlotViewer(QMainWindow):
             "Long-term (L)",
             "other (O)"
         ])
-        self.test_purpose_combo.setMaximumWidth(135)
         self.test_purpose_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.test_purpose_combo.setMinimumContentsLength(10)
         self.test_purpose_combo.setCurrentIndex(-1)
         self.test_purpose_combo.currentIndexChanged.connect(self.on_test_purpose_changed)
-        
+
         self.test_purpose_other_edit = QLineEdit("")
         self.test_purpose_other_edit.setPlaceholderText(self._tr('plot_purpose_placeholder'))
         self.test_purpose_other_edit.hide()
-        
+
         tp_container = QWidget()
         tp_layout = QHBoxLayout(tp_container)
-        tp_layout.setContentsMargins(0,0,0,0)
+        tp_layout.setContentsMargins(0, 0, 0, 0)
         tp_layout.addWidget(self.test_purpose_combo)
         tp_layout.addWidget(self.test_purpose_other_edit)
-        meta_layout.addWidget(tp_container, 5, 1)
-        
-        # Two independent judgments from the same measured value.
-        self.judgment_title_label = QLabel(self._tr('plot_drawing_judgment'))
-        meta_layout.addWidget(self.judgment_title_label, 5, 2)
-        self.judgment_h = QHBoxLayout()
-        self.judgment_label = QLabel("—")
-        self.judgment_label.setFont(QFont("Arial", 11, QFont.Bold))
-        self.internal_judgment_title_label = QLabel(self._tr('plot_internal_judgment'))
-        self.internal_judgment_label = QLabel("—")
-        self.internal_judgment_label.setFont(QFont("Arial", 11, QFont.Bold))
-        self.judgment_h.addWidget(self.judgment_label)
-        self.judgment_h.addWidget(self.internal_judgment_title_label)
-        self.judgment_h.addWidget(self.internal_judgment_label)
-        meta_layout.addLayout(self.judgment_h, 5, 3)
-        self._update_internal_spec_visibility()
-        
-        # Aspect ratio and Quantity together on Row 6 Col 0-1
+        meta_layout.addWidget(tp_container, 11, 1)
+
         self.graph_ratio_label = QLabel(self._tr('plot_graph_ratio'))
-        meta_layout.addWidget(self.graph_ratio_label, 6, 0)
+        meta_layout.addWidget(self.graph_ratio_label, 11, 2)
+
         ratio_qty_h = QHBoxLayout()
         ratio_qty_h.setSpacing(4)
         ratio_qty_h.setContentsMargins(0, 0, 0, 0)
-        
+
         self.aspect_ratio_spin = CommaDoubleSpinBox()
         self.aspect_ratio_spin.setRange(0.1, 10.0)
         self.aspect_ratio_spin.setDecimals(2)
         self.aspect_ratio_spin.setSingleStep(0.05)
         self.aspect_ratio_spin.setValue(self._aspect_ratio_for_current_item())
         self.aspect_ratio_spin.setToolTip("Height to Width ratio for exported graph (0.75 = 3/4)")
-        self.aspect_ratio_spin.setMaximumWidth(90)
+        self.aspect_ratio_spin.setFixedWidth(65)
         self.aspect_ratio_spin.valueChanged.connect(lambda _v: (self._save_aspect_ratio(), self.update_plot()))
         try:
             self.aspect_ratio_spin.lineEdit().textChanged.connect(lambda _t: self.update_plot())
@@ -1482,31 +1510,42 @@ class TorquePlotViewer(QMainWindow):
         except Exception:
             pass
         ratio_qty_h.addWidget(self.aspect_ratio_spin)
-        
+
         self.qty_label = QLabel(self._tr('plot_qty'))
         ratio_qty_h.addWidget(self.qty_label)
         self.quantity_spin = QSpinBox()
         self.quantity_spin.setRange(1, 1000000)
         self.quantity_spin.setValue(1)
-        self.quantity_spin.setMaximumWidth(70)
+        self.quantity_spin.setFixedWidth(55)
         ratio_qty_h.addWidget(self.quantity_spin)
-        
+
         ratio_qty_widget = QWidget()
         ratio_qty_widget.setLayout(ratio_qty_h)
-        meta_layout.addWidget(ratio_qty_widget, 6, 1)
+        meta_layout.addWidget(ratio_qty_widget, 11, 3)
 
-        # Team combo on Row 6 Col 2-3
-        self.team_label = QLabel(self._tr('plot_team'))
-        meta_layout.addWidget(self.team_label, 6, 2)
-        self.team_combo = NoScrollComboBox()
-        self.team_combo.addItems(TEAMS)
-        self.team_combo.setCurrentIndex(-1)
-        self.team_combo.setMaximumWidth(140)
-        meta_layout.addWidget(self.team_combo, 6, 3)
+        # Row 12: Người lập / Người kiểm / Phê duyệt
+        report_h = QHBoxLayout()
+        report_h.setSpacing(6)
+        report_h.setContentsMargins(0, 0, 0, 0)
+        self.write_label = QLabel(self._tr('plot_write'))
+        report_h.addWidget(self.write_label)
+        self.write_edit = QLineEdit("")
+        report_h.addWidget(self.write_edit)
 
-        # Remark on Row 7 Col 0-3. Not persisted; cleared when returning to acquisition tab.
+        self.review_label = QLabel(self._tr('plot_review'))
+        report_h.addWidget(self.review_label)
+        self.review_edit = QLineEdit("")
+        report_h.addWidget(self.review_edit)
+
+        self.approval_label = QLabel(self._tr('plot_approval'))
+        report_h.addWidget(self.approval_label)
+        self.approval_edit = QLineEdit("")
+        report_h.addWidget(self.approval_edit)
+        meta_layout.addLayout(report_h, 12, 0, 1, 4)
+
+        # Row 13: Ghi chú (Col 0-3)
         self.remark_label = QLabel(self._tr('plot_remark'))
-        meta_layout.addWidget(self.remark_label, 7, 0)
+        meta_layout.addWidget(self.remark_label, 13, 0)
         self.remark_edit = QLineEdit("")
         self.remark_edit.setMaxLength(100)
         self.remark_edit.setPlaceholderText(self._tr('plot_remark_placeholder'))
@@ -1519,23 +1558,7 @@ class TorquePlotViewer(QMainWindow):
                 self.remark_edit.setCursorPosition(min(pos, len(upp)))
                 self.remark_edit.blockSignals(False)
         self.remark_edit.textChanged.connect(_on_remark_changed)
-        meta_layout.addWidget(self.remark_edit, 7, 1, 1, 3)
-
-        # Lot No on Row 8 Col 0-1
-        self.lot_no_label = QLabel(self._tr('plot_lot_no'))
-        meta_layout.addWidget(self.lot_no_label, 8, 0)
-        self.lot_no_edit = QLineEdit("")
-        self.lot_no_edit.setMaximumWidth(140)
-        meta_layout.addWidget(self.lot_no_edit, 8, 1)
-
-        # Line No combo on Row 8 Col 2-3
-        self.line_no_label = QLabel(self._tr('plot_line_no'))
-        meta_layout.addWidget(self.line_no_label, 8, 2)
-        self.line_no_combo = NoScrollComboBox()
-        self.line_no_combo.addItems(LINE_NOS)
-        self.line_no_combo.setCurrentIndex(-1)
-        self.line_no_combo.setMaximumWidth(140)
-        meta_layout.addWidget(self.line_no_combo, 8, 3)
+        meta_layout.addWidget(self.remark_edit, 13, 1, 1, 3)
 
         # Highlight required report inputs until the operator fills them.
         self.part_no_edit.textChanged.connect(self._refresh_required_report_highlights)
@@ -1546,82 +1569,23 @@ class TorquePlotViewer(QMainWindow):
         self.line_no_combo.currentIndexChanged.connect(self._refresh_required_report_highlights)
         self._refresh_required_report_highlights()
 
-        # Profile save/load buttons (Row 9)
-        prof_h = QHBoxLayout()
-        prof_h.setSpacing(8)
-        self.save_profile_btn = QPushButton(self._tr('plot_save_profile'))
-        self.save_profile_btn.setFixedHeight(26)
-        self.save_profile_btn.clicked.connect(self.save_profile)
-        prof_h.addWidget(self.save_profile_btn)
-        self.load_profile_btn = QPushButton(self._tr('plot_load_profile'))
-        self.load_profile_btn.setFixedHeight(26)
-        self.load_profile_btn.clicked.connect(self.load_profile)
-        prof_h.addWidget(self.load_profile_btn)
-        meta_layout.addLayout(prof_h, 9, 0, 1, 4)
+        # Row 14: Button mở Dialog cấu hình đường dẫn lưu file
+        self.path_settings_btn = QPushButton(self._tr('plot_save_paths_btn'))
+        self.path_settings_btn.setFixedHeight(28)
+        self.path_settings_btn.clicked.connect(self._open_path_settings_dialog)
+        meta_layout.addWidget(self.path_settings_btn, 14, 0, 1, 4)
 
-        # Folder Paths (Row 10 & 11)
-        self.csv_path_label = QLabel(self._tr('plot_csv_path'))
-        meta_layout.addWidget(self.csv_path_label, 10, 0)
-        csv_path_h = QHBoxLayout()
-        csv_path_h.setSpacing(4)
-        csv_path_h.setContentsMargins(0, 0, 0, 0)
-        self.csv_path_edit = QLineEdit(self.csv_dir)
-        csv_path_h.addWidget(self.csv_path_edit)
-        self.csv_browse_btn = QPushButton()
-        self.csv_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.csv_browse_btn.setToolTip(self._tr('plot_browse_csv_tip'))
-        self.csv_browse_btn.setFixedSize(34, 30)
-        self.csv_browse_btn.setIconSize(self.csv_browse_btn.size() * 0.62)
-        self.csv_browse_btn.clicked.connect(self.browse_csv_path)
-        csv_path_h.addWidget(self.csv_browse_btn)
-        csv_path_widget = QWidget()
-        csv_path_widget.setLayout(csv_path_h)
-        meta_layout.addWidget(csv_path_widget, 10, 1, 1, 3)
-
-        self.report_path_label = QLabel(self._tr('plot_report_path'))
-        meta_layout.addWidget(self.report_path_label, 11, 0)
-        report_path_h = QHBoxLayout()
-        report_path_h.setSpacing(4)
-        report_path_h.setContentsMargins(0, 0, 0, 0)
-        self.report_path_edit = QLineEdit(self.report_dir)
-        report_path_h.addWidget(self.report_path_edit)
-        self.report_browse_btn = QPushButton()
-        self.report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.report_browse_btn.setToolTip(self._tr('plot_browse_report_tip'))
-        self.report_browse_btn.setFixedSize(34, 30)
-        self.report_browse_btn.setIconSize(self.report_browse_btn.size() * 0.62)
-        self.report_browse_btn.clicked.connect(self.browse_report_path)
-        report_path_h.addWidget(self.report_browse_btn)
-        report_path_widget = QWidget()
-        report_path_widget.setLayout(report_path_h)
-        meta_layout.addWidget(report_path_widget, 11, 1, 1, 3)
-
-        self.summary_report_label = QLabel(self._tr('plot_summary_report'))
-        meta_layout.addWidget(self.summary_report_label, 12, 0)
-        summary_path_h = QHBoxLayout()
-        summary_path_h.setSpacing(4)
-        summary_path_h.setContentsMargins(0, 0, 0, 0)
-        self.summary_report_path_edit = QLineEdit(getattr(self, 'summary_report_path', ''))
-        summary_path_h.addWidget(self.summary_report_path_edit)
-        self.summary_report_browse_btn = QPushButton()
-        self.summary_report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.summary_report_browse_btn.setToolTip(self._tr('plot_browse_summary_tip'))
-        self.summary_report_browse_btn.setFixedSize(34, 30)
-        self.summary_report_browse_btn.setIconSize(self.summary_report_browse_btn.size() * 0.62)
-        self.summary_report_browse_btn.clicked.connect(self.browse_summary_report_path)
-        summary_path_h.addWidget(self.summary_report_browse_btn)
-        summary_path_widget = QWidget()
-        summary_path_widget.setLayout(summary_path_h)
-        meta_layout.addWidget(summary_path_widget, 12, 1, 1, 3)
-
-        # Save Report Button (Row 13)
+        # Row 15: Nút Lưu Báo Cáo
         self.save_report_btn = QPushButton(self._tr('plot_save_report'))
         self.save_report_btn.setFixedHeight(28)
-        self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 9pt;")
+        self.save_report_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 11px;")
         self.save_report_btn.clicked.connect(self.save_report)
-        meta_layout.addWidget(self.save_report_btn, 13, 0, 1, 4)
+        meta_layout.addWidget(self.save_report_btn, 15, 0, 1, 4)
 
         self.meta_group.setLayout(meta_layout)
+
+        # Khởi tạo hộp thoại cấu hình đường dẫn lưu file & profile
+        self._init_path_settings_dialog()
         # meta_group.setMaximumWidth(380) => Removed
 
         # === Plot ===
@@ -1983,6 +1947,8 @@ class TorquePlotViewer(QMainWindow):
                 ('ctrl_group', 'plot_file_range_grp'), ('files_group', 'plot_imported_files_grp'),
                 ('meta_group', 'plot_report_info_grp'), ('plot_group', 'plot_plot_grp'),
                 ('cycle_group', 'plot_cycle_selection_grp'), ('info_group', 'plot_data_info_grp'),
+                ('lbl_auto_section', 'plot_auto_info_section'),
+                ('lbl_manual_section', 'plot_manual_info_section'),
                 ('mode_label', 'plot_mode_lbl'), ('range_label', 'plot_range_lbl'),
                 ('test_item_label', 'plot_test_item'), ('part_name_label', 'plot_part_name'),
                 ('part_no_label', 'plot_part_no'), ('sample_no_label', 'plot_sample_no'),
@@ -2001,6 +1967,7 @@ class TorquePlotViewer(QMainWindow):
                 ('remark_label', 'plot_remark'), ('lot_no_label', 'plot_lot_no'), ('line_no_label', 'plot_line_no'),
                 ('csv_path_label', 'plot_csv_path'), ('report_path_label', 'plot_report_path'),
                 ('summary_report_label', 'plot_summary_report'), ('report_title_label', 'plot_report_title'),
+                ('paths_box', 'plot_save_paths_grp'), ('profile_box', 'plot_profile_grp'),
                 ('file_select_label', 'plot_file'), ('avg_nm_label', 'plot_avg_nm'), ('avg_kgf_label', 'plot_avg_kgf'),
                 ('min_nm_label', 'plot_min_nm'), ('min_kgf_label', 'plot_min_kgf'),
                 ('max_nm_label', 'plot_max_nm'), ('max_kgf_label', 'plot_max_kgf'),
@@ -2015,11 +1982,15 @@ class TorquePlotViewer(QMainWindow):
                 ('range_setup_btn', 'plot_ranges'), ('spec_setup_btn', 'plot_specs'),
                 ('calibration_btn', 'plot_calibration'), ('save_profile_btn', 'plot_save_profile'),
                 ('load_profile_btn', 'plot_load_profile'), ('save_report_btn', 'plot_save_report'),
+                ('path_settings_btn', 'plot_save_paths_btn'), ('path_dlg_close_btn', 'plot_close_btn'),
                 ('btn_cycle_all', 'plot_all'), ('btn_cycle_none', 'plot_none'),
             ]:
                 widget = getattr(self, attr, None)
                 if widget is not None:
                     widget.setText(self._tr(key))
+
+            if getattr(self, 'path_settings_dialog', None):
+                self.path_settings_dialog.setWindowTitle(self._tr('plot_save_paths_dialog_title'))
 
             if getattr(self, 'plot_mode_combo', None):
                 self._set_combo_text_by_data(self.plot_mode_combo, [
@@ -2082,18 +2053,18 @@ class TorquePlotViewer(QMainWindow):
         self._is_dark_theme = bool(dark)
         if dark:
             self.setStyleSheet("""
-                QWidget, QMainWindow { background-color: #1e1e2e; color: #cdd6f4; }
-                QGroupBox { background-color: #181825; border: 1px solid #45475a; border-radius: 8px; margin-top: 1.2em; }
-                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #89b4fa; font-weight: bold; }
-                QLabel { color: #cdd6f4; }
+                QWidget, QMainWindow { background-color: #1e1e2e; color: #cdd6f4; font-size: 11px; }
+                QGroupBox { background-color: #181825; border: 1px solid #45475a; border-radius: 8px; margin-top: 1.2em; font-size: 11px; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #89b4fa; font-weight: bold; font-size: 11px; }
+                QLabel { color: #cdd6f4; font-size: 11px; }
                 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit {
-                    background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px;
+                    background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 11px;
                     selection-background-color: #89b4fa; selection-color: #11111b;
                 }
                 QLineEdit:read-only, QDoubleSpinBox:read-only {
-                    background-color: #242438; color: #a6adc8; border: 1px solid #363a4f;
+                    background-color: #242438; color: #a6adc8; border: 1px solid #363a4f; font-size: 11px;
                 }
-                QPushButton { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 5px; padding: 6px 12px; font-weight: 600; }
+                QPushButton { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 5px; padding: 5px 10px; font-weight: 600; font-size: 11px; }
                 QPushButton:hover { background-color: #45475a; }
                 QPushButton:disabled { background-color: #1e1e2e; color: #585b70; border-color: #313244; }
                 QTabWidget::pane, QFrame { border-color: #45475a; }
@@ -2106,13 +2077,13 @@ class TorquePlotViewer(QMainWindow):
         else:
             # Reuse the existing light stylesheet initialized by the analysis tab.
             self.setStyleSheet("""
-                QWidget, QMainWindow { background-color: #f4f6f9; color: #333333; }
-                QGroupBox { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; margin-top: 1.2em; }
-                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #2c3e50; font-weight: bold; }
-                QLabel { color: #333333; }
-                QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit { background-color: #ffffff; color: #333333; border: 1px solid #cccccc; border-radius: 4px; padding: 5px; selection-background-color: #3f51b5; }
-                QLineEdit:read-only, QDoubleSpinBox:read-only { background-color: #e9ecef; color: #495057; border: 1px solid #ced4da; }
-                QPushButton { background-color: #ffffff; color: #333333; border: 1px solid #dcdcdc; border-radius: 5px; padding: 6px 12px; font-weight: 600; }
+                QWidget, QMainWindow { background-color: #f4f6f9; color: #333333; font-size: 11px; }
+                QGroupBox { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; margin-top: 1.2em; font-size: 11px; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 5px; color: #2c3e50; font-weight: bold; font-size: 11px; }
+                QLabel { color: #333333; font-size: 11px; }
+                QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit { background-color: #ffffff; color: #333333; border: 1px solid #cccccc; border-radius: 4px; padding: 4px; font-size: 11px; selection-background-color: #3f51b5; }
+                QLineEdit:read-only, QDoubleSpinBox:read-only { background-color: #e9ecef; color: #495057; border: 1px solid #ced4da; font-size: 11px; }
+                QPushButton { background-color: #ffffff; color: #333333; border: 1px solid #dcdcdc; border-radius: 5px; padding: 5px 10px; font-weight: 600; font-size: 11px; }
                 QPushButton:hover { background-color: #f0f0f0; }
                 QPushButton:disabled { background-color: #f0f0f0; color: #a0a0a0; border-color: #e0e0e0; }
                 QScrollArea { background-color: transparent; border: none; }
@@ -5346,15 +5317,128 @@ class TorquePlotViewer(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
 
+    def _init_path_settings_dialog(self):
+        self.path_settings_dialog = QDialog(self)
+        self.path_settings_dialog.setWindowTitle(self._tr('plot_save_paths_dialog_title'))
+        self.path_settings_dialog.setMinimumWidth(500)
+
+        path_dlg_layout = QVBoxLayout(self.path_settings_dialog)
+        path_dlg_layout.setContentsMargins(14, 14, 14, 14)
+        path_dlg_layout.setSpacing(12)
+
+        self.paths_box = QGroupBox(self._tr('plot_save_paths_grp'))
+        paths_box_lay = QGridLayout(self.paths_box)
+        paths_box_lay.setContentsMargins(10, 12, 10, 10)
+        paths_box_lay.setSpacing(8)
+
+        # 1. CSV Path
+        self.csv_path_label = QLabel(self._tr('plot_csv_path'))
+        self.csv_path_edit = QLineEdit(self.csv_dir)
+        self.csv_browse_btn = QPushButton()
+        self.csv_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.csv_browse_btn.setToolTip(self._tr('plot_browse_csv_tip'))
+        self.csv_browse_btn.setFixedSize(36, 28)
+        self.csv_browse_btn.clicked.connect(self.browse_csv_path)
+
+        paths_box_lay.addWidget(self.csv_path_label, 0, 0)
+        paths_box_lay.addWidget(self.csv_path_edit, 0, 1)
+        paths_box_lay.addWidget(self.csv_browse_btn, 0, 2)
+
+        # 2. Report Path
+        self.report_path_label = QLabel(self._tr('plot_report_path'))
+        self.report_path_edit = QLineEdit(self.report_dir)
+        self.report_browse_btn = QPushButton()
+        self.report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.report_browse_btn.setToolTip(self._tr('plot_browse_report_tip'))
+        self.report_browse_btn.setFixedSize(36, 28)
+        self.report_browse_btn.clicked.connect(self.browse_report_path)
+
+        paths_box_lay.addWidget(self.report_path_label, 1, 0)
+        paths_box_lay.addWidget(self.report_path_edit, 1, 1)
+        paths_box_lay.addWidget(self.report_browse_btn, 1, 2)
+
+        # 3. Summary Report Path
+        self.summary_report_label = QLabel(self._tr('plot_summary_report'))
+        self.summary_report_path_edit = QLineEdit(getattr(self, 'summary_report_path', ''))
+        self.summary_report_browse_btn = QPushButton()
+        self.summary_report_browse_btn.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.summary_report_browse_btn.setToolTip(self._tr('plot_browse_summary_tip'))
+        self.summary_report_browse_btn.setFixedSize(36, 28)
+        self.summary_report_browse_btn.clicked.connect(self.browse_summary_report_path)
+
+        paths_box_lay.addWidget(self.summary_report_label, 2, 0)
+        paths_box_lay.addWidget(self.summary_report_path_edit, 2, 1)
+        paths_box_lay.addWidget(self.summary_report_browse_btn, 2, 2)
+
+        path_dlg_layout.addWidget(self.paths_box)
+
+        # Profile Group
+        self.profile_box = QGroupBox(self._tr('plot_profile_grp'))
+        prof_h = QHBoxLayout(self.profile_box)
+        prof_h.setContentsMargins(10, 12, 10, 10)
+        prof_h.setSpacing(10)
+
+        self.save_profile_btn = QPushButton(self._tr('plot_save_profile'))
+        self.save_profile_btn.setFixedHeight(28)
+        self.save_profile_btn.clicked.connect(self.save_profile)
+        self.load_profile_btn = QPushButton(self._tr('plot_load_profile'))
+        self.load_profile_btn.setFixedHeight(28)
+        self.load_profile_btn.clicked.connect(self.load_profile)
+        prof_h.addWidget(self.save_profile_btn)
+        prof_h.addWidget(self.load_profile_btn)
+
+        path_dlg_layout.addWidget(self.profile_box)
+
+        # Close button
+        dlg_btn_box = QHBoxLayout()
+        dlg_btn_box.addStretch()
+        self.path_dlg_close_btn = QPushButton(self._tr('plot_close_btn'))
+        self.path_dlg_close_btn.setFixedHeight(28)
+        self.path_dlg_close_btn.setMinimumWidth(85)
+        self.path_dlg_close_btn.clicked.connect(self.path_settings_dialog.accept)
+        dlg_btn_box.addWidget(self.path_dlg_close_btn)
+        path_dlg_layout.addLayout(dlg_btn_box)
+
+    def _open_path_settings_dialog(self):
+        if not hasattr(self, 'path_settings_dialog'):
+            return
+        is_dark = bool(getattr(self, '_is_dark_theme', False))
+        if is_dark:
+            self.path_settings_dialog.setStyleSheet("""
+                QDialog { background-color: #1e1e2e; color: #cdd6f4; }
+                QGroupBox { background-color: #181825; border: 1px solid #45475a; border-radius: 6px; margin-top: 1.2em; font-weight: bold; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 4px; color: #89b4fa; }
+                QLabel { color: #cdd6f4; font-size: 11px; }
+                QLineEdit { background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 11px; }
+                QPushButton { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px 10px; font-weight: 600; font-size: 11px; }
+                QPushButton:hover { background-color: #45475a; }
+            """)
+        else:
+            self.path_settings_dialog.setStyleSheet("""
+                QDialog { background-color: #f4f6f9; color: #333333; }
+                QGroupBox { background-color: #ffffff; border: 1px solid #dcdcdc; border-radius: 6px; margin-top: 1.2em; font-weight: bold; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 4px; color: #2c3e50; }
+                QLabel { color: #333333; font-size: 11px; }
+                QLineEdit { background-color: #ffffff; color: #333333; border: 1px solid #cccccc; border-radius: 4px; padding: 4px; font-size: 11px; }
+                QPushButton { background-color: #ffffff; color: #333333; border: 1px solid #dcdcdc; border-radius: 4px; padding: 5px 10px; font-weight: 600; font-size: 11px; }
+                QPushButton:hover { background-color: #f0f0f0; }
+            """)
+        self.path_settings_dialog.exec_()
+        self.csv_dir = self.csv_path_edit.text().strip()
+        self.report_dir = self.report_path_edit.text().strip()
+        self.summary_report_path = self.summary_report_path_edit.text().strip()
+
     def browse_csv_path(self):
         dir_path = QFileDialog.getExistingDirectory(self, "Select CSV Save Directory", self.csv_path_edit.text())
         if dir_path:
             self.csv_path_edit.setText(dir_path)
+            self.csv_dir = dir_path
             
     def browse_report_path(self):
         dir_path = QFileDialog.getExistingDirectory(self, "Select Report Save Directory", self.report_path_edit.text())
         if dir_path:
             self.report_path_edit.setText(dir_path)
+            self.report_dir = dir_path
 
     def browse_summary_report_path(self):
         start_dir = ""
@@ -5368,6 +5452,7 @@ class TorquePlotViewer(QMainWindow):
         if dir_path and hasattr(self, 'summary_report_path_edit'):
             summary_path = os.path.join(dir_path, "summary report.xlsx")
             self.summary_report_path_edit.setText(summary_path)
+            self.summary_report_path = summary_path
 
     def _machine_name_value(self) -> str:
         widget = self.__dict__.get('machine_name_edit')
