@@ -118,13 +118,18 @@ class PlcControlService:
     def write_test_config(self, config: PlcTestConfig) -> bool:
         """Write D101..D108 test configuration as one Modbus block."""
         try:
-            return bool(
+            registers = config.to_registers()
+            ok = bool(
                 self._client.write_registers(
                     PLC_CONFIG_START_ADDRESS,
-                    config.to_registers(),
+                    registers,
                     self._slave_id,
                 )
             )
+            if ok:
+                for idx, val in enumerate(registers):
+                    self._last_written[PLC_CONFIG_START_ADDRESS + idx] = val
+            return ok
         except Exception as exc:
             logger.debug("PLC write_test_config failed: %s", exc)
             return False
@@ -188,11 +193,11 @@ class PlcControlService:
 
     def jog_plus(self, active: bool) -> bool:
         """Hold/release Jog+ through D110."""
-        return self._write_bool_register(PLC_D110_JOG_PLUS, active)
+        return self._write_register(PLC_D110_JOG_PLUS, 1 if active else 0)
 
     def jog_minus(self, active: bool) -> bool:
         """Hold/release Jog- through D111."""
-        return self._write_bool_register(PLC_D111_JOG_MINUS, active)
+        return self._write_register(PLC_D111_JOG_MINUS, 1 if active else 0)
 
     def home(self, pulse_ms: int = 150) -> bool:
         """Pulse Home command through D112 = 1 -> 0."""
@@ -207,10 +212,11 @@ class PlcControlService:
             logger.debug("PLC write_speed failed: %s", exc)
             return False
 
-    def write_mode(self, mode: int) -> bool:
+    def write_mode(self, mode: int, force: bool = False) -> bool:
         """Write PLC mode directly to D101 (0=Manual, 1=Breakaway, 2=Operating)."""
         try:
-            return self._write_if_changed(PLC_D101_MODE, clamp_u16(mode))
+            value = clamp_u16(mode)
+            return self._write_register(PLC_D101_MODE, value) if force else self._write_if_changed(PLC_D101_MODE, value)
         except Exception as exc:
             logger.debug("PLC write_mode failed: %s", exc)
             return False

@@ -2305,7 +2305,7 @@ class TorquePlotViewer(QMainWindow):
         """Slot to handle import from signal."""
         self.load_file_from_path(path)
 
-    def load_file_from_path(self, path):
+    def load_file_from_path(self, path, silent: bool = False):
         """Add a CSV file from path as a sample."""
         if not path or not os.path.exists(path):
             return False
@@ -2327,7 +2327,8 @@ class TorquePlotViewer(QMainWindow):
                 # Check if angle data is present
                 angle_range = max(alist) - min(alist) if alist else 0
                 if angle_range == 0.0 and all(a == 0.0 for a in alist):
-                     QMessageBox.warning(self, "Invalid File", "File does not contain Angle data required for Angle vs Torque mode.\nPlease use 'May chuan' format or switch mode.")
+                     if not silent:
+                         QMessageBox.warning(self, "Invalid File", "File does not contain Angle data required for Angle vs Torque mode.\nPlease use 'May chuan' format or switch mode.")
                      return False
 
             name = os.path.basename(path)
@@ -2379,14 +2380,18 @@ class TorquePlotViewer(QMainWindow):
             self._rebuild_legend_labels()
             
             self.samples_label.setText(f"Samples: {len(self.samples)}")
-            QMessageBox.information(self, "Imported", f"Imported file: {name}")
+            if not silent:
+                QMessageBox.information(self, "Imported", f"Imported file: {name}")
             
             # Update View
             self.on_file_selection_changed(self.file_select_combo.currentIndex())
             self.update_plot()
             return True
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load file: {e}")
+            if not silent:
+                QMessageBox.critical(self, "Error", f"Failed to load file: {e}")
+            else:
+                logger.error("Failed to load file: %s", e)
             return False
 
     def read_csv_arrays(self, path: str):

@@ -58,11 +58,13 @@ import tempfile
 
 # Thêm thư mục draw_plot vào sys.path để lazy import Plot Viewer khi cần.
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
-_workspace_dir = os.path.dirname(os.path.dirname(_cur_dir))
+_workspace_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.dirname(_cur_dir)))
 _draw_plot_path = os.path.join(_workspace_dir, "draw_plot")
 if _draw_plot_path not in sys.path:
     sys.path.insert(0, _draw_plot_path)
 _HAS_PLOT_VIEWER = True
+_cb_icon_light = os.path.join(_workspace_dir, "assets", "icons", "checkbox_x_light.svg").replace("\\", "/")
+_cb_icon_dark = os.path.join(_workspace_dir, "assets", "icons", "checkbox_x_dark.svg").replace("\\", "/")
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +206,8 @@ QTextEdit {
 }
 QCheckBox { spacing: 6px; }
 QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #45475a; background: #181825; }
-QCheckBox::indicator:checked { background: #89b4fa; border-color: #89b4fa; }
+QCheckBox::indicator:hover { border-color: #89b4fa; }
+QCheckBox::indicator:checked { background: #181825; border-color: #89b4fa; image: url("assets/icons/checkbox_x_dark.svg"); }
 QSplitter::handle { background: #313244; width: 2px; }
 QScrollBar:vertical { background: #181825; width: 6px; border-radius: 3px; }
 QScrollBar::handle:vertical { background: #45475a; border-radius: 3px; min-height: 20px; }
@@ -283,8 +286,9 @@ QTextEdit {
     font-size: 9pt;
 }
 QCheckBox { spacing: 6px; }
-QCheckBox::indicator { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #bdbdbd; background: white; }
-QCheckBox::indicator:checked { background: #1976d2; border-color: #1976d2; }
+QCheckBox::indicator { width: 16px; height: 16px; border-radius: 3px; border: 1.5px solid #bdbdbd; background: white; }
+QCheckBox::indicator:hover { border-color: #1976d2; }
+QCheckBox::indicator:checked { background: white; border-color: #1976d2; image: url("assets/icons/checkbox_x_light.svg"); }
 QSplitter::handle { background: #e0e0e0; width: 2px; }
 QScrollArea { background-color: transparent; border: none; }
 QScrollBar:vertical { background: #f1f1f1; width: 6px; margin: 0; border-radius: 3px; }
@@ -1777,14 +1781,19 @@ class MainWindow(QMainWindow):
 
         # --- Import to Plot Viewer ---
         if _HAS_PLOT_VIEWER:
-            self.grp_import_tools = QGroupBox("📥 Import dữ liệu sang công cụ khác")
+            self.grp_import_tools = QGroupBox(self.i18n.t('import_tools_grp'))
             ig = QVBoxLayout()
             ig.setContentsMargins(6, 8, 6, 6)
             ig.setSpacing(6)
 
-            self.btn_import_plot = QPushButton("📊 Import to Plot Viewer")
+            self.chk_auto_import_plot = QCheckBox(self.i18n.t('chk_auto_import_plot'))
+            self.chk_auto_import_plot.setChecked(True)
+            self.chk_auto_import_plot.toggled.connect(lambda _: self._save_ui_state())
+            ig.addWidget(self.chk_auto_import_plot)
+
+            self.btn_import_plot = QPushButton(self.i18n.t('btn_import_plot'))
             self.btn_import_plot.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
-            self.btn_import_plot.clicked.connect(self._import_to_plot_viewer)
+            self.btn_import_plot.clicked.connect(lambda: self._import_to_plot_viewer(silent=False))
             ig.addWidget(self.btn_import_plot)
 
             self.grp_import_tools.setLayout(ig); lay.addWidget(self.grp_import_tools)
@@ -2138,7 +2147,10 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self, dark: bool):
         """Áp dụng Dark hoặc Light theme cho toàn app + cập nhật màu chart."""
-        self.setStyleSheet(DARK_STYLE if dark else LIGHT_STYLE)
+        style = DARK_STYLE if dark else LIGHT_STYLE
+        style = style.replace("assets/icons/checkbox_x_dark.svg", _cb_icon_dark)
+        style = style.replace("assets/icons/checkbox_x_light.svg", _cb_icon_light)
+        self.setStyleSheet(style)
         
         # Cập nhật màu sắc cho các label thông số
         torque_color = "#89b4fa" if dark else "#1976D2"
@@ -2593,30 +2605,46 @@ class MainWindow(QMainWindow):
 
     def _selected_plc_mode(self) -> int:
         """Return PLC mode matching the selected measurement mode in the app."""
-        text = self.combo_test_item.currentText() if hasattr(self, 'combo_test_item') else ''
-        if 'Breakaway' in text:
+        code = self._current_test_item_code() if hasattr(self, '_current_test_item_code') else ''
+        if code == 'breakaway':
             return 1
-        if 'Operating' in text or 'Oscillating' in text:
+        if code in ('operating', 'oscillating'):
             return 2
         return 0
 
     def _begin_plc_jog(self, direction: int) -> None:
-        """Temporarily switch PLC to Manual mode so D110/D111 JOG can run."""
+        """Ensure PLC is in RUN, Manual mode (D101=0) and ready to JOG."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             return
+
+        # 1. Nếu PLC chưa RUN hoặc Servo chưa ON, tự động kích hoạt RUN để PLC phát xung JOG
+        plc_status = getattr(self, '_last_plc_status', None)
+        if plc_status is None:
+            plc_status = self._plc_svc.read_status()
+        if not plc_status or not plc_status.is_running or not plc_status.is_servo_on:
+            self._plc_svc.start_run()
+            self._plc_running = True
+            self._update_plc_run_button()
+            self._log("▶ PLC RUN trước khi JOG")
+            time.sleep(0.05)
+
+        # 2. Xóa cờ Done nếu còn sót từ lần test trước
+        if plc_status and plc_status.is_done:
+            self._plc_svc.clear_done()
+
+        # 3. Ghi tốc độ JOG D104 và ghi D101 = 0 (Manual) ép buộc (force=True)
         jog_rpm = float(self.spin_plc_jog_speed.value())
-        self._plc_svc.write_speed(jog_rpm * 0.3)
+        self._plc_svc.write_speed(jog_rpm * 0.3, force=True)
+        if self._plc_svc.write_mode(0, force=True):
+            self._log("⚙️ PLC mode -> Manual (D101=0) để JOG")
+
         self._jog_active = True
         self._jog_direction = 1 if direction >= 0 else -1
         self._jog_started_at = time.monotonic()
         self._jog_start_angle = self._current_angle
-        if not hasattr(self, '_plc_mode_before_jog'):
-            self._plc_mode_before_jog = self._selected_plc_mode()
-        if self._plc_svc.write_mode(0):
-            self._log("⚙️ PLC mode -> Manual (D101=0) để JOG")
 
     def _end_plc_jog(self) -> None:
-        """Restore PLC mode from the app selection after releasing JOG."""
+        """Process after releasing JOG button; keep PLC in Manual mode."""
         if not self._plc_svc or not self._plc_svc.is_connected():
             return
 
@@ -2633,9 +2661,6 @@ class MainWindow(QMainWindow):
             self._jog_active = False
             self._jog_direction = 0
 
-        restore_mode = self._selected_plc_mode()
-        if self._plc_svc.write_mode(restore_mode):
-            self._log(f"⚙️ PLC mode khôi phục D101={restore_mode}")
         if hasattr(self, '_plc_mode_before_jog'):
             delattr(self, '_plc_mode_before_jog')
 
@@ -2757,7 +2782,6 @@ class MainWindow(QMainWindow):
         elapsed_since_start = time.monotonic() - getattr(self, '_start_time', 0.0)
         if self._recording and status.is_done and elapsed_since_start > 1.5:
             self._log("✅ PLC báo hoàn tất test")
-            self._recording = False
             self._stop_recording()
 
     def _poll_plc_status(self):
@@ -2859,6 +2883,8 @@ class MainWindow(QMainWindow):
             ui['chart_display_mode'] = self._get_chart_display_mode()
         if hasattr(self, 'display_details_widget'):
             ui['show_realtime_details'] = self.display_details_widget.isVisible()
+        if hasattr(self, 'chk_auto_import_plot'):
+            ui['auto_import_plot'] = self.chk_auto_import_plot.isChecked()
         if hasattr(self, '_plot_viewer'):
             ui['plot_viewer'] = self._collect_plot_viewer_state()
         if extra:
@@ -3021,6 +3047,8 @@ class MainWindow(QMainWindow):
                 show_details = bool(ui.get('show_realtime_details', False))
                 self.display_details_widget.setVisible(show_details)
                 self._update_toggle_details_button_text()
+            if hasattr(self, 'chk_auto_import_plot'):
+                self.chk_auto_import_plot.setChecked(bool(ui.get('auto_import_plot', True)))
             # Khi tắt/bật lại app, luôn mở Thu thập > Kết nối để người dùng
             # kiểm tra/kết nối thiết bị trước. Không khôi phục tab cuối cùng.
             if hasattr(self, 'tabs') and self.tabs.count() > 0:
@@ -3253,7 +3281,11 @@ class MainWindow(QMainWindow):
                 self._collector.start()
                 if self._plc_svc:
                     self._start_plc_polling()
-                    
+
+            if self._plc_svc and self._plc_svc.is_connected():
+                self._plc_svc.write_mode(0, force=True)
+                self._restore_plc_jog_speed()
+
             self._save_settings_from_ui()
             if hasattr(self, 'tabs'):
                 self.tabs.setCurrentIndex(2)  # Chuyển sang tab Acquisition sau khi connect thành công.
@@ -3806,7 +3838,7 @@ class MainWindow(QMainWindow):
             self._plc_svc.jog_minus(False)
         self._jog_active = False
         self._jog_direction = 0
-        self._plc_svc.write_mode(self._selected_plc_mode())
+        self._plc_svc.write_mode(0, force=True)
 
 
     def _restore_after_angle_program(self) -> None:
@@ -3928,15 +3960,24 @@ class MainWindow(QMainWindow):
         self.btn_rec_clear.setEnabled(True)
         self._log(f"⏹ Đã dừng ghi – {self._session.count} mẫu, {duration:.1f}s")
 
-        # R2 Upgrade: Stop PLC/Servo sequence if running
-        if was_recording and self._plc_svc and self._plc_svc.is_connected():
-            self._plc_svc.stop_record()
-            self._log("⏹ Đã gửi STOP_RECORD tới PLC")
+        # R2 Upgrade: Stop PLC/Servo sequence if running & restore standby state
+        if self._plc_svc and self._plc_svc.is_connected():
+            if was_recording:
+                self._plc_svc.stop_record()
+                self._log("⏹ Đã gửi STOP_RECORD tới PLC")
+            self._plc_svc.clear_done()
+            self._plc_svc.write_mode(0, force=True)
+            self._log("⚙️ PLC về Manual (D101=0), sẵn sàng JOG")
         if self._servo_svc and self._servo_svc.is_running():
             self._servo_svc.stop()
             self._log("⏹ Đã dừng chu trình Servo")
         self._restore_plc_jog_speed()
         self._clear_itr_oscillating_angles_after_run()
+
+        # Tự động nhập dữ liệu vào Phân tích (Plot Viewer) nếu bật và có mẫu đo
+        if getattr(self, 'chk_auto_import_plot', None) and self.chk_auto_import_plot.isChecked():
+            if self._session and len(self._session.samples) > 0:
+                QTimer.singleShot(250, lambda: self._import_to_plot_viewer(silent=True))
 
     def _clear_samples(self):
         self._session = RecordingSession(sample_interval_ms=self.spin_interval.value())
@@ -4067,7 +4108,7 @@ class MainWindow(QMainWindow):
                 else:
                     self._log(f"⚠️ Ghi tốc độ JOG xuống PLC (D104) thất bại")
 
-    def _import_to_plot_viewer(self):
+    def _import_to_plot_viewer(self, silent: bool = False):
         """Export session CSV -> load vào Plot Viewer -> nhảy sang tab."""
         if not _HAS_PLOT_VIEWER:
             self._log("⚠️ Plot Viewer chưa sẵn sàng"); return
@@ -4076,7 +4117,9 @@ class MainWindow(QMainWindow):
         if not hasattr(self, '_plot_viewer'):
             self._log("⚠️ Plot Viewer chưa sẵn sàng"); return
         if not self._session.samples:
-            self._log("⚠️ Không có dữ liệu để import"); return
+            if not silent:
+                self._log("⚠️ Không có dữ liệu để import")
+            return
         tmp = self._export_session_to_temp_csv()
         if not tmp:
             self._log("⚠️ Xuất CSV tạm thất bại"); return
@@ -4098,10 +4141,13 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self._plot_viewer.plot_mode_combo.setCurrentIndex(idx)
 
-        ok = self._plot_viewer.load_file_from_path(tmp)
+        ok = self._plot_viewer.load_file_from_path(tmp, silent=silent)
         if ok:
             self.main_tabs.setCurrentIndex(1)  # Tab Plot Viewer
-            self._log(f"📊 Đã import {self._session.count} mẫu sang Plot Viewer")
+            if silent:
+                self._log(f"📊 Đã tự động nhập {self._session.count} mẫu sang Phân tích dữ liệu")
+            else:
+                self._log(f"📊 Đã import {self._session.count} mẫu sang Plot Viewer")
         else:
             self._log("⚠️ Import sang Plot Viewer thất bại")
 
@@ -4650,6 +4696,8 @@ class MainWindow(QMainWindow):
             self.grp_import_tools.setTitle(self.i18n.t('import_tools_grp'))
         if hasattr(self, 'btn_import_plot'):
             self.btn_import_plot.setText(self.i18n.t('btn_import_plot'))
+        if hasattr(self, 'chk_auto_import_plot'):
+            self.chk_auto_import_plot.setText(self.i18n.t('chk_auto_import_plot'))
 
         # 6. Chart Group
         if hasattr(self, 'chart_group'):

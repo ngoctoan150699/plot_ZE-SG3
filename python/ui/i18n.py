@@ -119,6 +119,8 @@ TRANSLATIONS = {
         'export_grp': '💾 Xuất dữ liệu',
         'csv_simple_display_name': 'CSV đơn giản (Thời gian, Mô-men)',
         'import_tools_grp': '📥 Nhập dữ liệu sang công cụ khác',
+        'btn_import_plot': '📊 Phân tích trong Plot Viewer',
+        'chk_auto_import_plot': '⚡ Tự động phân tích khi đo xong',
 
         # Product Standard
         'standard_grp': '📋 Tiêu chuẩn sản phẩm',
@@ -313,6 +315,8 @@ TRANSLATIONS = {
         'export_grp': '💾 Export Data',
         'csv_simple_display_name': 'Simple CSV (Time, Torque)',
         'import_tools_grp': '📥 Import Data to Other Tools',
+        'btn_import_plot': '📊 Analyze in Plot Viewer',
+        'chk_auto_import_plot': '⚡ Auto analyze after measurement',
 
         # Product Standard
         'standard_grp': '📋 Product Standard',
